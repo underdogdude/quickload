@@ -26,6 +26,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
   if (!session.profileCompleted) {
+    if (pathname === "/register") {
+      return response;
+    }
     const url = request.nextUrl.clone();
     url.pathname = "/register";
     return NextResponse.redirect(url);
