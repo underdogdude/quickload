@@ -10,25 +10,17 @@ async function verifyLineAccessToken(accessToken: string): Promise<{
   name?: string;
   picture?: string;
 } | null> {
-  const verifyRes = await fetch("https://api.line.me/oauth2/v2.1/verify", {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!verifyRes.ok) return null;
-  const verify = (await verifyRes.json()) as { sub?: string };
-  if (!verify.sub) return null;
-
-  let name: string | undefined;
-  let picture: string | undefined;
+  // LIFF access token should be validated by calling LINE profile API.
+  // oauth2/v2.1/verify does not return user id (sub), so we use profile as source of truth.
   const profileRes = await fetch("https://api.line.me/v2/profile", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (profileRes.ok) {
-    const prof = (await profileRes.json()) as { displayName?: string; pictureUrl?: string };
-    name = prof.displayName;
-    picture = prof.pictureUrl;
-  }
+  if (!profileRes.ok) return null;
 
-  return { sub: verify.sub, name, picture };
+  const prof = (await profileRes.json()) as { userId?: string; displayName?: string; pictureUrl?: string };
+  if (!prof.userId) return null;
+
+  return { sub: prof.userId, name: prof.displayName, picture: prof.pictureUrl };
 }
 
 export async function POST(request: Request) {
