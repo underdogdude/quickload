@@ -4,7 +4,7 @@ import liff from "@line/liff";
 import { useEffect, useState } from "react";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID ?? "";
-const SKIP_LIFF = process.env.NEXT_PUBLIC_DEV_SKIP_LINE_AUTH === "true";
+const SKIP_LIFF = process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_DEV_SKIP_LINE_AUTH === "true";
 
 export function LiffProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(SKIP_LIFF);

@@ -31,9 +31,6 @@ export default async function ProtectedLayout({ children }: { children: React.Re
             <Link className="text-slate-700 hover:text-slate-900" href="/parcels">
               Parcels
             </Link>
-            <Link className="text-slate-700 hover:text-slate-900" href="/pickups">
-              Pickups
-            </Link>
             <Link className="text-slate-700 hover:text-slate-900" href="/pickups/slots">
               Slots
             </Link>

@@ -1,5 +1,4 @@
 export type ParcelStatus = "registered" | "in_transit" | "delivered" | "failed";
-export type PickupRequestStatus = "pending" | "confirmed" | "completed" | "cancelled";
 export type ParcelSize = "S" | "M" | "L" | "XL";
 export type NotificationType = "pickup_confirmed" | "pickup_reminder" | "parcel_status";
 export type AdminRole = "staff" | "superadmin";
@@ -33,7 +32,6 @@ export interface Parcel {
   price: string | null;
   isPaid: boolean;
   source: string;
-  legacyRefId: string | null;
   createdAt: string;
   updatedAt: string | null;
 }
@@ -46,19 +44,6 @@ export interface PickupSlot {
   bookedCount: number;
   isActive: boolean;
   createdAt: string;
-}
-
-export interface PickupRequest {
-  id: string;
-  userId: string;
-  slotId: string;
-  address: string;
-  note: string | null;
-  status: PickupRequestStatus | string;
-  parcelIds: string[] | null;
-  confirmedBy: string | null;
-  createdAt: string;
-  updatedAt: string | null;
 }
 
 export interface NotificationLogEntry {

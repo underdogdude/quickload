@@ -1,5 +1,4 @@
 import { getDb, users } from "@quickload/shared/db";
-import { eq } from "drizzle-orm";
 import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -44,41 +43,38 @@ export async function POST(request: Request) {
     }
 
     const db = getDb();
-    const existingRows = await db
-      .select()
-      .from(users)
-      .where(eq(users.lineUserId, profile.sub))
-      .limit(1);
-    const existing = existingRows[0];
-
-    let userId: string;
-    if (existing) {
-      userId = existing.id;
-      await db
-        .update(users)
-        .set({
-          displayName: profile.name ?? existing.displayName,
-          pictureUrl: profile.picture ?? existing.pictureUrl,
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, existing.id));
-    } else {
-      const inserted = await db
-        .insert(users)
-        .values({
-          lineUserId: profile.sub,
+    const upserted = await db
+      .insert(users)
+      .values({
+        lineUserId: profile.sub,
+        displayName: profile.name ?? null,
+        pictureUrl: profile.picture ?? null,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: users.lineUserId,
+        set: {
           displayName: profile.name ?? null,
           pictureUrl: profile.picture ?? null,
-        })
-        .returning({ id: users.id });
-      userId = inserted[0]!.id;
+          updatedAt: new Date(),
+        },
+      })
+      .returning({
+        id: users.id,
+        lineUserId: users.lineUserId,
+        displayName: users.displayName,
+        pictureUrl: users.pictureUrl,
+      });
+    const user = upserted[0];
+    if (!user) {
+      return NextResponse.json({ ok: false, error: "Failed to save user profile" }, { status: 500 });
     }
 
     const session = await getIronSession<LineAppSession>(cookies(), getSessionOptions());
-    session.lineUserId = profile.sub;
-    session.userId = userId;
-    session.displayName = profile.name;
-    session.pictureUrl = profile.picture ?? null;
+    session.lineUserId = user.lineUserId;
+    session.userId = user.id;
+    session.displayName = user.displayName ?? undefined;
+    session.pictureUrl = user.pictureUrl;
     await session.save();
 
     return NextResponse.json({ ok: true });

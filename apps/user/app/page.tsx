@@ -5,8 +5,7 @@ const menus = [
   { href: "/parcels", label: "Menu 2 — My parcels" },
   { href: "/tracking", label: "Menu 3 — Tracking" },
   { href: "/payment", label: "Menu 4 — Payment balance" },
-  { href: "/pickup", label: "Menu 5 — Book pickup" },
-  { href: "/help", label: "Menu 6 — Help" },
+  { href: "/help", label: "Menu 5 — Help" },
 ];
 
 export default function HomePage() {

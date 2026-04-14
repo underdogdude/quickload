@@ -7,9 +7,10 @@ import { useEffect, useState } from "react";
 export default function EntryPage() {
   const router = useRouter();
   const [msg, setMsg] = useState("Signing in with LINE…");
+  const skipLineAuth = process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_DEV_SKIP_LINE_AUTH === "true";
 
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_DEV_SKIP_LINE_AUTH === "true") {
+    if (skipLineAuth) {
       router.replace("/");
       return;
     }
@@ -50,7 +51,7 @@ export default function EntryPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, skipLineAuth]);
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-6">

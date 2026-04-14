@@ -4,7 +4,7 @@ import type { LineAppSession } from "./lib/session";
 import { getSessionOptions } from "./lib/session";
 
 export async function middleware(request: NextRequest) {
-  if (process.env.NEXT_PUBLIC_DEV_SKIP_LINE_AUTH === "true") {
+  if (process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_DEV_SKIP_LINE_AUTH === "true") {
     return NextResponse.next();
   }
 
