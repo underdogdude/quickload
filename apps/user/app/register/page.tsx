@@ -5,19 +5,23 @@ import { useEffect, useState } from "react";
 type CurrentUser = {
   displayName: string | null;
   pictureUrl: string | null;
+  firstName: string | null;
+  lastName: string | null;
   phone: string | null;
 };
 
 export default function RegisterParcelPage() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [savingPhone, setSavingPhone] = useState(false);
   const [trackingId, setTrackingId] = useState("");
   const [destination, setDestination] = useState("");
   const [size, setSize] = useState("M");
   const [msg, setMsg] = useState<string | null>(null);
-  const needsProfile = !currentUser?.phone;
+  const needsProfile = !currentUser?.firstName || !currentUser?.lastName || !currentUser?.phone;
 
   useEffect(() => {
     let cancelled = false;
@@ -31,6 +35,8 @@ export default function RegisterParcelPage() {
         return;
       }
       setCurrentUser(json.data);
+      setFirstName(json.data.firstName ?? "");
+      setLastName(json.data.lastName ?? "");
       setPhone(json.data.phone ?? "");
       setLoadingUser(false);
     })();
@@ -46,7 +52,7 @@ export default function RegisterParcelPage() {
     const res = await fetch("/api/me", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ firstName, lastName, phone }),
     });
     const json = (await res.json()) as { ok?: boolean; data?: CurrentUser; error?: string };
     setSavingPhone(false);
@@ -108,6 +114,24 @@ export default function RegisterParcelPage() {
             </div>
           </div>
           <form onSubmit={onSaveProfile} className="space-y-2">
+            <label className="block text-sm">
+              First name
+              <input
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                required
+              />
+            </label>
+            <label className="block text-sm">
+              Last name
+              <input
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                required
+              />
+            </label>
             <label className="block text-sm">
               Phone number
               <input

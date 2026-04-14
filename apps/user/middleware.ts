@@ -25,6 +25,11 @@ export async function middleware(request: NextRequest) {
     url.pathname = "/entry";
     return NextResponse.redirect(url);
   }
+  if (!session.profileCompleted) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/register";
+    return NextResponse.redirect(url);
+  }
   return response;
 }
 

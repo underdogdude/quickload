@@ -1,5 +1,4 @@
 import { getDb, users } from "@quickload/shared/db";
-import { eq } from "drizzle-orm";
 import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -36,16 +35,6 @@ export async function POST(request: Request) {
     }
 
     const db = getDb();
-    const existingRows = await db
-      .select({
-        id: users.id,
-        phone: users.phone,
-      })
-      .from(users)
-      .where(eq(users.lineUserId, profile.sub))
-      .limit(1);
-    const existing = existingRows[0];
-
     const upserted = await db
       .insert(users)
       .values({
@@ -67,6 +56,9 @@ export async function POST(request: Request) {
         lineUserId: users.lineUserId,
         displayName: users.displayName,
         pictureUrl: users.pictureUrl,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        phone: users.phone,
       });
     const user = upserted[0];
     if (!user) {
@@ -78,11 +70,11 @@ export async function POST(request: Request) {
     session.userId = user.id;
     session.displayName = user.displayName ?? undefined;
     session.pictureUrl = user.pictureUrl;
+    const profileCompleted = Boolean(user.firstName?.trim() && user.lastName?.trim() && user.phone?.trim());
+    session.profileCompleted = profileCompleted;
     await session.save();
 
-    const needsRegistration = !existing?.phone;
-
-    return NextResponse.json({ ok: true, needsRegistration });
+    return NextResponse.json({ ok: true, needsRegistration: !profileCompleted });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Server error";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });

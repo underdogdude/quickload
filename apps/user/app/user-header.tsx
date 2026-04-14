@@ -31,6 +31,11 @@ export function UserHeader({ displayName, pictureUrl }: UserHeaderProps) {
           <p className="truncate text-sm font-medium text-slate-900">{label}</p>
           <p className="text-xs text-slate-500">บัญชี LINE</p>
         </div>
+        <form action="/api/auth/signout" method="post">
+          <button type="submit" className="rounded border border-slate-300 px-3 py-1 text-xs text-slate-700 hover:bg-slate-50">
+            Logout
+          </button>
+        </form>
       </div>
     </header>
   );

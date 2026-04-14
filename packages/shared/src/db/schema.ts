@@ -15,6 +15,8 @@ export const users = pgTable("users", {
   lineUserId: text("line_user_id").notNull().unique(),
   displayName: text("display_name"),
   pictureUrl: text("picture_url"),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
   phone: text("phone"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }),

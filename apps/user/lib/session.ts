@@ -5,6 +5,7 @@ export interface LineAppSession {
   userId?: string;
   displayName?: string;
   pictureUrl?: string | null;
+  profileCompleted?: boolean;
 }
 
 export function getSessionOptions(): SessionOptions {

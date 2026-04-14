@@ -8,6 +8,8 @@ export interface User {
   lineUserId: string;
   displayName: string | null;
   pictureUrl: string | null;
+  firstName: string | null;
+  lastName: string | null;
   phone: string | null;
   createdAt: string;
   updatedAt: string | null;
