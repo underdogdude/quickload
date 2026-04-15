@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 type CurrentUser = {
@@ -8,51 +9,91 @@ type CurrentUser = {
   firstName: string | null;
   lastName: string | null;
   phone: string | null;
+  email: string | null;
+  birthDate: string | null;
 };
 
-export default function RegisterParcelPage() {
+const TITLE_FONT_CLASS = "font-title-placeholder";
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_REGEX = /^(\+66|0)\d{8,9}$/;
+
+export default function RegisterPage() {
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [savingPhone, setSavingPhone] = useState(false);
-  const [trackingId, setTrackingId] = useState("");
-  const [destination, setDestination] = useState("");
-  const [size, setSize] = useState("M");
   const [msg, setMsg] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const needsProfile = !currentUser?.firstName || !currentUser?.lastName || !currentUser?.phone;
+  const normalizedPhone = phone.replace(/[\s-]/g, "");
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const res = await fetch("/api/me");
-      const json = (await res.json()) as { ok?: boolean; data?: CurrentUser; error?: string };
-      if (cancelled) return;
-      if (!res.ok || !json.ok || !json.data) {
-        setMsg(json.error ?? "Failed to load profile");
-        setLoadingUser(false);
-        return;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
+      try {
+        const res = await fetch("/api/me", { signal: controller.signal });
+        if (res.status === 401) {
+          router.replace("/entry");
+          return;
+        }
+        const text = await res.text();
+        const json = text ? (JSON.parse(text) as { ok?: boolean; data?: CurrentUser; error?: string }) : {};
+        if (cancelled) return;
+        if (!res.ok || !json.ok || !json.data) {
+          setMsg(json.error ?? "Failed to load profile");
+          return;
+        }
+        setCurrentUser(json.data);
+        setFirstName(json.data.firstName ?? "");
+        setLastName(json.data.lastName ?? "");
+        setPhone(json.data.phone ?? "");
+        setEmail(json.data.email ?? "");
+        setBirthDate(json.data.birthDate ?? "");
+      } catch (error) {
+        if (cancelled) return;
+        if (error instanceof Error && error.name === "AbortError") {
+          setMsg("Loading profile timed out. Please refresh again.");
+          return;
+        }
+        setMsg("Unable to load profile right now.");
+      } finally {
+        clearTimeout(timer);
+        if (!cancelled) setLoadingUser(false);
       }
-      setCurrentUser(json.data);
-      setFirstName(json.data.firstName ?? "");
-      setLastName(json.data.lastName ?? "");
-      setPhone(json.data.phone ?? "");
-      setLoadingUser(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router]);
 
   async function onSaveProfile(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
+    const nextPhoneError = normalizedPhone && !PHONE_REGEX.test(normalizedPhone) ? "Please enter a valid phone number." : null;
+    const nextEmailError = email && !EMAIL_REGEX.test(email) ? "Please enter a valid email address." : null;
+    setPhoneError(nextPhoneError);
+    setEmailError(nextEmailError);
+    if (nextPhoneError) {
+      setMsg(nextPhoneError);
+      return;
+    }
+    if (nextEmailError) {
+      setMsg(nextEmailError);
+      return;
+    }
     setSavingPhone(true);
     const res = await fetch("/api/me", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ firstName, lastName, phone }),
+      body: JSON.stringify({ firstName, lastName, phone: normalizedPhone, email, birthDate }),
     });
     const json = (await res.json()) as { ok?: boolean; data?: CurrentUser; error?: string };
     setSavingPhone(false);
@@ -64,138 +105,128 @@ export default function RegisterParcelPage() {
     setMsg("บันทึกข้อมูลสมาชิกแล้ว");
   }
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (needsProfile) {
-      setMsg("กรุณากรอกข้อมูลสมาชิกให้ครบก่อน");
-      return;
-    }
-    setMsg(null);
-    const res = await fetch("/api/parcels", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ trackingId, destination, size }),
-    });
-    const json = (await res.json()) as { ok?: boolean; error?: string };
-    if (!res.ok || !json.ok) {
-      setMsg(json.error ?? "Failed");
-      return;
-    }
-    setMsg("Saved");
-    setTrackingId("");
-    setDestination("");
-  }
-
   return (
-    <main className="mx-auto max-w-lg p-6">
-      <h1 className="text-lg font-semibold">Register parcel</h1>
-      {loadingUser ? (
-        <p className="mt-2 text-sm text-slate-600">Loading profile…</p>
-      ) : (
-        <div className="mt-4 rounded border border-slate-200 bg-white p-4">
-          <p className="mb-3 text-sm font-medium text-slate-800">ข้อมูลสมาชิก</p>
-          <div className="mb-3 flex items-center gap-3">
-            {currentUser?.pictureUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- LINE profile image URL
-              <img
-                src={currentUser.pictureUrl}
-                alt=""
-                width={48}
-                height={48}
-                className="h-12 w-12 rounded-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <div className="h-12 w-12 rounded-full bg-slate-200" />
-            )}
-            <div>
-              <p className="text-sm font-medium text-slate-900">{currentUser?.displayName ?? "LINE user"}</p>
-              <p className="text-xs text-slate-500">กรอกเบอร์โทรก่อนใช้งานครั้งแรก</p>
-            </div>
+    <main className="min-h-screen bg-slate-100">
+      <section className="bg-[#2726F5] px-6 pb-20 pt-12 text-white">
+        <div className="mx-auto flex w-full max-w-lg items-end justify-between">
+          <div>
+            <h1 className={`${TITLE_FONT_CLASS} text-4xl font-bold leading-tight`}>ลงทะเบียนพัสดุ</h1>
+            <p className="mt-2 text-lg text-white/80">กรอกข้อมูลพัสดุของคุณ</p>
           </div>
-          <form onSubmit={onSaveProfile} className="space-y-2">
-            <label className="block text-sm">
-              First name
-              <input
-                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                required
-              />
-            </label>
-            <label className="block text-sm">
-              Last name
-              <input
-                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                required
-              />
-            </label>
-            <label className="block text-sm">
-              Phone number
-              <input
-                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                required
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={savingPhone}
-              className="rounded bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-60"
-            >
-              {savingPhone ? "Saving…" : "Save profile"}
-            </button>
-          </form>
+          {currentUser?.pictureUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- LINE profile image URL
+            <img
+              src={currentUser.pictureUrl}
+              alt=""
+              width={64}
+              height={64}
+              className="h-16 w-16 rounded-full border-2 border-white/30 object-cover"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="h-16 w-16 rounded-full bg-white/25" />
+          )}
         </div>
-      )}
-      <form onSubmit={onSubmit} className="mt-4 space-y-3">
-        {needsProfile ? (
-          <p className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            กรุณาบันทึกข้อมูลสมาชิกให้ครบก่อนลงทะเบียนพัสดุ
-          </p>
-        ) : null}
-        <label className="block text-sm">
-          Tracking ID
-          <input
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-            value={trackingId}
-            onChange={(e) => setTrackingId(e.target.value)}
-            disabled={needsProfile}
-            required
-          />
-        </label>
-        <label className="block text-sm">
-          Destination
-          <input
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-            value={destination}
-            onChange={(e) => setDestination(e.target.value)}
-            disabled={needsProfile}
-          />
-        </label>
-        <label className="block text-sm">
-          Size
-          <select
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-            value={size}
-            onChange={(e) => setSize(e.target.value)}
-            disabled={needsProfile}
-          >
-            {["S", "M", "L", "XL"].map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" disabled={needsProfile} className="rounded bg-emerald-600 px-4 py-2 text-white disabled:opacity-60">
-          Submit
-        </button>
-      </form>
-      {msg && <p className="mt-3 text-sm text-slate-700">{msg}</p>}
+      </section>
+
+      <section className="-mt-12 px-6 pb-10">
+        <div className="mx-auto w-full max-w-lg rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+          {loadingUser ? (
+            <p className="text-sm text-slate-600">Loading profile…</p>
+          ) : (
+            <>
+              <p className="mb-4 text-sm font-medium text-slate-800">ข้อมูลสมาชิก</p>
+              <div className="mb-4">
+                <p className="text-sm font-semibold text-slate-900">{currentUser?.displayName ?? "LINE user"}</p>
+                <p className="text-xs text-slate-500">กรอกข้อมูลสมาชิกให้ครบก่อนใช้งานครั้งแรก</p>
+              </div>
+
+              <form onSubmit={onSaveProfile} className="space-y-3">
+                <label className="block text-sm text-slate-700">
+                  First name
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    required
+                  />
+                </label>
+                <label className="block text-sm text-slate-700">
+                  Last name
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    required
+                  />
+                </label>
+                <label className="block text-sm text-slate-700">
+                  Phone number
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
+                    value={phone}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      if (phoneError) setPhoneError(null);
+                    }}
+                    inputMode="tel"
+                    autoComplete="tel"
+                    pattern="^(\+66|0)\d{8,9}$"
+                    required
+                  />
+                  {phoneError ? <p className="mt-1 text-xs text-red-600">{phoneError}</p> : null}
+                </label>
+                <label className="block text-sm text-slate-700">
+                  Email
+                  <input
+                    type="email"
+                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (emailError) setEmailError(null);
+                    }}
+                    autoComplete="email"
+                    required
+                  />
+                  {emailError ? <p className="mt-1 text-xs text-red-600">{emailError}</p> : null}
+                </label>
+                <label className="block text-sm text-slate-700">
+                  Birthdate
+                  <input
+                    type="date"
+                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
+                    value={birthDate}
+                    onChange={(e) => setBirthDate(e.target.value)}
+                    required
+                  />
+                </label>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={savingPhone}
+                    className="rounded-xl bg-[#2726F5] px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  >
+                    {savingPhone ? "Saving…" : "Save profile"}
+                  </button>
+                  {!needsProfile ? (
+                    <button
+                      type="button"
+                      onClick={() => router.replace("/")}
+                      className="ml-2 rounded-xl border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      ไปหน้าหลัก
+                    </button>
+                  ) : null}
+                </div>
+              </form>
+            </>
+          )}
+
+          {msg ? <p className="mt-4 text-sm text-slate-700">{msg}</p> : null}
+        </div>
+      </section>
     </main>
   );
 }

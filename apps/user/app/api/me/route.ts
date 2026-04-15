@@ -7,6 +7,9 @@ import { requireLineSession } from "@/lib/require-user";
 import type { LineAppSession } from "@/lib/session";
 import { getSessionOptions } from "@/lib/session";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_REGEX = /^(\+66|0)\d{8,9}$/;
+
 export async function GET() {
   try {
     const session = await requireLineSession();
@@ -20,6 +23,8 @@ export async function GET() {
         firstName: users.firstName,
         lastName: users.lastName,
         phone: users.phone,
+        email: users.email,
+        birthDate: users.birthDate,
       })
       .from(users)
       .where(eq(users.id, session.userId))
@@ -39,12 +44,29 @@ export async function GET() {
 export async function PATCH(request: Request) {
   try {
     const session = await requireLineSession();
-    const body = (await request.json()) as { firstName?: string; lastName?: string; phone?: string };
+    const body = (await request.json()) as {
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      email?: string;
+      birthDate?: string;
+    };
     const firstName = body.firstName?.trim();
     const lastName = body.lastName?.trim();
-    const phone = body.phone?.trim();
+    const phone = body.phone?.trim().replace(/[\s-]/g, "");
+    const email = body.email?.trim() || null;
+    const birthDate = body.birthDate?.trim() || null;
     if (!firstName || !lastName || !phone) {
       return NextResponse.json({ ok: false, error: "firstName, lastName, phone are required" }, { status: 400 });
+    }
+    if (!PHONE_REGEX.test(phone)) {
+      return NextResponse.json({ ok: false, error: "Invalid phone format" }, { status: 400 });
+    }
+    if (email && !EMAIL_REGEX.test(email)) {
+      return NextResponse.json({ ok: false, error: "Invalid email format" }, { status: 400 });
+    }
+    if (birthDate && Number.isNaN(Date.parse(birthDate))) {
+      return NextResponse.json({ ok: false, error: "Invalid birthDate format" }, { status: 400 });
     }
 
     const db = getDb();
@@ -54,6 +76,8 @@ export async function PATCH(request: Request) {
         firstName,
         lastName,
         phone,
+        email,
+        birthDate,
         updatedAt: new Date(),
       })
       .where(eq(users.id, session.userId))
@@ -65,6 +89,8 @@ export async function PATCH(request: Request) {
         firstName: users.firstName,
         lastName: users.lastName,
         phone: users.phone,
+        email: users.email,
+        birthDate: users.birthDate,
       });
 
     const updated = updatedRows[0];

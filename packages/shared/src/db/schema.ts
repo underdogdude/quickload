@@ -18,6 +18,8 @@ export const users = pgTable("users", {
   firstName: text("first_name"),
   lastName: text("last_name"),
   phone: text("phone"),
+  email: text("email"),
+  birthDate: date("birth_date", { mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }),
 });
@@ -63,4 +65,40 @@ export const notificationLog = pgTable("notification_log", {
   payload: jsonb("payload"),
   sentAt: timestamp("sent_at", { withTimezone: true }).defaultNow().notNull(),
   status: text("status").notNull().default("sent"),
+});
+
+/** Saved sender (address book) for parcel registration; one user may have many. */
+export const senderAddresses = pgTable("sender_addresses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  contactName: text("contact_name").notNull(),
+  phone: text("phone").notNull(),
+  addressLine: text("address_line").notNull(),
+  tambon: text("tambon").notNull(),
+  amphoe: text("amphoe").notNull(),
+  province: text("province").notNull(),
+  zipcode: text("zipcode").notNull(),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
+});
+
+/** Saved recipient (address book) for parcel registration; one user may have many. */
+export const recipientAddresses = pgTable("recipient_addresses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  contactName: text("contact_name").notNull(),
+  phone: text("phone").notNull(),
+  addressLine: text("address_line").notNull(),
+  tambon: text("tambon").notNull(),
+  amphoe: text("amphoe").notNull(),
+  province: text("province").notNull(),
+  zipcode: text("zipcode").notNull(),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
 });

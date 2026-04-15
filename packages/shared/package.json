@@ -16,7 +16,9 @@
   "scripts": {
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:apply:sender": "node ./scripts/apply-sender-sql.mjs",
+    "db:apply:recipient": "node ./scripts/apply-recipient-sql.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",

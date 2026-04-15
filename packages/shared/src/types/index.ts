@@ -11,6 +11,8 @@ export interface User {
   firstName: string | null;
   lastName: string | null;
   phone: string | null;
+  email: string | null;
+  birthDate: string | null;
   createdAt: string;
   updatedAt: string | null;
 }
@@ -56,6 +58,36 @@ export interface NotificationLogEntry {
   payload: unknown;
   sentAt: string;
   status: string;
+}
+
+export interface SenderAddress {
+  id: string;
+  userId: string;
+  contactName: string;
+  phone: string;
+  addressLine: string;
+  tambon: string;
+  amphoe: string;
+  province: string;
+  zipcode: string;
+  isPrimary: boolean;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface RecipientAddress {
+  id: string;
+  userId: string;
+  contactName: string;
+  phone: string;
+  addressLine: string;
+  tambon: string;
+  amphoe: string;
+  province: string;
+  zipcode: string;
+  isPrimary: boolean;
+  createdAt: string;
+  updatedAt: string | null;
 }
 
 export interface ApiResponse<T> {

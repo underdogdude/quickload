@@ -46,19 +46,30 @@ export default function EntryPage() {
         } catch {
           // Keep flow working even when profile retrieval fails.
         }
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 12000);
         const res = await fetch("/api/auth/line", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ accessToken }),
+          signal: controller.signal,
         });
-        const json = (await res.json()) as { ok?: boolean; error?: string; needsRegistration?: boolean };
+        clearTimeout(timer);
+        const text = await res.text();
+        const json = text ? (JSON.parse(text) as { ok?: boolean; error?: string; needsRegistration?: boolean }) : {};
         if (!res.ok || !json.ok) {
           setMsg(json.error ?? "Login failed");
           return;
         }
         if (!cancelled) router.replace(json.needsRegistration ? "/register" : "/");
       } catch (e) {
-        if (!cancelled) setMsg(e instanceof Error ? e.message : "Unexpected error");
+        if (!cancelled) {
+          if (e instanceof Error && e.name === "AbortError") {
+            setMsg("Login request timed out. Check ngrok URL and LINE LIFF endpoint settings.");
+            return;
+          }
+          setMsg(e instanceof Error ? e.message : "Unexpected error");
+        }
       }
     })();
     return () => {

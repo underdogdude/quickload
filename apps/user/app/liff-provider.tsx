@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID ?? "";
 const SKIP_LIFF = process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_DEV_SKIP_LINE_AUTH === "true";
+const LIFF_INIT_TIMEOUT_MS = 15000;
 
 export function LiffProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(SKIP_LIFF);
@@ -20,11 +21,23 @@ export function LiffProvider({ children }: { children: React.ReactNode }) {
           setError("NEXT_PUBLIC_LIFF_ID is not configured");
           return;
         }
-        await liff.init({ liffId: LIFF_ID });
+        await Promise.race([
+          liff.init({ liffId: LIFF_ID }),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error("LIFF initialization timed out")), LIFF_INIT_TIMEOUT_MS);
+          }),
+        ]);
         if (cancelled) return;
         setReady(true);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "LIFF init failed");
+        if (!cancelled) {
+          const message = e instanceof Error ? e.message : "LIFF init failed";
+          if (message === "LIFF initialization timed out") {
+            setError("LIFF init timeout. Open this URL inside LINE app and verify LIFF Endpoint URL is reachable.");
+            return;
+          }
+          setError(message);
+        }
       }
     })();
     return () => {
