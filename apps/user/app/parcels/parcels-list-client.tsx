@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { parcelBarcodeDataUrl, parcelQrDataUrl } from "@/lib/parcel-scan-media";
+import { useEffect, useMemo, useState } from "react";
 
 type ParcelRow = {
   id: string;
@@ -114,6 +115,11 @@ function StatusCircleIcon({ status }: { status: string }) {
   );
 }
 
+/** Thailand Post–style payload for scanners (barcode / tracking e.g. WB…TH). */
+function parcelScanText(p: ParcelRow): string {
+  return p.barcode?.trim() || p.trackingId.trim() || "";
+}
+
 function formatThaiDateTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
@@ -146,7 +152,55 @@ export function ParcelsListClient({
     type: "qr" | "barcode";
     parcelCode: string;
   } | null>(null);
+  const [scanModalMedia, setScanModalMedia] = useState<{
+    qr: string | null;
+    barcode: string | null;
+    loading: boolean;
+    error: string | null;
+  }>({ qr: null, barcode: null, loading: false, error: null });
   const normalizedQuery = query.trim().toLowerCase();
+
+  useEffect(() => {
+    if (!placeholderModal) {
+      setScanModalMedia({ qr: null, barcode: null, loading: false, error: null });
+      return;
+    }
+    const text = placeholderModal.parcelCode.trim();
+    if (!text || text === "-") {
+      setScanModalMedia({
+        qr: null,
+        barcode: null,
+        loading: false,
+        error: "ไม่มีเลขพัสดุสำหรับสร้างคิวอาร์โค้ด / บาร์โค้ด",
+      });
+      return;
+    }
+    let cancelled = false;
+    setScanModalMedia({ qr: null, barcode: null, loading: true, error: null });
+    (async () => {
+      try {
+        const [qr, bc] = await Promise.all([
+          parcelQrDataUrl(text),
+          Promise.resolve().then(() => parcelBarcodeDataUrl(text)),
+        ]);
+        if (!cancelled) {
+          setScanModalMedia({ qr, barcode: bc, loading: false, error: null });
+        }
+      } catch {
+        if (!cancelled) {
+          setScanModalMedia({
+            qr: null,
+            barcode: null,
+            loading: false,
+            error: "สร้าง QR / บาร์โค้ดไม่สำเร็จ",
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [placeholderModal]);
 
   const statusTabs = useMemo(() => {
     const seen = new Set<string>();
@@ -348,7 +402,7 @@ export function ParcelsListClient({
                 onClick={() =>
                   setPlaceholderModal({
                     type: "qr",
-                    parcelCode: p.barcode ?? p.trackingId,
+                    parcelCode: parcelScanText(p),
                   })
                 }
               >
@@ -363,7 +417,7 @@ export function ParcelsListClient({
                 onClick={() =>
                   setPlaceholderModal({
                     type: "barcode",
-                    parcelCode: p.barcode ?? p.trackingId,
+                    parcelCode: parcelScanText(p),
                   })
                 }
               >
@@ -420,14 +474,22 @@ export function ParcelsListClient({
               {placeholderModal.type === "qr" ? "QR CODE" : "BARCODE"}
             </h3>
             <p className="mt-1 text-xs text-slate-500">
-              Placeholder สำหรับ{placeholderModal.type === "qr" ? "คิวอาร์โค้ด" : "บาร์โค้ด"}ของพัสดุ
+              สแกนเพื่ออ่านเลขพัสดุ (เช่นรูปแบบ WB…TH)
             </p>
-            <div className="mt-4 flex h-44 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50">
-              <span className="text-sm font-medium tracking-wide text-slate-500">
-                {placeholderModal.type === "qr" ? "QR PLACEHOLDER" : "BARCODE PLACEHOLDER"}
-              </span>
+            <div className="mt-4 flex min-h-[11rem] items-center justify-center rounded-lg border border-slate-200 bg-white p-3">
+              {scanModalMedia.loading ? (
+                <span className="text-sm text-slate-500">กำลังสร้าง…</span>
+              ) : scanModalMedia.error ? (
+                <span className="px-2 text-center text-sm text-rose-600">{scanModalMedia.error}</span>
+              ) : placeholderModal.type === "qr" && scanModalMedia.qr ? (
+                // eslint-disable-next-line @next/next/no-img-element -- data URL from qrcode
+                <img src={scanModalMedia.qr} alt="" className="max-h-52 w-auto max-w-full" />
+              ) : placeholderModal.type === "barcode" && scanModalMedia.barcode ? (
+                // eslint-disable-next-line @next/next/no-img-element -- data URL from jsbarcode
+                <img src={scanModalMedia.barcode} alt="" className="max-h-52 w-full object-contain" />
+              ) : null}
             </div>
-            <p className="mt-3 text-xs text-slate-600">เลขพัสดุ: {placeholderModal.parcelCode}</p>
+            <p className="mt-3 text-xs text-slate-600">เลขพัสดุ: {placeholderModal.parcelCode || "—"}</p>
             <button
               type="button"
               className="mt-4 w-full rounded-lg bg-[#2726F5] px-4 py-2 text-sm font-medium text-white"
