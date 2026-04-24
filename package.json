@@ -6,7 +6,7 @@
     "dev:user": "pnpm --filter @quickload/user dev",
     "dev:user:clean": "pnpm --filter @quickload/user dev:clean",
     "preview:user": "pnpm --filter @quickload/user preview",
-    "tunnel:user": "ngrok http http://127.0.0.1:3000 --host-header=rewrite",
+    "tunnel:user": "ngrok http http://127.0.0.1:3020 --host-header=rewrite",
     "build": "turbo build",
     "lint": "turbo lint",
     "db:generate": "pnpm --filter @quickload/shared db:generate",

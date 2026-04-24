@@ -7,8 +7,8 @@ const items = [
   { href: "/", label: "หน้าแรก", icon: "home" },
   { href: "/parcels", label: "พัสดุ", icon: "box" },
   { href: "/send", label: "ส่งพัสดุ", center: true },
-  { href: "/tracking", label: "ติดตาม", icon: "pin" },
-  { href: "/help", label: "โปรไฟล์", icon: "user" },
+  { href: "/payment", label: "ชำระเงิน", icon: "pin" },
+  { href: "/register", label: "โปรไฟล์", icon: "user" },
 ];
 
 function Icon({ name, active }: { name: "home" | "box" | "pin" | "user"; active: boolean }) {
@@ -57,7 +57,7 @@ export function BottomNav() {
           const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
           if (item.center) {
             return (
-              <Link key={item.href} href={item.href} className="flex flex-col items-center -mt-7">
+              <Link key={item.href} href={item.href} prefetch className="flex flex-col items-center -mt-7">
                 <span className="inline-flex h-[62px] w-[62px] items-center justify-center rounded-full bg-gradient-to-br from-[#2726F5] to-[#00B7FF] p-[3px] shadow-lg">
                   <span className={`inline-flex h-full w-full items-center justify-center rounded-full text-4xl leading-none text-[#1f2024] bg-white`}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" className="bi bi-plus-lg" viewBox="0 0 16 16">
@@ -70,7 +70,12 @@ export function BottomNav() {
           }
 
           return (
-            <Link key={item.href} href={item.href} className="flex flex-col items-center gap-0.5 pb-1 pt-1">
+            <Link
+              key={item.href}
+              href={item.href}
+              prefetch
+              className="flex flex-col items-center gap-0.5 pb-1 pt-1"
+            >
               <Icon name={item.icon as "home" | "box" | "pin" | "user"} active={active} />
               <span className={`text-[10px] ${active ? "font-semibold text-white" : "text-[#9EA3AF]"}`}>{item.label}</span>
             </Link>
@@ -79,4 +84,10 @@ export function BottomNav() {
       </div>
     </nav>
   );
+}
+
+export function BottomNavSpacer() {
+  const pathname = usePathname();
+  if (pathname.startsWith("/send")) return null;
+  return <div className="h-24" aria-hidden />;
 }

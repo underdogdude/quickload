@@ -1,10 +1,9 @@
 import { getDb, recipientAddresses } from "@quickload/shared/db";
 import { and, eq, ne } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { normalizeThaiPhone, isValidThaiPhone } from "@/lib/thai-phone";
 import { requireLineSession } from "@/lib/require-user";
 import { serializeRecipientAddress } from "@/lib/recipient-address-api";
-
-const PHONE_REGEX = /^(\+66|0)\d{8,9}$/;
 
 type Body = {
   contactName?: string;
@@ -19,7 +18,7 @@ type Body = {
 
 function parseBody(body: Body) {
   const contactName = body.contactName?.trim();
-  const phone = body.phone?.trim().replace(/[\s-]/g, "") ?? "";
+  const phone = normalizeThaiPhone(body.phone ?? "");
   const addressLine = body.addressLine?.trim();
   const tambon = body.tambon?.trim();
   const amphoe = body.amphoe?.trim();
@@ -33,7 +32,7 @@ function parseBody(body: Body) {
   if (!phone) {
     return { error: "phone is required" as const };
   }
-  if (!PHONE_REGEX.test(phone)) {
+  if (!isValidThaiPhone(phone)) {
     return { error: "Invalid phone format" as const };
   }
   return {

@@ -28,7 +28,7 @@ Fill `.env` at repo root for Drizzle. Copy env vars into:
 
 Minimum for local dev:
 
-- **User app:** `NEXT_PUBLIC_LIFF_ID`, `IRON_SESSION_PASSWORD` (32+ chars), `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `LEGACY_API_BASE_URL`
+- **User app:** `NEXT_PUBLIC_LIFF_ID`, `IRON_SESSION_PASSWORD` (32+ chars), `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `LEGACY_API_BASE_URL`, `LINE_MESSAGING_CHANNEL_ACCESS_TOKEN` (or existing `LINE_CHANNEL_ACCESS_TOKEN`), optional `LINE_MESSAGING_API_BASE_URL`
 - **Admin app:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `LINE_CHANNEL_ACCESS_TOKEN` (for pushes), `LEGACY_API_BASE_URL`
 
 ## Database
@@ -45,7 +45,7 @@ Uses Drizzle Kit against `DATABASE_URL`. Enable **RLS** in Supabase with policie
 pnpm dev
 ```
 
-Runs Turbo `dev` for all packages (user on :3000, admin on :3001 per app scripts).
+Runs Turbo `dev` for all packages (user on :3020, admin on :3001 per app scripts).
 
 ## Build
 

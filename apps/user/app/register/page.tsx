@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type CurrentUser = {
   displayName: string | null;
@@ -17,21 +17,32 @@ const TITLE_FONT_CLASS = "font-title-placeholder";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^(\+66|0)\d{8,9}$/;
 
+function splitDisplayName(name: string | null | undefined): { firstName: string; lastName: string } {
+  const trimmed = name?.trim() ?? "";
+  if (!trimmed) return { firstName: "", lastName: "" };
+  const idx = trimmed.indexOf(" ");
+  if (idx === -1) return { firstName: trimmed, lastName: "" };
+  return { firstName: trimmed.slice(0, idx), lastName: trimmed.slice(idx + 1).trim() };
+}
+
 export default function RegisterPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
+  const [isFirstTime, setIsFirstTime] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [birthDate, setBirthDate] = useState("");
-  const [savingPhone, setSavingPhone] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [msgTone, setMsgTone] = useState<"info" | "success" | "error">("info");
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
+
   const needsProfile = !currentUser?.firstName || !currentUser?.lastName || !currentUser?.phone;
-  const normalizedPhone = phone.replace(/[\s-]/g, "");
+  const normalizedPhone = useMemo(() => phone.replace(/[\s-]/g, ""), [phone]);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,22 +59,35 @@ export default function RegisterPage() {
         const json = text ? (JSON.parse(text) as { ok?: boolean; data?: CurrentUser; error?: string }) : {};
         if (cancelled) return;
         if (!res.ok || !json.ok || !json.data) {
-          setMsg(json.error ?? "Failed to load profile");
+          setMsgTone("error");
+          setMsg(json.error ?? "ไม่สามารถโหลดข้อมูลสมาชิกได้ กรุณาลองใหม่อีกครั้ง");
           return;
         }
-        setCurrentUser(json.data);
-        setFirstName(json.data.firstName ?? "");
-        setLastName(json.data.lastName ?? "");
-        setPhone(json.data.phone ?? "");
-        setEmail(json.data.email ?? "");
-        setBirthDate(json.data.birthDate ?? "");
+        const data = json.data;
+        setCurrentUser(data);
+        const missingProfile = !data.firstName?.trim() || !data.lastName?.trim() || !data.phone?.trim();
+        setIsFirstTime(missingProfile);
+
+        let initialFirst = data.firstName ?? "";
+        let initialLast = data.lastName ?? "";
+        if (!initialFirst && !initialLast && data.displayName) {
+          const split = splitDisplayName(data.displayName);
+          initialFirst = split.firstName;
+          initialLast = split.lastName;
+        }
+        setFirstName(initialFirst);
+        setLastName(initialLast);
+        setPhone(data.phone ?? "");
+        setEmail(data.email ?? "");
+        setBirthDate(data.birthDate ?? "");
       } catch (error) {
         if (cancelled) return;
+        setMsgTone("error");
         if (error instanceof Error && error.name === "AbortError") {
-          setMsg("Loading profile timed out. Please refresh again.");
+          setMsg("โหลดข้อมูลนานเกินไป กรุณารีเฟรชอีกครั้ง");
           return;
         }
-        setMsg("Unable to load profile right now.");
+        setMsg("ไม่สามารถโหลดข้อมูลสมาชิกได้ในตอนนี้");
       } finally {
         clearTimeout(timer);
         if (!cancelled) setLoadingUser(false);
@@ -77,41 +101,75 @@ export default function RegisterPage() {
   async function onSaveProfile(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
-    const nextPhoneError = normalizedPhone && !PHONE_REGEX.test(normalizedPhone) ? "Please enter a valid phone number." : null;
-    const nextEmailError = email && !EMAIL_REGEX.test(email) ? "Please enter a valid email address." : null;
+    setMsgTone("info");
+
+    const nextPhoneError =
+      normalizedPhone && !PHONE_REGEX.test(normalizedPhone)
+        ? "กรุณากรอกเบอร์โทรให้ถูกต้อง เช่น 0812345678"
+        : null;
+    const nextEmailError =
+      email && !EMAIL_REGEX.test(email) ? "กรุณากรอกอีเมลให้ถูกต้อง" : null;
     setPhoneError(nextPhoneError);
     setEmailError(nextEmailError);
     if (nextPhoneError) {
+      setMsgTone("error");
       setMsg(nextPhoneError);
       return;
     }
     if (nextEmailError) {
+      setMsgTone("error");
       setMsg(nextEmailError);
       return;
     }
-    setSavingPhone(true);
-    const res = await fetch("/api/me", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ firstName, lastName, phone: normalizedPhone, email, birthDate }),
-    });
-    const json = (await res.json()) as { ok?: boolean; data?: CurrentUser; error?: string };
-    setSavingPhone(false);
-    if (!res.ok || !json.ok || !json.data) {
-      setMsg(json.error ?? "Failed to save profile");
-      return;
+
+    setSaving(true);
+    try {
+      const res = await fetch("/api/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ firstName, lastName, phone: normalizedPhone, email, birthDate }),
+      });
+      const json = (await res.json()) as { ok?: boolean; data?: CurrentUser; error?: string };
+      if (!res.ok || !json.ok || !json.data) {
+        setMsgTone("error");
+        setMsg(json.error ?? "บันทึกข้อมูลสมาชิกไม่สำเร็จ");
+        return;
+      }
+      setCurrentUser(json.data);
+      setMsgTone("success");
+      setMsg(isFirstTime ? "ยินดีต้อนรับ! กำลังพาไปหน้าหลัก…" : "บันทึกข้อมูลสมาชิกแล้ว");
+
+      if (isFirstTime) {
+        setTimeout(() => {
+          router.replace("/");
+        }, 700);
+      }
+    } catch {
+      setMsgTone("error");
+      setMsg("บันทึกข้อมูลสมาชิกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setSaving(false);
     }
-    setCurrentUser(json.data);
-    setMsg("บันทึกข้อมูลสมาชิกแล้ว");
   }
+
+  const greeting = isFirstTime ? "ยินดีต้อนรับ" : "ข้อมูลสมาชิก";
+  const subtitle = isFirstTime
+    ? "กรอกข้อมูลสมาชิกเพื่อเริ่มใช้งาน Quickload"
+    : "อัปเดตข้อมูลส่วนตัวของคุณได้ที่นี่";
+  const msgToneClass =
+    msgTone === "success"
+      ? "text-emerald-700"
+      : msgTone === "error"
+      ? "text-red-600"
+      : "text-slate-700";
 
   return (
     <main className="min-h-screen bg-slate-100">
       <section className="bg-[#2726F5] px-6 pb-20 pt-12 text-white">
         <div className="mx-auto flex w-full max-w-lg items-end justify-between">
           <div>
-            <h1 className={`${TITLE_FONT_CLASS} text-4xl font-bold leading-tight`}>ลงทะเบียนพัสดุ</h1>
-            <p className="mt-2 text-lg text-white/80">กรอกข้อมูลพัสดุของคุณ</p>
+            <h1 className={`${TITLE_FONT_CLASS} text-4xl font-bold leading-tight`}>{greeting}</h1>
+            <p className="mt-2 text-lg text-white/80">{subtitle}</p>
           </div>
           {currentUser?.pictureUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- LINE profile image URL
@@ -130,38 +188,48 @@ export default function RegisterPage() {
       </section>
 
       <section className="-mt-12 px-6 pb-10">
-        <div className="mx-auto w-full max-w-lg rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <div className="mx-auto w-full max-w-lg rounded-lg bg-white p-6 shadow-sm ring-1 ring-slate-200">
           {loadingUser ? (
-            <p className="text-sm text-slate-600">Loading profile…</p>
+            <p className="text-sm text-slate-600">กำลังโหลดข้อมูล…</p>
           ) : (
             <>
               <p className="mb-4 text-sm font-medium text-slate-800">ข้อมูลสมาชิก</p>
               <div className="mb-4">
-                <p className="text-sm font-semibold text-slate-900">{currentUser?.displayName ?? "LINE user"}</p>
-                <p className="text-xs text-slate-500">กรอกข้อมูลสมาชิกให้ครบก่อนใช้งานครั้งแรก</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  {currentUser?.displayName ?? "ผู้ใช้ LINE"}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {isFirstTime
+                    ? "กรอกข้อมูลให้ครบถ้วนเพื่อเริ่มใช้งานครั้งแรก"
+                    : "ข้อมูลนี้จะใช้สำหรับการจัดส่งพัสดุ"}
+                </p>
               </div>
 
               <form onSubmit={onSaveProfile} className="space-y-3">
                 <label className="block text-sm text-slate-700">
-                  First name
+                  ชื่อ
                   <input
                     className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="เช่น สมชาย"
+                    autoComplete="given-name"
                     required
                   />
                 </label>
                 <label className="block text-sm text-slate-700">
-                  Last name
+                  นามสกุล
                   <input
                     className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
+                    placeholder="เช่น ใจดี"
+                    autoComplete="family-name"
                     required
                   />
                 </label>
                 <label className="block text-sm text-slate-700">
-                  Phone number
+                  เบอร์โทรศัพท์
                   <input
                     className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
                     value={phone}
@@ -171,13 +239,14 @@ export default function RegisterPage() {
                     }}
                     inputMode="tel"
                     autoComplete="tel"
+                    placeholder="เช่น 0812345678"
                     pattern="^(\+66|0)\d{8,9}$"
                     required
                   />
                   {phoneError ? <p className="mt-1 text-xs text-red-600">{phoneError}</p> : null}
                 </label>
                 <label className="block text-sm text-slate-700">
-                  Email
+                  อีเมล
                   <input
                     type="email"
                     className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
@@ -187,12 +256,13 @@ export default function RegisterPage() {
                       if (emailError) setEmailError(null);
                     }}
                     autoComplete="email"
+                    placeholder="name@example.com"
                     required
                   />
                   {emailError ? <p className="mt-1 text-xs text-red-600">{emailError}</p> : null}
                 </label>
                 <label className="block text-sm text-slate-700">
-                  Birthdate
+                  วันเกิด
                   <input
                     type="date"
                     className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
@@ -205,12 +275,12 @@ export default function RegisterPage() {
                 <div className="pt-2">
                   <button
                     type="submit"
-                    disabled={savingPhone}
+                    disabled={saving}
                     className="rounded-xl bg-[#2726F5] px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
                   >
-                    {savingPhone ? "Saving…" : "Save profile"}
+                    {saving ? "กำลังบันทึก…" : isFirstTime ? "เริ่มใช้งาน" : "บันทึกข้อมูล"}
                   </button>
-                  {!needsProfile ? (
+                  {!needsProfile && !isFirstTime ? (
                     <button
                       type="button"
                       onClick={() => router.replace("/")}
@@ -224,7 +294,7 @@ export default function RegisterPage() {
             </>
           )}
 
-          {msg ? <p className="mt-4 text-sm text-slate-700">{msg}</p> : null}
+          {msg ? <p className={`mt-4 text-sm ${msgToneClass}`}>{msg}</p> : null}
         </div>
       </section>
     </main>

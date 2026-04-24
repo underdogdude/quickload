@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { normalizeThaiPhone, isValidThaiPhone } from "@/lib/thai-phone";
 import { senderCopy } from "./strings";
 
 type ThaiAddressRow = {
@@ -11,8 +12,6 @@ type ThaiAddressRow = {
   province: string;
   zipcode: string;
 };
-
-const PHONE_REGEX = /^(\+66|0)\d{8,9}$/;
 
 function formatSelectedAddress(row: ThaiAddressRow) {
   return `${row.tambon}, ${row.amphoe}, ${row.province}, ${row.zipcode}`;
@@ -45,7 +44,7 @@ function SenderFormInner() {
   const comboRef = useRef<HTMLDivElement | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const normalizedPhone = phone.replace(/[\s-]/g, "");
+  const normalizedPhone = normalizeThaiPhone(phone);
 
   useEffect(() => {
     if (!editId) {
@@ -161,9 +160,11 @@ function SenderFormInner() {
     const nextNameError = !name.trim() ? senderCopy.errName : null;
     const nextPhoneError = !normalizedPhone
       ? senderCopy.errPhoneRequired
-      : !PHONE_REGEX.test(normalizedPhone)
+      : /^(?:\+66|66)/.test(phone.trim())
         ? senderCopy.errPhoneFormat
-        : null;
+        : !isValidThaiPhone(phone)
+          ? senderCopy.errPhoneFormat
+          : null;
     const nextAddressError = !addressLine.trim() ? senderCopy.errAddress : null;
     const nextLocationError = !locationSelected ? senderCopy.errLocation : null;
 
@@ -229,32 +230,40 @@ function SenderFormInner() {
 
   if (loadingRecord) {
     return (
-      <main className="min-h-screen bg-[#F4F4F4] pb-8">
+      <main className="min-h-screen bg-slate-100 pb-8">
         <section className="bg-[#2726F5] px-6 pb-16 pt-10 text-white">
           <div className="mx-auto w-full max-w-lg">
             <h1 className="text-3xl font-bold">{title}</h1>
           </div>
         </section>
         <section className="-mt-8 px-6">
-          <p className="mx-auto max-w-lg rounded-3xl bg-[#ECECEC] p-5 text-sm text-slate-600">{senderCopy.loadingForm}</p>
+          <p className="mx-auto max-w-lg rounded-lg bg-white p-5 text-sm text-slate-600 shadow-sm ring-1 ring-slate-200">{senderCopy.loadingForm}</p>
         </section>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#F4F4F4] pb-8">
-      <section className="bg-[#2726F5] px-6 pb-16 pt-10 text-white">
+    <main className="min-h-screen bg-slate-100 pb-8">
+      <section className="bg-[#2726F5] px-6 pb-20 pt-8 text-white">
         <div className="mx-auto w-full max-w-lg">
+          <Link
+            href="/send"
+            className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white/95"
+            aria-label="กลับไปหน้าลงทะเบียนพัสดุ"
+          >
+            <span aria-hidden>←</span>
+            <span>กลับ</span>
+          </Link>
           <h1 className="text-3xl font-bold">{title}</h1>
-          <p className="mt-2 text-sm text-white/80">{senderCopy.subtitle}</p>
+          <p className="mt-0 text-base text-white/80">{senderCopy.subtitle}</p>
         </div>
       </section>
 
-      <section className="-mt-8 px-6">
+      <section className="-mt-12 px-6">
         <form
           onSubmit={(e) => void onSubmit(e)}
-          className="mx-auto w-full max-w-lg space-y-4 rounded-3xl bg-[#ECECEC] p-5 shadow-sm ring-1 ring-slate-200/80"
+          className="mx-auto w-full max-w-lg space-y-4 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200"
         >
           {formError ? <p className="text-sm font-medium text-red-600">{formError}</p> : null}
 
@@ -381,12 +390,6 @@ function SenderFormInner() {
             >
               {saving ? senderCopy.saving : senderCopy.save}
             </button>
-            <Link
-              href="/send"
-              className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700"
-            >
-              {senderCopy.back}
-            </Link>
           </div>
         </form>
       </section>
@@ -398,7 +401,7 @@ export default function SenderInfoPage() {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen bg-[#F4F4F4] p-6">
+        <main className="min-h-screen bg-slate-100 p-6">
           <p className="text-sm text-slate-600">{senderCopy.loadingForm}</p>
         </main>
       }

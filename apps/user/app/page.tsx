@@ -1,10 +1,5 @@
 import Link from "next/link";
-import { getIronSession } from "iron-session";
-import { cookies } from "next/headers";
-import { eq } from "drizzle-orm";
-import { getDb, users } from "@quickload/shared/db";
-import type { LineAppSession } from "@/lib/session";
-import { getSessionOptions } from "@/lib/session";
+import { getCurrentUser } from "@/lib/current-user";
 import { BannerCarousel } from "./banner-carousel";
 
 const quickMenus = [
@@ -20,25 +15,10 @@ const secondRowMenus = quickMenus.slice(2);
 const TITLE_FONT_CLASS = "font-title-placeholder";
 
 export default async function HomePage() {
-  const session = await getIronSession<LineAppSession>(cookies(), getSessionOptions());
-
-  let firstName = "";
-  let lastName = "";
-  if (session.userId) {
-    const db = getDb();
-    const rows = await db
-      .select({
-        firstName: users.firstName,
-        lastName: users.lastName,
-      })
-      .from(users)
-      .where(eq(users.id, session.userId))
-      .limit(1);
-    const row = rows[0];
-    firstName = row?.firstName?.trim() ?? "";
-    lastName = row?.lastName?.trim() ?? "";
-  }
-  const helloName = `${firstName} ${lastName}`.trim() || session.displayName || "Quickload user";
+  const user = await getCurrentUser();
+  const firstName = user.firstName?.trim() ?? "";
+  const lastName = user.lastName?.trim() ?? "";
+  const helloName = `${firstName} ${lastName}`.trim() || user.displayName || "Quickload user";
 
   return (
     <main className="min-h-full bg-slate-100">
@@ -46,9 +26,9 @@ export default async function HomePage() {
         <div className="mx-auto w-full max-w-lg">
           <p className={`${TITLE_FONT_CLASS} text-3xl font-bold leading-tight`}>Hello, {helloName}</p>
           <p className="mt-0 text-base text-white/80">เลือกบริการด้านล่าง</p>
-          <form className="mt-4" action="/tracking" method="get">
+          <form className="mt-4" action="/parcels" method="get">
             <label className="sr-only" htmlFor="tracking-search">
-              ค้นหารหัสพัสดุ
+              ค้นหาพัสดุ
             </label>
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400" aria-hidden>
@@ -66,8 +46,8 @@ export default async function HomePage() {
               <input
                 id="tracking-search"
                 type="text"
-                name="trackingId"
-                placeholder="ค้นหาพัสดุ หรือ ติดตามพัสดุ"
+                name="q"
+                placeholder="ค้นหาเลขพัสดุ หรือ บาร์โค้ด"
                 required
                 className="w-full rounded-lg border border-white/25 bg-white py-3 pl-10 pr-4 text-sm text-slate-800 outline-none placeholder:text-slate-400"
               />
@@ -80,13 +60,24 @@ export default async function HomePage() {
         <div className="mx-auto w-full max-w-lg space-y-5">
           <Link
             href="/send"
+            prefetch
             className="flex items-center justify-between rounded-lg bg-white px-5 py-5 shadow-sm ring-1 ring-slate-200 transition hover:border-[#2726F5]"
           >
             <div>
               <h3 className="text-xl font-medium">ส่งพัสดุ</h3>
               <p className="mt-1 text-xs text-slate-500">เริ่มลงทะเบียนพัสดุใหม่</p>
             </div>
-            <img src="/truck.png" alt="ส่งพัสดุ" width={120} height={120} className="object-contain" />
+            {/* eslint-disable-next-line @next/next/no-img-element -- avoid next/image optimizer to keep ngrok stable */}
+            <img
+              src="/truck.png"
+              alt="ส่งพัสดุ"
+              width={120}
+              height={120}
+              loading="eager"
+              // @ts-expect-error -- `fetchpriority` is valid HTML but missing from React types <19.
+              fetchpriority="high"
+              className="object-contain"
+            />
           </Link>
 
           <div className="grid grid-cols-2 gap-4">
@@ -94,6 +85,7 @@ export default async function HomePage() {
               <Link
                 key={menu.href}
                 href={menu.href}
+                prefetch
                 className="rounded-lg bg-white px-2 py-3 text-center shadow-sm ring-1 ring-slate-200 transition hover:border-[#2726F5] hover:bg-[#2726F5]/5"
               >
                 <img src={menu.iconSrc} alt="" className="mx-auto h-12 w-12 object-contain" aria-hidden />
@@ -107,6 +99,7 @@ export default async function HomePage() {
               <Link
                 key={menu.href}
                 href={menu.href}
+                prefetch
                 className="rounded-lg bg-white px-2 py-3 text-center shadow-sm ring-1 ring-slate-200 transition hover:border-[#2726F5] hover:bg-[#2726F5]/5"
               >
                 <img src={menu.iconSrc} alt="" className="mx-auto h-10 w-10 object-contain" aria-hidden />
@@ -115,7 +108,7 @@ export default async function HomePage() {
             ))}
           </div>
         </div>
-        <section className="mt-8 rounded-lg bg-gradient-to-r from-[#2726F5] to-[#5655ff] text-white shadow-sm">
+        <section className="mt-8 mx-auto rounded-lg bg-gradient-to-r from-[#2726F5] to-[#5655ff] text-white shadow-sm max-w-lg">
           <BannerCarousel />
         </section>
       </section>

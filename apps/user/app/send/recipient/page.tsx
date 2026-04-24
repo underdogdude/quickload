@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { normalizeThaiPhone, isValidThaiPhone } from "@/lib/thai-phone";
 import { recipientCopy } from "./strings";
 
 type ThaiAddressRow = {
@@ -11,8 +12,6 @@ type ThaiAddressRow = {
   province: string;
   zipcode: string;
 };
-
-const PHONE_REGEX = /^(\+66|0)\d{8,9}$/;
 
 function formatSelectedAddress(row: ThaiAddressRow) {
   return `${row.tambon}, ${row.amphoe}, ${row.province}, ${row.zipcode}`;
@@ -28,7 +27,7 @@ function RecipientFormInner() {
   const [addressLine, setAddressLine] = useState("");
   const [locationQuery, setLocationQuery] = useState("");
   const [locationSelected, setLocationSelected] = useState<ThaiAddressRow | null>(null);
-  const [primaryAccount, setPrimaryAccount] = useState(false);
+  const [saveAddress, setSaveAddress] = useState(true);
 
   const [suggestions, setSuggestions] = useState<ThaiAddressRow[]>([]);
   const [suggestLoading, setSuggestLoading] = useState(false);
@@ -45,7 +44,7 @@ function RecipientFormInner() {
   const comboRef = useRef<HTMLDivElement | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const normalizedPhone = phone.replace(/[\s-]/g, "");
+  const normalizedPhone = normalizeThaiPhone(phone);
 
   useEffect(() => {
     if (!editId) {
@@ -84,7 +83,6 @@ function RecipientFormInner() {
           zipcode: String(d.zipcode ?? ""),
         }),
       );
-      setPrimaryAccount(Boolean(d.isPrimary));
       setLoadingRecord(false);
     })();
     return () => {
@@ -166,9 +164,11 @@ function RecipientFormInner() {
     const nextNameError = !name.trim() ? recipientCopy.errName : null;
     const nextPhoneError = !normalizedPhone
       ? recipientCopy.errPhoneRequired
-      : !PHONE_REGEX.test(normalizedPhone)
+      : /^(?:\+66|66)/.test(phone.trim())
         ? recipientCopy.errPhoneFormat
-        : null;
+        : !isValidThaiPhone(phone)
+          ? recipientCopy.errPhoneFormat
+          : null;
     const nextAddressError = !addressLine.trim() ? recipientCopy.errAddress : null;
     const nextLocationError = !locationSelected ? recipientCopy.errLocation : null;
 
@@ -181,6 +181,11 @@ function RecipientFormInner() {
     const loc = locationSelected;
     if (!loc) return;
 
+    if (!saveAddress && !editId) {
+      router.replace("/send");
+      return;
+    }
+
     setSaving(true);
     const payload = {
       contactName: name.trim(),
@@ -190,7 +195,7 @@ function RecipientFormInner() {
       amphoe: loc.amphoe,
       province: loc.province,
       zipcode: loc.zipcode,
-      isPrimary: primaryAccount,
+      isPrimary: false,
     };
 
     try {
@@ -210,7 +215,11 @@ function RecipientFormInner() {
         setFormError(json.error ?? recipientCopy.errSave);
         return;
       }
-      router.replace(`/send?recipientSaved=1&recipientId=${encodeURIComponent(json.data.id)}`);
+      if (saveAddress) {
+        router.replace(`/send?recipientSaved=1&recipientId=${encodeURIComponent(json.data.id)}`);
+      } else {
+        router.replace("/send");
+      }
       router.refresh();
     } catch {
       setFormError(recipientCopy.errSave);
@@ -225,32 +234,40 @@ function RecipientFormInner() {
 
   if (loadingRecord) {
     return (
-      <main className="min-h-screen bg-[#F4F4F4] pb-8">
+      <main className="min-h-screen bg-slate-100 pb-8">
         <section className="bg-[#2726F5] px-6 pb-16 pt-10 text-white">
           <div className="mx-auto w-full max-w-lg">
             <h1 className="text-3xl font-bold">{title}</h1>
           </div>
         </section>
         <section className="-mt-8 px-6">
-          <p className="mx-auto max-w-lg rounded-3xl bg-[#ECECEC] p-5 text-sm text-slate-600">{recipientCopy.loadingForm}</p>
+          <p className="mx-auto max-w-lg rounded-lg bg-white p-5 text-sm text-slate-600 shadow-sm ring-1 ring-slate-200">{recipientCopy.loadingForm}</p>
         </section>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#F4F4F4] pb-8">
-      <section className="bg-[#2726F5] px-6 pb-16 pt-10 text-white">
+    <main className="min-h-screen bg-slate-100 pb-8">
+      <section className="bg-[#2726F5] px-6 pb-20 pt-8 text-white">
         <div className="mx-auto w-full max-w-lg">
+          <Link
+            href="/send"
+            className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white/95"
+            aria-label="กลับไปหน้าลงทะเบียนพัสดุ"
+          >
+            <span aria-hidden>←</span>
+            <span>กลับ</span>
+          </Link>
           <h1 className="text-3xl font-bold">{title}</h1>
-          <p className="mt-2 text-sm text-white/80">{recipientCopy.subtitle}</p>
+          <p className="mt-0 text-base text-white/80">{recipientCopy.subtitle}</p>
         </div>
       </section>
 
-      <section className="-mt-8 px-6">
+      <section className="-mt-12 px-6">
         <form
           onSubmit={(e) => void onSubmit(e)}
-          className="mx-auto w-full max-w-lg space-y-4 rounded-3xl bg-[#ECECEC] p-5 shadow-sm ring-1 ring-slate-200/80"
+          className="mx-auto w-full max-w-lg space-y-4 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200"
         >
           {formError ? <p className="text-sm font-medium text-red-600">{formError}</p> : null}
 
@@ -357,12 +374,12 @@ function RecipientFormInner() {
           <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-300 bg-white px-4 py-3">
             <input
               type="checkbox"
-              checked={primaryAccount}
-              onChange={(e) => setPrimaryAccount(e.target.checked)}
+              checked={saveAddress}
+              onChange={(e) => setSaveAddress(e.target.checked)}
               className="mt-1 h-4 w-4 rounded border-slate-300 text-[#2726F5] focus:ring-[#2726F5]"
               disabled={saving}
             />
-            <span className="text-sm font-medium text-slate-800">{recipientCopy.checkboxPrimary}</span>
+            <span className="text-sm font-medium text-slate-800">{recipientCopy.checkboxSaveAddress}</span>
           </label>
 
           <div className="flex flex-wrap gap-3 pt-1">
@@ -373,12 +390,6 @@ function RecipientFormInner() {
             >
               {saving ? recipientCopy.saving : recipientCopy.save}
             </button>
-            <Link
-              href="/send"
-              className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700"
-            >
-              {recipientCopy.back}
-            </Link>
           </div>
         </form>
       </section>
@@ -390,7 +401,7 @@ export default function RecipientInfoPage() {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen bg-[#F4F4F4] p-6">
+        <main className="min-h-screen bg-slate-100 p-6">
           <p className="text-sm text-slate-600">{recipientCopy.loadingForm}</p>
         </main>
       }

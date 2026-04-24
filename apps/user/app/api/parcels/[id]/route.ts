@@ -1,5 +1,5 @@
 import { getLegacyParcel, getLegacyTrackingEvents } from "@quickload/shared/legacy";
-import { getDb, parcels } from "@quickload/shared/db";
+import { getDb, orders, parcels } from "@quickload/shared/db";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { requireLineSession } from "@/lib/require-user";
@@ -18,9 +18,11 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
     if (!parcel) {
       return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
     }
+    const orderRows = await db.select().from(orders).where(eq(orders.parcelId, id)).limit(1);
+    const order = orderRows[0] ?? null;
     const legacy = await getLegacyParcel(parcel.trackingId);
     const events = await getLegacyTrackingEvents(parcel.trackingId);
-    return NextResponse.json({ ok: true, data: { parcel, legacy, events } });
+    return NextResponse.json({ ok: true, data: { parcel, order, legacy, events } });
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";

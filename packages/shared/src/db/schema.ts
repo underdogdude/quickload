@@ -34,7 +34,10 @@ export const adminUsers = pgTable("admin_users", {
 
 export const parcels = pgTable("parcels", {
   id: uuid("id").primaryKey().defaultRandom(),
+  /** Primary public tracking: Smartpost `smartpost_trackingcode` when available, else barcode / draft id. */
   trackingId: text("tracking_id").notNull().unique(),
+  /** Thailand Post–style barcode (e.g. WB…TH) when Smartpost returns it; may differ from `tracking_id`. */
+  barcode: text("barcode"),
   userId: uuid("user_id").references(() => users.id),
   destination: text("destination"),
   weightKg: numeric("weight_kg", { precision: 12, scale: 3 }),
@@ -43,6 +46,48 @@ export const parcels = pgTable("parcels", {
   price: numeric("price", { precision: 14, scale: 2 }),
   isPaid: boolean("is_paid").notNull().default(false),
   source: text("source").notNull().default("self"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
+});
+
+/** Smartpost addItem success snapshot; one row per parcel after carrier accepts the order. */
+export const orders = pgTable("orders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  parcelId: uuid("parcel_id")
+    .notNull()
+    .references(() => parcels.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => users.id),
+  statuscode: text("statuscode"),
+  message: text("message"),
+  smartpostTrackingcode: text("smartpost_trackingcode"),
+  barcode: text("barcode"),
+  serviceType: text("service_type"),
+  productInbox: text("product_inbox"),
+  productWeight: text("product_weight"),
+  productPrice: text("product_price"),
+  shipperName: text("shipper_name"),
+  shipperAddress: text("shipper_address"),
+  shipperSubdistrict: text("shipper_subdistrict"),
+  shipperDistrict: text("shipper_district"),
+  shipperProvince: text("shipper_province"),
+  shipperZipcode: text("shipper_zipcode"),
+  shipperEmail: text("shipper_email"),
+  shipperMobile: text("shipper_mobile"),
+  cusName: text("cus_name"),
+  cusAdd: text("cus_add"),
+  cusSub: text("cus_sub"),
+  cusAmp: text("cus_amp"),
+  cusProv: text("cus_prov"),
+  cusZipcode: text("cus_zipcode"),
+  cusTel: text("cus_tel"),
+  cusEmail: text("cus_email"),
+  customerCode: text("customer_code"),
+  cost: numeric("cost", { precision: 14, scale: 2 }),
+  finalcost: numeric("finalcost", { precision: 14, scale: 2 }),
+  orderStatus: text("order_status"),
+  items: text("items"),
+  insuranceRatePrice: text("insurance_rate_price"),
+  referenceId: text("reference_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }),
 });

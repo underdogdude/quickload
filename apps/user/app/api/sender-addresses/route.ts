@@ -1,10 +1,10 @@
 import { getDb, senderAddresses } from "@quickload/shared/db";
 import { and, desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { CacheHeaders, jsonWithCache } from "@/lib/api-cache";
+import { normalizeThaiPhone, isValidThaiPhone } from "@/lib/thai-phone";
 import { requireLineSession } from "@/lib/require-user";
 import { serializeSenderAddress } from "@/lib/sender-address-api";
-
-const PHONE_REGEX = /^(\+66|0)\d{8,9}$/;
 
 type Body = {
   contactName?: string;
@@ -19,7 +19,7 @@ type Body = {
 
 function parseBody(body: Body) {
   const contactName = body.contactName?.trim();
-  const phone = body.phone?.trim().replace(/[\s-]/g, "") ?? "";
+  const phone = normalizeThaiPhone(body.phone ?? "");
   const addressLine = body.addressLine?.trim();
   const tambon = body.tambon?.trim();
   const amphoe = body.amphoe?.trim();
@@ -33,7 +33,7 @@ function parseBody(body: Body) {
   if (!phone) {
     return { error: "phone is required" as const };
   }
-  if (!PHONE_REGEX.test(phone)) {
+  if (!isValidThaiPhone(phone)) {
     return { error: "Invalid phone format" as const };
   }
   return {
@@ -50,10 +50,10 @@ export async function GET() {
       .from(senderAddresses)
       .where(eq(senderAddresses.userId, session.userId))
       .orderBy(desc(senderAddresses.isPrimary), desc(senderAddresses.createdAt));
-    return NextResponse.json({
-      ok: true,
-      data: rows.map(serializeSenderAddress),
-    });
+    return jsonWithCache(
+      { ok: true, data: rows.map(serializeSenderAddress) },
+      CacheHeaders.privateShortSwr(10, 30),
+    );
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";

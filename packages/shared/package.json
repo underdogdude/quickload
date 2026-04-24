@@ -18,7 +18,10 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:apply:sender": "node ./scripts/apply-sender-sql.mjs",
-    "db:apply:recipient": "node ./scripts/apply-recipient-sql.mjs"
+    "db:apply:recipient": "node ./scripts/apply-recipient-sql.mjs",
+    "db:apply:orders": "node ./scripts/apply-orders-sql.mjs",
+    "db:apply:parcels-barcode": "node ./scripts/apply-parcels-barcode-sql.mjs",
+    "db:reset:parcels": "node ./scripts/reset-parcels-orders-sql.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",

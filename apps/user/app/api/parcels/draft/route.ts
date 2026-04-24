@@ -1,9 +1,15 @@
 import { and, eq } from "drizzle-orm";
-import { getDb, parcels, recipientAddresses, senderAddresses } from "@quickload/shared/db";
+import { getDb, orders, parcels, recipientAddresses, senderAddresses } from "@quickload/shared/db";
 import { NextResponse } from "next/server";
+import {
+  mapSmartpostInnerToOrderFields,
+  parseSmartpostAddItemResponse,
+} from "@/lib/smartpost-add-item";
+import { createOrderSuccessFlexMessage } from "@/lib/line-flex";
+import { pushLineMessage } from "@/lib/line-messaging";
 import { requireLineSession } from "@/lib/require-user";
 
-type DraftBody = {
+type CreateBody = {
   senderId?: string;
   recipientId?: string;
   shippingMode?: "branch" | "pickup";
@@ -14,6 +20,8 @@ type DraftBody = {
   heightCm?: string;
   parcelType?: string;
   note?: string;
+  /** Required: raw JSON from Smartpost addItem after HTTP 201 / statuscode 201. */
+  smartpostAddItemResponse: unknown;
 };
 
 function toPositiveNumber(value?: string) {
@@ -22,15 +30,11 @@ function toPositiveNumber(value?: string) {
   return n;
 }
 
-function generateDraftTrackingId() {
-  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `QLDRAFT-${Date.now()}-${random}`;
-}
-
+/** Persists parcel + order only after Smartpost addItem succeeds. */
 export async function POST(request: Request) {
   try {
     const session = await requireLineSession();
-    const body = (await request.json()) as DraftBody;
+    const body = (await request.json()) as CreateBody;
 
     const senderId = body.senderId?.trim();
     const recipientId = body.recipientId?.trim();
@@ -54,6 +58,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "parcelType is required" }, { status: 400 });
     }
 
+    if (body.smartpostAddItemResponse === undefined || body.smartpostAddItemResponse === null) {
+      return NextResponse.json(
+        { ok: false, error: "smartpostAddItemResponse is required; parcels must be created via Smartpost addItem" },
+        { status: 400 },
+      );
+    }
+
+    const parsedSmartpost = parseSmartpostAddItemResponse(body.smartpostAddItemResponse);
+    if (!parsedSmartpost) {
+      return NextResponse.json({ ok: false, error: "Invalid smartpostAddItemResponse" }, { status: 400 });
+    }
+    if (parsedSmartpost.statuscode !== "201") {
+      return NextResponse.json({ ok: false, error: "Smartpost order not successful" }, { status: 400 });
+    }
+
+    const smartpostFields = mapSmartpostInnerToOrderFields(parsedSmartpost.inner);
+    const trackingId =
+      smartpostFields.smartpostTrackingcode?.trim() || smartpostFields.barcode?.trim() || null;
+    if (!trackingId) {
+      return NextResponse.json(
+        { ok: false, error: "Smartpost response missing smartpost_trackingcode and barcode" },
+        { status: 400 },
+      );
+    }
+    const parcelBarcode = smartpostFields.barcode?.trim() || null;
+
+    let parcelPrice: string | null = null;
+    if (smartpostFields.finalcost?.trim()) {
+      const p = Number(smartpostFields.finalcost);
+      if (Number.isFinite(p)) parcelPrice = p.toFixed(2);
+    }
+
     const db = getDb();
     const [sender] = await db
       .select()
@@ -72,27 +108,100 @@ export async function POST(request: Request) {
 
     const destination = `${recipient.contactName} · ${recipient.amphoe}, ${recipient.province}`;
     const size = `${widthCm}x${lengthCm}x${heightCm}cm · ${parcelType}`;
-    const trackingId = generateDraftTrackingId();
     const weightKg = (weightGram / 1000).toFixed(3);
 
     const inserted = await db
       .insert(parcels)
       .values({
         trackingId,
+        barcode: parcelBarcode,
         userId: session.userId,
         destination,
         weightKg,
         size,
-        status: "draft",
+        status: "registered",
+        price: parcelPrice,
         source: `send:${shippingMode}:${autoPrint ? "autoprint" : "manual"}${note ? ":note" : ""}`,
       })
       .returning();
 
+    const parcelRow = inserted[0];
+    if (!parcelRow?.id || !parcelRow.trackingId) {
+      return NextResponse.json({ ok: false, error: "Failed to create parcel" }, { status: 500 });
+    }
+
+    const f = smartpostFields;
+    await db.insert(orders).values({
+      parcelId: parcelRow.id,
+      userId: session.userId,
+      statuscode: parsedSmartpost.statuscode,
+      message: parsedSmartpost.message,
+      smartpostTrackingcode: f.smartpostTrackingcode || null,
+      barcode: f.barcode || null,
+      serviceType: f.serviceType || null,
+      productInbox: f.productInbox || null,
+      productWeight: f.productWeight || null,
+      productPrice: f.productPrice || null,
+      shipperName: f.shipperName || null,
+      shipperAddress: f.shipperAddress || null,
+      shipperSubdistrict: f.shipperSubdistrict || null,
+      shipperDistrict: f.shipperDistrict || null,
+      shipperProvince: f.shipperProvince || null,
+      shipperZipcode: f.shipperZipcode || null,
+      shipperEmail: f.shipperEmail || null,
+      shipperMobile: f.shipperMobile || null,
+      cusName: f.cusName || null,
+      cusAdd: f.cusAdd || null,
+      cusSub: f.cusSub || null,
+      cusAmp: f.cusAmp || null,
+      cusProv: f.cusProv || null,
+      cusZipcode: f.cusZipcode || null,
+      cusTel: f.cusTel || null,
+      cusEmail: f.cusEmail || null,
+      customerCode: f.customerCode || null,
+      cost: f.cost.trim() ? f.cost : null,
+      finalcost: f.finalcost.trim() ? f.finalcost : null,
+      orderStatus: f.orderStatus || null,
+      items: f.items || null,
+      insuranceRatePrice: f.insuranceRatePrice || null,
+      referenceId: f.referenceId || null,
+    });
+
+    try {
+      const barcode = f.barcode?.trim() || parcelRow.barcode?.trim() || "";
+      const trackingNumber = barcode || parcelRow.trackingId;
+      const referenceCode = f.smartpostTrackingcode?.trim() || "";
+      const trackingUrl = new URL("/tracking", request.url).toString();
+      const qrCodeImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(
+        trackingNumber,
+      )}`;
+      const flexMessage = createOrderSuccessFlexMessage({
+        trackingNumber,
+        referenceCode: referenceCode && referenceCode !== trackingNumber ? referenceCode : null,
+        senderName: sender.contactName,
+        senderPhone: sender.phone,
+        recipientName: recipient.contactName,
+        recipientPhone: recipient.phone,
+        weightGram,
+        sizeText: `${widthCm} x ${lengthCm} x ${heightCm} ซม.`,
+        parcelType,
+        trackingUrl,
+        qrCodeImageUrl,
+      });
+      await pushLineMessage({
+        to: session.lineUserId,
+        message: flexMessage,
+      });
+    } catch (lineErr) {
+      const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
+      console.warn("[line-flex] send failed:", msg);
+    }
+
     return NextResponse.json({
       ok: true,
       data: {
-        id: inserted[0]?.id,
-        trackingId: inserted[0]?.trackingId,
+        id: parcelRow.id,
+        trackingId: parcelRow.trackingId,
       },
     });
   } catch (e) {
@@ -101,4 +210,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
-

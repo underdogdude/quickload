@@ -9,17 +9,22 @@ export async function middleware(request: NextRequest) {
   }
 
   const { pathname } = request.nextUrl;
-  if (
-    pathname.startsWith("/api") ||
-    pathname.startsWith("/_next") ||
-    pathname === "/favicon.ico" ||
-    pathname === "/entry"
-  ) {
+  if (pathname.startsWith("/api") || pathname.startsWith("/_next") || pathname === "/favicon.ico") {
     return NextResponse.next();
   }
 
   const response = NextResponse.next();
   const session = await getIronSession<LineAppSession>(request, response, getSessionOptions());
+
+  if (pathname === "/entry") {
+    if (session.lineUserId) {
+      const url = request.nextUrl.clone();
+      url.pathname = session.profileCompleted ? "/" : "/register";
+      return NextResponse.redirect(url);
+    }
+    return NextResponse.next();
+  }
+
   if (!session.lineUserId) {
     const url = request.nextUrl.clone();
     url.pathname = "/entry";
@@ -37,5 +42,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|ttf|otf|woff|woff2)$).*)",
+  ],
 };

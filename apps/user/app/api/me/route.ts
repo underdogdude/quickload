@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { CacheHeaders, jsonWithCache } from "@/lib/api-cache";
 import { requireLineSession } from "@/lib/require-user";
 import type { LineAppSession } from "@/lib/session";
 import { getSessionOptions } from "@/lib/session";
@@ -33,7 +34,7 @@ export async function GET() {
     if (!user) {
       return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 });
     }
-    return NextResponse.json({ ok: true, data: user });
+    return jsonWithCache({ ok: true, data: user }, CacheHeaders.privateShortSwr(15, 60));
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";

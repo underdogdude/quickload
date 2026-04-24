@@ -1,63 +1,119 @@
-"use client";
-
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { redirect } from "next/navigation";
+import { desc, eq, inArray } from "drizzle-orm";
+import { getDb, orders, parcels } from "@quickload/shared/db";
+import { getCurrentUser } from "@/lib/current-user";
+import { ParcelsListClient } from "./parcels-list-client";
 
 type ParcelRow = {
   id: string;
   trackingId: string;
+  barcode: string | null;
   status: string;
   destination: string | null;
   isPaid: boolean;
   createdAt: string;
+  senderProvince: string | null;
+  senderName: string | null;
+  senderPhone: string | null;
+  recipientProvince: string | null;
+  recipientName: string | null;
+  recipientPhone: string | null;
 };
 
-export default function ParcelsPage() {
-  const [items, setItems] = useState<ParcelRow[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+async function loadParcels(
+  userId: string,
+): Promise<{ items: ParcelRow[]; error: string | null }> {
+  try {
+    const db = getDb();
+    const parcelRows = await db
+      .select({
+        id: parcels.id,
+        trackingId: parcels.trackingId,
+        barcode: parcels.barcode,
+        status: parcels.status,
+        destination: parcels.destination,
+        isPaid: parcels.isPaid,
+        createdAt: parcels.createdAt,
+      })
+      .from(parcels)
+      .where(eq(parcels.userId, userId))
+      .orderBy(desc(parcels.createdAt));
 
-  function getStatusLabel(status: string) {
-    if (status === "draft") return "แบบร่าง";
-    if (status === "registered") return "ลงทะเบียนแล้ว";
-    if (status === "in_transit") return "อยู่ระหว่างขนส่ง";
-    if (status === "delivered") return "จัดส่งสำเร็จ";
-    if (status === "failed") return "จัดส่งไม่สำเร็จ";
-    return status;
-  }
-
-  function getStatusClass(status: string) {
-    if (status === "draft") return "bg-amber-100 text-amber-800";
-    if (status === "registered") return "bg-blue-100 text-blue-800";
-    if (status === "in_transit") return "bg-sky-100 text-sky-800";
-    if (status === "delivered") return "bg-emerald-100 text-emerald-800";
-    if (status === "failed") return "bg-rose-100 text-rose-800";
-    return "bg-slate-100 text-slate-700";
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/parcels");
-        const json = (await res.json()) as { ok?: boolean; data?: ParcelRow[]; error?: string };
-        if (cancelled) return;
-        if (!res.ok || !json.ok) {
-          setError(json.error ?? "โหลดรายการพัสดุไม่สำเร็จ");
-          return;
-        }
-        const sorted = [...(json.data ?? [])].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-        setItems(sorted);
-      } catch {
-        if (!cancelled) setError("โหลดรายการพัสดุไม่สำเร็จ");
-      } finally {
-        if (!cancelled) setLoading(false);
+    const parcelIds = parcelRows.map((row) => row.id);
+    const orderMap = new Map<
+      string,
+      {
+        senderProvince: string | null;
+        senderName: string | null;
+        senderPhone: string | null;
+        recipientProvince: string | null;
+        recipientName: string | null;
+        recipientPhone: string | null;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    >();
+    if (parcelIds.length > 0) {
+      const orderRows = await db
+        .select({
+          parcelId: orders.parcelId,
+          senderProvince: orders.shipperProvince,
+          senderName: orders.shipperName,
+          senderPhone: orders.shipperMobile,
+          recipientProvince: orders.cusProv,
+          recipientName: orders.cusName,
+          recipientPhone: orders.cusTel,
+        })
+        .from(orders)
+        .where(inArray(orders.parcelId, parcelIds))
+        .orderBy(desc(orders.createdAt));
+
+      for (const row of orderRows) {
+        if (!orderMap.has(row.parcelId)) {
+          orderMap.set(row.parcelId, {
+            senderProvince: row.senderProvince,
+            senderName: row.senderName,
+            senderPhone: row.senderPhone,
+            recipientProvince: row.recipientProvince,
+            recipientName: row.recipientName,
+            recipientPhone: row.recipientPhone,
+          });
+        }
+      }
+    }
+
+    const items: ParcelRow[] = parcelRows.map((r) => ({
+      id: r.id,
+      trackingId: r.trackingId,
+      barcode: r.barcode,
+      status: r.status,
+      destination: r.destination,
+      isPaid: r.isPaid,
+      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+      senderProvince: orderMap.get(r.id)?.senderProvince ?? null,
+      senderName: orderMap.get(r.id)?.senderName ?? null,
+      senderPhone: orderMap.get(r.id)?.senderPhone ?? null,
+      recipientProvince: orderMap.get(r.id)?.recipientProvince ?? null,
+      recipientName: orderMap.get(r.id)?.recipientName ?? null,
+      recipientPhone: orderMap.get(r.id)?.recipientPhone ?? null,
+    }));
+    return { items, error: null };
+  } catch {
+    return { items: [], error: "โหลดรายการพัสดุไม่สำเร็จ" };
+  }
+}
+
+export default async function ParcelsPage({
+  searchParams,
+}: {
+  searchParams?: { q?: string | string[] };
+}) {
+  const user = await getCurrentUser();
+  if (!user.loggedIn || !user.userId) {
+    redirect("/entry");
+  }
+
+  const qRaw = searchParams?.q;
+  const initialQuery = typeof qRaw === "string" ? qRaw : Array.isArray(qRaw) ? (qRaw[0] ?? "") : "";
+  const { items, error } = await loadParcels(user.userId);
 
   return (
     <main className="min-h-screen bg-slate-100 pb-28">
@@ -69,53 +125,8 @@ export default function ParcelsPage() {
       </section>
 
       <section className="-mt-8 px-6">
-        <div className="mx-auto w-full max-w-lg space-y-3">
-          {error ? (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{error}</div>
-          ) : null}
-
-          {loading ? <p className="rounded-lg bg-white p-4 text-sm text-slate-500 shadow-sm">กำลังโหลดรายการ...</p> : null}
-
-          {items.map((p) => (
-            <article key={p.id} className="rounded-lg bg-white p-4 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-900">{p.trackingId}</p>
-                  <p className="mt-0.5 truncate text-xs text-slate-500">{p.destination ?? "ยังไม่ได้ระบุปลายทาง"}</p>
-                </div>
-                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${getStatusClass(p.status)}`}>
-                  {getStatusLabel(p.status)}
-                </span>
-              </div>
-
-              <div className="mt-3 flex items-center justify-between">
-                <p className="text-xs text-slate-500">{p.isPaid ? "ชำระเงินแล้ว" : "รอชำระเงิน"}</p>
-                <div className="flex items-center gap-2">
-                  {p.status === "draft" && !p.isPaid ? (
-                    <Link href="/payment" className="rounded-full bg-[#2726F5] px-3 py-1.5 text-xs font-medium text-white">
-                      ชำระเงิน
-                    </Link>
-                  ) : null}
-                  <Link href={`/parcels/${p.id}`} className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
-                    ดูรายละเอียด
-                  </Link>
-                </div>
-              </div>
-            </article>
-          ))}
-
-          {!loading && items.length === 0 && !error ? (
-            <div className="rounded-lg bg-white p-5 text-center shadow-sm">
-              <p className="text-sm font-medium text-slate-700">ยังไม่มีพัสดุ</p>
-              <p className="mt-1 text-xs text-slate-500">เริ่มสร้างรายการส่งพัสดุใหม่ได้ที่หน้าส่งพัสดุ</p>
-              <Link href="/send" className="mt-3 inline-flex rounded-full bg-[#2726F5] px-4 py-2 text-xs font-medium text-white">
-                ไปหน้าส่งพัสดุ
-              </Link>
-            </div>
-          ) : null}
-        </div>
+        <ParcelsListClient items={items} error={error} initialQuery={initialQuery} />
       </section>
     </main>
   );
 }
-

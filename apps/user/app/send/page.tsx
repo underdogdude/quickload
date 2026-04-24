@@ -1,9 +1,34 @@
 "use client";
 
 import type { RecipientAddress, SenderAddress } from "@quickload/shared/types";
+import { SendAddressCardSkeleton } from "@/components/skeleton";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
+
+const PARCEL_TYPE_OPTIONS = [
+  "เอกสาร",
+  "เสื้อผ้าเครื่องประดับ",
+  "เครื่องสำอาง/ความงาม",
+  "อุปกรณ์อิเล็กทรอนิค",
+  "อาหาร",
+  "ผลไม้",
+  "เครื่องมือช่าง",
+  "สุขภาพ",
+  "ต้นไม้",
+  "อื่นๆ",
+] as const;
+const MAX_PARCEL_WEIGHT_GRAM = 30_000;
+
+type ParcelTypeOption = (typeof PARCEL_TYPE_OPTIONS)[number];
+
+function parcelTypeFromQuery(get: (key: string) => string | null): ParcelTypeOption {
+  const raw = get("parcelType");
+  if (raw && (PARCEL_TYPE_OPTIONS as readonly string[]).includes(raw)) {
+    return raw as ParcelTypeOption;
+  }
+  return "เอกสาร";
+}
 
 function AddressBookIcon() {
   return (
@@ -42,36 +67,41 @@ function SendParcelInner() {
   const recipientSaved = searchParams.get("recipientSaved") === "1";
   const recipientIdParam = searchParams.get("recipientId");
 
-  const [shippingMode, setShippingMode] = useState<"branch" | "pickup">("branch");
-  const [autoPrint, setAutoPrint] = useState(true);
-  const [weightGram, setWeightGram] = useState("1000");
-  const [widthCm, setWidthCm] = useState("");
-  const [lengthCm, setLengthCm] = useState("");
-  const [heightCm, setHeightCm] = useState("");
-  const [note, setNote] = useState("");
+  const [shippingMode, setShippingMode] = useState<"branch" | "pickup">(
+    () => (searchParams.get("shippingMode") === "pickup" ? "pickup" : "branch"),
+  );
+  const [autoPrint, setAutoPrint] = useState(() => searchParams.get("autoPrint") !== "0");
+  const [extraInsurance, setExtraInsurance] = useState(() => searchParams.get("extraInsurance") === "1");
+  const [insuredValue, setInsuredValue] = useState(() => searchParams.get("insuredValue") || "");
+  const [weightGram, setWeightGram] = useState(() => searchParams.get("weightGram") || "");
+  const [widthCm, setWidthCm] = useState(() => searchParams.get("widthCm") || "");
+  const [lengthCm, setLengthCm] = useState(() => searchParams.get("lengthCm") || "");
+  const [heightCm, setHeightCm] = useState(() => searchParams.get("heightCm") || "");
+  const [note, setNote] = useState(() => searchParams.get("note") || "");
   const [formError, setFormError] = useState<string | null>(null);
   const [parcelTypeOpen, setParcelTypeOpen] = useState(false);
-  const parcelTypeOptions = [
-    "เอกสาร",
-    "เสื้อผ้าเครื่องประดับ",
-    "เครื่องสำอาง/ความงาม",
-    "อุปกรณ์อิเล็กทรอนิค",
-    "อาหาร",
-    "ผลไม้",
-    "เครื่องมือช่าง",
-    "สุขภาพ",
-    "ต้นไม้",
-    "อื่นๆ",
-  ] as const;
-  const [parcelType, setParcelType] = useState<(typeof parcelTypeOptions)[number]>("เครื่องสำอาง/ความงาม");
+  const [parcelType, setParcelType] = useState<ParcelTypeOption>(() => parcelTypeFromQuery((k) => searchParams.get(k)));
   const [addresses, setAddresses] = useState<SenderAddress[]>([]);
   const [addressesLoading, setAddressesLoading] = useState(true);
   const [recipientAddresses, setRecipientAddresses] = useState<RecipientAddress[]>([]);
   const [recipientAddressesLoading, setRecipientAddressesLoading] = useState(true);
+  const [showSenderSavedToast, setShowSenderSavedToast] = useState(senderSaved);
+  const [showRecipientSavedToast, setShowRecipientSavedToast] = useState(recipientSaved);
 
   function onlyNumber(value: string) {
     return value.replace(/\D/g, "");
   }
+
+  function calculateInsuranceFee(productPrice: number) {
+    if (productPrice <= 2000) return 0;
+    return Math.ceil(productPrice / 5000) * 10 + 25;
+  }
+
+  const insuranceFee = useMemo(() => {
+    const productPrice = Number(insuredValue || 0);
+    if (!Number.isFinite(productPrice) || productPrice <= 0) return 0;
+    return calculateInsuranceFee(productPrice);
+  }, [insuredValue]);
 
   function validateAndContinue() {
     if (!activeSender) {
@@ -86,6 +116,10 @@ function SendParcelInner() {
       setFormError("กรุณาระบุน้ำหนักพัสดุให้ถูกต้อง");
       return;
     }
+    if (Number(weightGram) > MAX_PARCEL_WEIGHT_GRAM) {
+      setFormError("น้ำหนักพัสดุต้องไม่เกิน 30 กิโลกรัม");
+      return;
+    }
     if (!widthCm || Number(widthCm) <= 0 || !lengthCm || Number(lengthCm) <= 0 || !heightCm || Number(heightCm) <= 0) {
       setFormError("กรุณาระบุขนาดพัสดุ (กว้าง/ยาว/สูง) ให้ครบถ้วน");
       return;
@@ -94,12 +128,18 @@ function SendParcelInner() {
       setFormError("กรุณาเลือกประเภทพัสดุ");
       return;
     }
+    if (extraInsurance && (!insuredValue || Number(insuredValue) <= 0)) {
+      setFormError("กรุณากรอกราคาพัสดุสำหรับการซื้อประกันเพิ่ม");
+      return;
+    }
     setFormError(null);
     const params = new URLSearchParams({
       senderId: activeSender.id,
       recipientId: activeRecipient.id,
       shippingMode,
       autoPrint: autoPrint ? "1" : "0",
+      extraInsurance: extraInsurance ? "1" : "0",
+      insuredValue: insuredValue || "0",
       weightGram,
       widthCm,
       lengthCm,
@@ -110,7 +150,7 @@ function SendParcelInner() {
     router.push(`/send/review?${params.toString()}`);
   }
 
-  function ParcelTypeIcon({ type }: { type: (typeof parcelTypeOptions)[number] }) {
+  function ParcelTypeIcon({ type }: { type: ParcelTypeOption }) {
     const cls = "h-4 w-4 text-[#2726F5]";
     if (type === "เอกสาร") {
       return (
@@ -208,6 +248,20 @@ function SendParcelInner() {
   }, []);
 
   useEffect(() => {
+    if (!senderSaved && !recipientSaved) return;
+
+    if (senderSaved) setShowSenderSavedToast(true);
+    if (recipientSaved) setShowRecipientSavedToast(true);
+
+    const timer = setTimeout(() => {
+      setShowSenderSavedToast(false);
+      setShowRecipientSavedToast(false);
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [recipientSaved, senderSaved]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
@@ -237,51 +291,54 @@ function SendParcelInner() {
 
   const senderComplete = Boolean(activeSender);
   const activeRecipient = useMemo(() => {
-    if (!recipientAddresses.length) return null;
     if (recipientIdParam) {
       return recipientAddresses.find((a) => a.id === recipientIdParam) ?? null;
     }
-    const primary = recipientAddresses.find((a) => a.isPrimary);
-    return primary ?? recipientAddresses[0];
+    return null;
   }, [recipientAddresses, recipientIdParam]);
 
   const recipientComplete = Boolean(activeRecipient);
+  const addressBookHref = useMemo(() => {
+    const build = (tab: "sender" | "recipient") => {
+      const params = new URLSearchParams();
+      params.set("tab", tab);
+      params.set("from", "send");
+      if (activeSender?.id) params.set("senderId", activeSender.id);
+      if (activeRecipient?.id) params.set("recipientId", activeRecipient.id);
+      params.set("shippingMode", shippingMode);
+      params.set("autoPrint", autoPrint ? "1" : "0");
+      params.set("extraInsurance", extraInsurance ? "1" : "0");
+      if (insuredValue) params.set("insuredValue", insuredValue);
+      if (weightGram) params.set("weightGram", weightGram);
+      if (widthCm) params.set("widthCm", widthCm);
+      if (lengthCm) params.set("lengthCm", lengthCm);
+      if (heightCm) params.set("heightCm", heightCm);
+      if (parcelType) params.set("parcelType", parcelType);
+      if (note.trim()) params.set("note", note.trim());
+      return `/addresses?${params.toString()}`;
+    };
+    return { sender: build("sender"), recipient: build("recipient") };
+  }, [activeRecipient?.id, activeSender?.id, autoPrint, extraInsurance, heightCm, insuredValue, lengthCm, note, parcelType, shippingMode, weightGram, widthCm]);
 
   return (
     <main className="min-h-screen bg-slate-100 pb-36">
-      <section className="bg-[#2726F5] px-6 pb-20 pt-10 text-white">
-        <div className="mx-auto flex w-full max-w-lg items-start justify-between gap-4">
-          <div>
-            <button
-              type="button"
-              onClick={() => router.back()}
-              className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white/95"
-            >
-              <span aria-hidden>←</span>
-              <span>กลับ</span>
-            </button>
-            <h1 className="text-3xl font-bold leading-none">ลงทะเบียนพัสดุ</h1>
-            <p className="mt-0 text-base text-white/80">กรอกข้อมูลพัสดุของคุณ</p>
-          </div>
+      <section className="bg-[#2726F5] px-6 pb-20 pt-8 text-white">
+        <div className="mx-auto w-full max-w-lg">
+          <Link
+            href="/"
+            className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white/95"
+            aria-label="กลับไปหน้าแรก"
+          >
+            <span aria-hidden>←</span>
+            <span>กลับ</span>
+          </Link>
+          <h1 className="text-3xl font-bold leading-none">ลงทะเบียนพัสดุ</h1>
+          <p className="mt-0 text-base text-white/80">กรอกข้อมูลพัสดุของคุณ</p>
         </div>
       </section>
 
       <section className="-mt-12 px-6">
         <div className="mx-auto w-full max-w-lg space-y-4">
-          {formError ? (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{formError}</div>
-          ) : null}
-          {senderSaved ? (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
-              บันทึกข้อมูลผู้ส่งเรียบร้อยแล้ว ดำเนินการขั้นถัดไปได้เลย
-            </div>
-          ) : null}
-          {recipientSaved ? (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
-              บันทึกข้อมูลผู้รับเรียบร้อยแล้ว ดำเนินการขั้นถัดไปได้เลย
-            </div>
-          ) : null}
-
           <div className="rounded-lg bg-white p-4 shadow-sm">
             <div className="flex gap-4">
               <div className="flex w-8 flex-col items-center pt-0.5">
@@ -309,12 +366,10 @@ function SendParcelInner() {
               <div className="min-w-0 flex-1">
                 <div className="border-b border-slate-300 pb-4">
                   {addressesLoading ? (
-                    <div className="py-1">
-                      <p className="text-sm font-medium text-slate-500">กำลังโหลดข้อมูลผู้ส่ง...</p>
-                    </div>
+                    <SendAddressCardSkeleton ariaLabel="กำลังโหลดข้อมูลผู้ส่ง" />
                   ) : activeSender ? (
-                    <Link href={`/send/sender?id=${activeSender.id}`} className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <Link href={`/send/sender?id=${activeSender.id}`} className="min-w-0 flex-1">
                         <p className="text-xs font-light text-slate-500">ผู้ส่งที่เลือก</p>
                         <p className="mt-1 truncate text-sm font-medium text-slate-900">
                           {activeSender.contactName} <span className="mx-1 text-slate-400 font-light">|</span> {activeSender.phone}
@@ -324,28 +379,28 @@ function SendParcelInner() {
                           {activeSender.tambon}, {activeSender.amphoe}, {activeSender.province}, {activeSender.zipcode}
                         </p>
                         <p className="mt-2 text-xs font-normal text-[#2726F5]">แก้ไข</p>
-                      </div>
-                      <span aria-hidden>
+                      </Link>
+                      <Link href={addressBookHref.sender} aria-label="เปิดสมุดที่อยู่ผู้ส่ง">
                         <AddressBookIcon />
-                      </span>
-                    </Link>
+                      </Link>
+                    </div>
                   ) : (
-                    <Link href="/send/sender" className="flex items-center justify-between gap-2">
-                      <p className="text-4xl font-bold text-slate-400">เพิ่มข้อมูลผู้ส่ง</p>
-                      <span aria-hidden>
+                    <div className="flex items-center justify-between gap-2">
+                      <Link href="/send/sender" className="text-sm font-bold text-slate-400">
+                        เพิ่มข้อมูลผู้ส่ง
+                      </Link>
+                      <Link href={addressBookHref.sender} aria-label="เปิดสมุดที่อยู่ผู้ส่ง">
                         <AddressBookIcon />
-                      </span>
-                    </Link>
+                      </Link>
+                    </div>
                   )}
                 </div>
                 <div className="pt-4">
                   {recipientAddressesLoading ? (
-                    <div className="py-1">
-                      <p className="text-sm font-medium text-slate-500">กำลังโหลดข้อมูลผู้รับ...</p>
-                    </div>
+                    <SendAddressCardSkeleton ariaLabel="กำลังโหลดข้อมูลผู้รับ" />
                   ) : activeRecipient ? (
-                    <Link href={`/send/recipient?id=${activeRecipient.id}`} className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <Link href={`/send/recipient?id=${activeRecipient.id}`} className="min-w-0 flex-1">
                         <p className="text-xs font-light text-slate-500">ผู้รับที่เลือก</p>
                         <p className="mt-1 truncate text-sm font-medium text-slate-900">
                           {activeRecipient.contactName} <span className="mx-1 text-slate-400 font-light">|</span> {activeRecipient.phone}
@@ -355,18 +410,20 @@ function SendParcelInner() {
                           {activeRecipient.tambon}, {activeRecipient.amphoe}, {activeRecipient.province}, {activeRecipient.zipcode}
                         </p>
                         <p className="mt-2 text-xs font-normal text-[#2726F5]">แก้ไข</p>
-                      </div>
-                      <span aria-hidden>
+                      </Link>
+                      <Link href={addressBookHref.recipient} aria-label="เปิดสมุดที่อยู่ผู้รับ">
                         <AddressBookIcon />
-                      </span>
-                    </Link>
+                      </Link>
+                    </div>
                   ) : (
-                    <Link href="/send/recipient" className="flex items-center justify-between gap-2">
-                      <p className="text-4xl font-bold text-slate-400">เพิ่มข้อมูลผู้รับ</p>
-                      <span aria-hidden>
+                    <div className="flex items-center justify-between gap-2">
+                      <Link href="/send/recipient" className="text-sm font-bold text-slate-400">
+                        เพิ่มข้อมูลผู้รับ
+                      </Link>
+                      <Link href={addressBookHref.recipient} aria-label="เปิดสมุดที่อยู่ผู้รับ">
                         <AddressBookIcon />
-                      </span>
-                    </Link>
+                      </Link>
+                    </div>
                   )}
                 </div>
               </div>
@@ -374,28 +431,7 @@ function SendParcelInner() {
           </div>
 
           <div className="rounded-lg bg-white p-4 shadow-sm">
-            <div className="rounded-full bg-slate-100 p-1">
-              <div className="grid grid-cols-2 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setShippingMode("branch")}
-                  className={`rounded-full px-3 py-2 text-sm font-medium transition ${
-                    shippingMode === "branch" ? "bg-[#2726F5] text-white" : "text-slate-500"
-                  }`}
-                >
-                  ส่งที่สาขาไปรษณีย์ไทย
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShippingMode("pickup")}
-                  className={`rounded-full px-3 py-2 text-sm font-medium transition ${
-                    shippingMode === "pickup" ? "bg-[#2726F5] text-white" : "text-slate-500"
-                  }`}
-                >
-                  เรียกรถรับพัสดุ
-                </button>
-              </div>
-            </div>
+          
 
             <div className="mt-4 space-y-3 text-slate-900">
               <label className="flex items-center justify-between rounded-lg border border-slate-300 bg-white px-4 py-3">
@@ -470,38 +506,54 @@ function SendParcelInner() {
             </div>
           </div>
 
+
           <div className="rounded-lg bg-white px-4 py-4 shadow-sm">
             <button
               type="button"
-              onClick={() => setAutoPrint((prev) => !prev)}
+              onClick={() => setExtraInsurance((prev) => !prev)}
               className="flex w-full items-center justify-between"
             >
-              <span className="text-sm font-medium text-slate-900">พิมพ์ใบปะหน้าอัตโนมัติ</span>
+              <span className="text-sm font-medium text-slate-900">ซื้อประกันเพิ่ม</span>
               <span
                 className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${
-                  autoPrint ? "bg-[#2726F5]" : "bg-slate-300"
+                  extraInsurance ? "bg-[#2726F5]" : "bg-slate-300"
                 }`}
               >
                 <span
                   className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
-                    autoPrint ? "translate-x-6" : "translate-x-1"
+                    extraInsurance ? "translate-x-6" : "translate-x-1"
                   }`}
                 />
               </span>
             </button>
+            {extraInsurance ? (
+              <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-900">ราคาพัสดุ (บาท)</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={insuredValue}
+                    onChange={(e) => setInsuredValue(onlyNumber(e.target.value))}
+                    placeholder="กรอกราคาสินค้า"
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-900">ราคาค่าประกัน (บาท)</span>
+                  <input
+                    type="text"
+                    value={insuranceFee.toLocaleString("th-TH")}
+                    readOnly
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none"
+                  />
+                  <p className="mt-2 text-[9px] text-slate-500">วิธีคำนวณ: มูลค่าสินค้าไม่เกิน 2,000 บาท ไม่มีค่าประกันเพิ่ม <br />มูลค่าเกิน 2,000 บาท คิดค่าดำเนินการ 25 บาท และคิดเพิ่ม 10 บาทต่อทุกช่วงมูลค่า 5,000 บาท</p>
+                </label>
+              </div>
+            ) : null}
           </div>
 
-          <a
-            href="https://postbase.thailandpost.co.th/"
-            target="_blank"
-            rel="noreferrer"
-            className="flex w-full items-center justify-between rounded-lg bg-white px-4 py-4 text-left shadow-sm"
-          >
-            <span className="text-sm font-medium text-slate-900">
-              ค้นหาจุดบริการไปรษณีย์ไทย <span className="font-normal text-xs text-slate-400">(สำหรับอ้างอิงเท่านั้น)</span>
-            </span>
-            <span className="text-xl text-[#2726F5]">›</span>
-          </a>
         </div>
       </section>
       {parcelTypeOpen ? (
@@ -512,7 +564,7 @@ function SendParcelInner() {
           >
             <p className="px-3 py-2 text-xs font-medium text-slate-500">เลือกประเภทพัสดุ</p>
             <div className="max-h-[60vh] overflow-y-auto">
-              {parcelTypeOptions.map((option) => (
+              {PARCEL_TYPE_OPTIONS.map((option) => (
                 <button
                   key={option}
                   type="button"
@@ -532,7 +584,28 @@ function SendParcelInner() {
           </div>
         </div>
       ) : null}
-      <div className="fixed inset-x-0 bottom-0 z-30 bg-[#ECECEC] px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 shadow-[0_-6px_20px_rgba(15,23,42,0.08)]">
+      {formError || showSenderSavedToast || showRecipientSavedToast ? (
+        <div className="pointer-events-none fixed inset-x-0 z-40 px-4" style={{ bottom: "calc(env(safe-area-inset-bottom) + 88px)" }}>
+          <div className="mx-auto w-full max-w-lg space-y-2">
+            {formError ? (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800 shadow-sm">
+                {formError}
+              </div>
+            ) : null}
+            {showSenderSavedToast ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 shadow-sm">
+                บันทึกข้อมูลผู้ส่งเรียบร้อยแล้ว ดำเนินการขั้นถัดไปได้เลย
+              </div>
+            ) : null}
+            {showRecipientSavedToast ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 shadow-sm">
+                บันทึกข้อมูลผู้รับเรียบร้อยแล้ว ดำเนินการขั้นถัดไปได้เลย
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      <div className="fixed inset-x-0 bottom-0 z-30 bg-slate-100 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 shadow-[0_-6px_20px_rgba(15,23,42,0.08)]">
         <div className="mx-auto w-full max-w-lg">
           <button
             type="button"
@@ -551,7 +624,7 @@ export default function SendParcelPage() {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen bg-[#F4F4F4] p-6">
+        <main className="min-h-screen bg-slate-100 p-6">
           <p className="text-sm text-slate-600">กำลังโหลด...</p>
         </main>
       }
