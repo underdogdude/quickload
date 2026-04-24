@@ -157,7 +157,7 @@ Create or resume a charge for a parcel.
 } }
 ```
 
-**Errors**: `400` (parcel already paid / no price / not owner), `502` (Beam unreachable), `500` otherwise.
+**Errors**: `404` (parcel not found or not owned by caller — don't leak existence), `400` (parcel already paid / no price), `502` (Beam unreachable), `500` otherwise.
 
 ### `GET /api/payment/charges/[id]`
 
@@ -265,7 +265,7 @@ Client component (needs polling, timers, QR rendering). Visual language matches 
 
 ### QR rendering
 
-Beam returns a QR payload. We render via the existing `apps/user/lib/promptpay-qr-data-url.ts` helper (or an equivalent `qrcode` call if Beam's payload is already a base64 PNG — decided at implementation time from the actual response). The payload string is also shown small and selectable under the image for copy-paste users.
+Beam returns a QR payload — either an EMVCo/PromptPay-format string (which we encode into a QR image client-side using the `qrcode` npm package) or a base64-encoded PNG (rendered directly via `<img src={dataUrl}>`). Decided at implementation time from the actual Beam response shape. The repo's existing `apps/user/lib/promptpay-qr-data-url.ts` generates PromptPay payloads from scratch and is **not** used here — Beam is the source of the payload. The payload string is also shown small and selectable under the image for copy-paste users.
 
 ### State machine (client)
 
