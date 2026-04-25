@@ -5,22 +5,36 @@
 CREATE OR REPLACE FUNCTION refresh_parcel_amount_paid()
 RETURNS TRIGGER AS $$
 DECLARE
-  affected_parcel uuid;
+  parcel_ids uuid[];
+  pid uuid;
 BEGIN
-  affected_parcel := COALESCE(NEW.parcel_id, OLD.parcel_id);
-  UPDATE parcels p
-     SET amount_paid = COALESCE((
-       SELECT SUM(amount)
-         FROM payments
-        WHERE parcel_id = affected_parcel
-          AND status = 'succeeded'
-     ), 0)
-   WHERE p.id = affected_parcel;
+  -- Recompute for both OLD and NEW parcel ids when an UPDATE moves a row
+  -- between parcels; INSERT has only NEW, DELETE has only OLD.
+  parcel_ids := ARRAY[]::uuid[];
+  IF TG_OP IN ('INSERT', 'UPDATE') AND NEW.parcel_id IS NOT NULL THEN
+    parcel_ids := array_append(parcel_ids, NEW.parcel_id);
+  END IF;
+  IF TG_OP IN ('UPDATE', 'DELETE') AND OLD.parcel_id IS NOT NULL
+     AND (TG_OP = 'DELETE' OR NEW.parcel_id IS DISTINCT FROM OLD.parcel_id) THEN
+    parcel_ids := array_append(parcel_ids, OLD.parcel_id);
+  END IF;
+
+  FOREACH pid IN ARRAY parcel_ids LOOP
+    UPDATE parcels p
+       SET amount_paid = COALESCE((
+         SELECT SUM(amount)
+           FROM payments
+          WHERE parcel_id = pid
+            AND status = 'succeeded'
+       ), 0)
+     WHERE p.id = pid;
+  END LOOP;
+
   RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS payments_refresh_parcel_amount ON payments;
 CREATE TRIGGER payments_refresh_parcel_amount
-AFTER INSERT OR UPDATE OF status, amount OR DELETE ON payments
+AFTER INSERT OR UPDATE OF status, amount, parcel_id OR DELETE ON payments
 FOR EACH ROW EXECUTE FUNCTION refresh_parcel_amount_paid();
