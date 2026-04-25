@@ -411,7 +411,13 @@ export function ParcelsListClient({
               </span>
             )}
             <div className="flex items-center gap-4">
-              <Link href={`/parcels/${p.id}`} aria-label="พิมพ์ใบปะหน้า" className="transition hover:text-slate-600">
+              <Link
+                href={`/api/parcels/${p.id}/label.pdf`}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="พิมพ์ใบปะหน้า"
+                className="transition hover:text-slate-600"
+              >
                 <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24">
                   <path d="M7 8V4h10v4M7 16h10v4H7v-4Zm-2 0H4a1 1 0 0 1-1-1v-4a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v4a1 1 0 0 1-1 1h-1" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
