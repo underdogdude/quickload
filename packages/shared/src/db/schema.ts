@@ -46,6 +46,10 @@ export const parcels = pgTable("parcels", {
   price: numeric("price", { precision: 14, scale: 2 }),
   isPaid: boolean("is_paid").notNull().default(false),
   source: text("source").notNull().default("self"),
+  /** Set once by the future Smartpost shipped-webhook. NULL = penalty clock not started. */
+  penaltyClockStartedAt: timestamp("penalty_clock_started_at", { withTimezone: true }),
+  /** Maintained by DB trigger as SUM(payments.amount WHERE status='succeeded'). */
+  amountPaid: numeric("amount_paid", { precision: 14, scale: 2 }).notNull().default("0"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }),
 });
