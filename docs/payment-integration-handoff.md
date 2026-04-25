@@ -100,6 +100,7 @@ This runs:
 1. `packages/shared/sql/20260425_payments.sql` — creates `payments` table + indexes.
 2. `packages/shared/sql/20260425_parcels_penalty_columns.sql` — adds `penalty_clock_started_at` and `amount_paid` to `parcels`, plus a partial sweep index.
 3. `packages/shared/sql/20260425_amount_paid_trigger.sql` — creates the trigger that maintains `parcels.amount_paid = SUM(succeeded payments)` automatically.
+4. `packages/shared/sql/20260426_payments_one_pending_per_parcel.sql` — partial unique index that blocks duplicate pending payments per parcel (prevents the React-StrictMode double-mount race).
 
 **All three are idempotent** (use `IF NOT EXISTS` / `CREATE OR REPLACE`); safe to re-run.
 
@@ -218,10 +219,11 @@ pnpm supabase:status
 pnpm supabase:stop
 
 # Migrations (no psql required)
-pnpm db:apply:payment-stack                       # all three in order
+pnpm db:apply:payment-stack                       # all four in order
 pnpm --filter @quickload/shared db:apply:payments
 pnpm --filter @quickload/shared db:apply:penalty-columns
 pnpm --filter @quickload/shared db:apply:amount-paid-trigger
+pnpm --filter @quickload/shared db:apply:one-pending-idx
 pnpm db:push                                       # Drizzle schema sync (skips trigger)
 pnpm db:studio                                     # Drizzle Studio
 
