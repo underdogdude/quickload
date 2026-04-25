@@ -87,6 +87,32 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
         | { ok: true; data: Omit<ChargeData, "parcelId" | "trackingId" | "paidAt" | "outstanding"> }
         | { ok: false; error: string };
       if (!res.ok || !("ok" in json) || !json.ok) {
+        // 410 Gone === parcel auto-canceled by the abandonment sweep.
+        // Render the abandoned banner via a synthetic charge with that state.
+        if (res.status === 410) {
+          setCharge({
+            paymentId: "",
+            status: "canceled",
+            amount: "0",
+            currency: "THB",
+            qrPayload: null,
+            expiresAt: null,
+            paidAt: null,
+            parcelId,
+            trackingId: null,
+            outstanding: {
+              state: "abandoned",
+              totalOwed: 0,
+              outstanding: 0,
+              currentTier: null,
+              nextTier: null,
+              nextTierAt: null,
+              abandonAt: null,
+              frozen: false,
+            },
+          });
+          return;
+        }
         setError(("error" in json && json.error) || "ไม่สามารถสร้าง QR ได้");
         return;
       }
