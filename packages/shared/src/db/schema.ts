@@ -147,3 +147,27 @@ export const recipientAddresses = pgTable("recipient_addresses", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }),
 });
+
+/** Payment attempts for parcels; provider is currently always 'beam' (Beam Checkout). */
+export const payments = pgTable("payments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  parcelId: uuid("parcel_id")
+    .notNull()
+    .references(() => parcels.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => users.id),
+  provider: text("provider").notNull().default("beam"),
+  providerChargeId: text("provider_charge_id").unique(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  currency: text("currency").notNull().default("THB"),
+  paymentMethod: text("payment_method").notNull().default("promptpay"),
+  // 'pending' | 'succeeded' | 'failed' | 'expired' | 'canceled'
+  status: text("status").notNull().default("pending"),
+  qrPayload: text("qr_payload"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  rawCreateResponse: jsonb("raw_create_response"),
+  rawWebhookPayload: jsonb("raw_webhook_payload"),
+  idempotencyKey: text("idempotency_key"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
+});
