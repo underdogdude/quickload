@@ -23,19 +23,25 @@ type ParcelRow = {
 
 function getStatusLabel(status: string) {
   if (status === "draft") return "แบบร่าง";
+  if (status === "pending_payment") return "รอชำระเงิน";
+  if (status === "paid") return "ชำระแล้ว";
   if (status === "registered") return "ลงทะเบียนแล้ว";
   if (status === "in_transit") return "อยู่ระหว่างขนส่ง";
   if (status === "delivered") return "จัดส่งสำเร็จ";
   if (status === "failed") return "จัดส่งไม่สำเร็จ";
+  if (status === "canceled") return "ยกเลิกแล้ว";
   return status;
 }
 
 function getStatusClass(status: string) {
   if (status === "draft") return "bg-amber-100 text-amber-800";
+  if (status === "pending_payment") return "bg-rose-100 text-rose-700";
+  if (status === "paid") return "bg-emerald-100 text-emerald-700";
   if (status === "registered") return "bg-indigo-100 text-indigo-700";
   if (status === "in_transit") return "bg-sky-100 text-sky-800";
   if (status === "delivered") return "bg-emerald-100 text-emerald-800";
   if (status === "failed") return "bg-rose-100 text-rose-800";
+  if (status === "canceled") return "bg-slate-200 text-slate-600";
   return "bg-slate-100 text-slate-700";
 }
 
@@ -49,10 +55,13 @@ function getPaymentStatusClass(isPaid: boolean) {
 
 function getTimelineStatusClass(status: string) {
   if (status === "draft") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (status === "pending_payment") return "border-rose-200 bg-rose-50 text-rose-700";
+  if (status === "paid") return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (status === "registered") return "border-indigo-200 bg-indigo-50 text-indigo-700";
   if (status === "in_transit") return "border-sky-200 bg-sky-50 text-sky-700";
   if (status === "delivered") return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (status === "failed") return "border-rose-200 bg-rose-50 text-rose-700";
+  if (status === "canceled") return "border-slate-200 bg-slate-100 text-slate-600";
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
@@ -403,9 +412,21 @@ export function ParcelsListClient({
           <div className="my-4 border-t border-slate-200" />
 
           <div className="flex items-center justify-between gap-4 text-slate-400">
-            <span className={`shrink-0 rounded-full px-4 py-1 text-xs font-normal ${getPaymentStatusClass(p.isPaid)}`}>
-              {getPaymentStatusLabel(p.isPaid)}
-            </span>
+            {p.status === "pending_payment" && !p.isPaid ? (
+              <Link
+                href={`/pay/${p.id}`}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#2726F5] px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" aria-hidden>
+                  <path d="M3 7h18v10H3V7Zm0 4h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+                ชำระเงิน
+              </Link>
+            ) : (
+              <span className={`shrink-0 rounded-full px-4 py-1 text-xs font-normal ${getPaymentStatusClass(p.isPaid)}`}>
+                {getPaymentStatusLabel(p.isPaid)}
+              </span>
+            )}
             <div className="flex items-center gap-4">
               <Link
                 href={`/api/parcels/${p.id}/label.pdf`}

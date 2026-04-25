@@ -213,12 +213,17 @@ function ReviewInner() {
           productPrice: insuredValue && Number(insuredValue) > 0 ? insuredValue : "0",
           insurancePrice: extraInsurance && insuredValue && Number(insuredValue) > 0 ? insuredValue : "0",
         });
-        const res = await fetch(`/api/pricing/estimate?${params.toString()}`);
-        const json = (await res.json()) as {
-          ok?: boolean;
-          data?: { estimatedTotal?: number };
-        };
-        if (!cancelled && res.ok && json.ok && Number.isFinite(json.data?.estimatedTotal)) {
+        let json: { ok?: boolean; data?: { estimatedTotal?: number } };
+        let resOk = true;
+        if (process.env.NEXT_PUBLIC_SMARTPOST_MOCK === "1") {
+          const mockTotal = 50 + (Date.now() % 100);
+          json = { ok: true, data: { estimatedTotal: mockTotal } };
+        } else {
+          const res = await fetch(`/api/pricing/estimate?${params.toString()}`);
+          resOk = res.ok;
+          json = (await res.json()) as { ok?: boolean; data?: { estimatedTotal?: number } };
+        }
+        if (!cancelled && resOk && json.ok && Number.isFinite(json.data?.estimatedTotal)) {
           const total = Number(json.data?.estimatedTotal);
           setBaseEstimatedPrice(total);
           setEstimatedPrice(total + zipcodeSurcharge);
@@ -238,22 +243,65 @@ function ReviewInner() {
     setError(null);
     setSubmitting(true);
     try {
-      const addItemRes = await fetch("/api/smartpost/add-item", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          senderId,
-          recipientId,
-          parcelType,
-          weightGram,
-          insuredValue,
-          extraInsurance,
-        }),
-      });
-      const addItemJson = (await addItemRes.json()) as { ok?: boolean; error?: string; data?: unknown };
-      if (!addItemRes.ok || !addItemJson.ok) {
-        setError(addItemJson.error ?? "ส่งคำสั่งซื้อไป Smartpost ไม่สำเร็จ");
-        return;
+      let addItemJson: { ok?: boolean; error?: string; data?: unknown };
+      if (process.env.NEXT_PUBLIC_SMARTPOST_MOCK === "1") {
+        const ts = Date.now();
+        addItemJson = {
+          ok: true,
+          data: {
+            statuscode: "201",
+            message: "OK (mock)",
+            data: {
+              smartpost_trackingcode: `MOCK${ts}`,
+              barcode: `MOCKBC${ts}TH`,
+              service_type: "EMS",
+              product_inbox: parcelType,
+              product_weight: String(weightGram),
+              product_price: insuredValue || "0",
+              shipper_name: sender.contactName,
+              shipper_address: sender.addressLine,
+              shipper_subdistrict: sender.tambon,
+              shipper_district: sender.amphoe,
+              shipper_province: sender.province,
+              shipper_zipcode: sender.zipcode,
+              shipper_email: "",
+              shipper_mobile: sender.phone,
+              cus_name: recipient.contactName,
+              cus_add: recipient.addressLine,
+              cus_sub: recipient.tambon,
+              cus_amp: recipient.amphoe,
+              cus_prov: recipient.province,
+              cus_zipcode: recipient.zipcode,
+              cus_tel: recipient.phone,
+              cus_email: "",
+              customer_code: "MOCK",
+              cost: String(baseEstimatedPrice || 0),
+              finalcost: String(baseEstimatedPrice || 0),
+              order_status: "ACCEPTED",
+              items: parcelType,
+              insurance_rate_price: extraInsurance && insuredValue ? insuredValue : "0",
+              reference_id: `mock-${ts}`,
+            },
+          },
+        };
+      } else {
+        const addItemRes = await fetch("/api/smartpost/add-item", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            senderId,
+            recipientId,
+            parcelType,
+            weightGram,
+            insuredValue,
+            extraInsurance,
+          }),
+        });
+        addItemJson = (await addItemRes.json()) as { ok?: boolean; error?: string; data?: unknown };
+        if (!addItemRes.ok || !addItemJson.ok) {
+          setError(addItemJson.error ?? "ส่งคำสั่งซื้อไป Smartpost ไม่สำเร็จ");
+          return;
+        }
       }
 
       const res = await fetch("/api/parcels/draft", {
@@ -270,19 +318,16 @@ function ReviewInner() {
           heightCm,
           parcelType,
           note,
+          estimatedPrice: baseEstimatedPrice > 0 ? baseEstimatedPrice.toFixed(2) : undefined,
           smartpostAddItemResponse: addItemJson.data,
         }),
       });
       const json = (await res.json()) as { ok?: boolean; data?: { id?: string; trackingId?: string }; error?: string };
-      if (!res.ok || !json.ok || !json.data?.id || !json.data?.trackingId) {
+      if (!res.ok || !json.ok || !json.data?.id) {
         setError(json.error ?? "สร้างออเดอร์ไม่สำเร็จ");
         return;
       }
-      const params = new URLSearchParams({
-        parcelId: json.data.id,
-        trackingId: json.data.trackingId,
-      });
-      router.replace(`/send/success?${params.toString()}`);
+      router.replace(`/pay/${json.data.id}`);
     } catch {
       setError("สร้างออเดอร์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
     } finally {
