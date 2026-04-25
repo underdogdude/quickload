@@ -1,6 +1,7 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { getDb, parcels, payments } from "@quickload/shared/db";
 import { createBeamPromptPayCharge, readBeamEnv } from "@quickload/shared/beam";
+import { computeOutstanding } from "@quickload/shared/penalty";
 import { NextResponse } from "next/server";
 import { requireLineSession } from "@/lib/require-user";
 
@@ -23,11 +24,33 @@ export async function POST(request: Request) {
       // 404 to avoid leaking existence.
       return NextResponse.json({ ok: false, error: "Parcel not found" }, { status: 404 });
     }
-    if (parcel.isPaid) {
-      return NextResponse.json({ ok: false, error: "Parcel already paid" }, { status: 400 });
-    }
     if (!parcel.price || Number(parcel.price) <= 0) {
       return NextResponse.json({ ok: false, error: "Parcel has no price" }, { status: 400 });
+    }
+
+    const [firstPayment] = await db
+      .select({ paidAt: payments.paidAt })
+      .from(payments)
+      .where(and(eq(payments.parcelId, parcelId), eq(payments.status, "succeeded")))
+      .orderBy(asc(payments.paidAt))
+      .limit(1);
+
+    const out = computeOutstanding({
+      price: parcel.price,
+      penaltyClockStartedAt: parcel.penaltyClockStartedAt,
+      amountPaid: parcel.amountPaid,
+      firstSuccessfulPaymentAt: firstPayment?.paidAt ?? null,
+      now: new Date(),
+    });
+
+    if (out.state === "settled") {
+      return NextResponse.json({ ok: false, error: "Parcel already paid" }, { status: 400 });
+    }
+    if (out.state === "abandoned") {
+      return NextResponse.json(
+        { ok: false, error: "Parcel canceled due to abandonment" },
+        { status: 410 },
+      );
     }
 
     // Step 3: resume existing non-expired pending.
@@ -73,7 +96,7 @@ export async function POST(request: Request) {
     try {
       beamResult = await createBeamPromptPayCharge({
         env,
-        amount: parcel.price,
+        amount: out.outstanding.toFixed(2),
         currency: "THB",
         referenceId: parcel.id,
         idempotencyKey,
@@ -102,7 +125,7 @@ export async function POST(request: Request) {
         userId: parcel.userId,
         provider: "beam",
         providerChargeId: beamResult.chargeId,
-        amount: parcel.price,
+        amount: out.outstanding.toFixed(2),
         currency: "THB",
         paymentMethod: "promptpay",
         status: "pending",
