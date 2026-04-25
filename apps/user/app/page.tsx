@@ -74,8 +74,7 @@ export default async function HomePage() {
               width={120}
               height={120}
               loading="eager"
-              // @ts-expect-error -- `fetchpriority` is valid HTML but missing from React types <19.
-              fetchpriority="high"
+              fetchPriority="high"
               className="object-contain"
             />
           </Link>

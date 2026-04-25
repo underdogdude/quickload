@@ -13,7 +13,11 @@
     "db:push": "pnpm --filter @quickload/shared db:push",
     "db:studio": "pnpm --filter @quickload/shared db:studio",
     "db:sender": "pnpm --filter @quickload/shared db:apply:sender",
-    "db:recipient": "pnpm --filter @quickload/shared db:apply:recipient"
+    "db:recipient": "pnpm --filter @quickload/shared db:apply:recipient",
+    "db:apply:payment-stack": "pnpm --filter @quickload/shared db:apply:payment-stack",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:status": "supabase status"
   },
   "devDependencies": {
     "turbo": "^2.3.3",

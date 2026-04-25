@@ -11,26 +11,58 @@ import { getSessionOptions } from "@/lib/session";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^(\+66|0)\d{8,9}$/;
 
+const USER_SELECT = {
+  id: users.id,
+  lineUserId: users.lineUserId,
+  displayName: users.displayName,
+  pictureUrl: users.pictureUrl,
+  firstName: users.firstName,
+  lastName: users.lastName,
+  phone: users.phone,
+  email: users.email,
+  birthDate: users.birthDate,
+} as const;
+
 export async function GET() {
   try {
     const session = await requireLineSession();
     const db = getDb();
     const rows = await db
-      .select({
-        id: users.id,
-        lineUserId: users.lineUserId,
-        displayName: users.displayName,
-        pictureUrl: users.pictureUrl,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        phone: users.phone,
-        email: users.email,
-        birthDate: users.birthDate,
-      })
+      .select(USER_SELECT)
       .from(users)
       .where(eq(users.id, session.userId))
       .limit(1);
-    const user = rows[0];
+    let user = rows[0];
+
+    // Dev self-heal: when the cookie's userId points to a row that doesn't exist
+    // in the current DB (common after switching local↔hosted Supabase), upsert
+    // from the session's LINE identity and rebind session.userId. Production keeps
+    // the strict 404 so legitimate "user was deleted" cases aren't masked.
+    if (!user && process.env.NODE_ENV !== "production") {
+      const reinserted = await db
+        .insert(users)
+        .values({
+          lineUserId: session.lineUserId,
+          displayName: session.displayName ?? null,
+          pictureUrl: session.pictureUrl ?? null,
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: users.lineUserId,
+          set: { updatedAt: new Date() },
+        })
+        .returning(USER_SELECT);
+      user = reinserted[0];
+      if (user && user.id !== session.userId) {
+        const fullSession = await getIronSession<LineAppSession>(cookies(), getSessionOptions());
+        fullSession.userId = user.id;
+        fullSession.profileCompleted = Boolean(
+          user.firstName?.trim() && user.lastName?.trim() && user.phone?.trim(),
+        );
+        await fullSession.save();
+      }
+    }
+
     if (!user) {
       return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 });
     }

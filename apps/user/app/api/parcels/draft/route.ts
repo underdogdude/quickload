@@ -44,6 +44,8 @@ type CreateBody = {
   heightCm?: string;
   parcelType?: string;
   note?: string;
+  /** Client-supplied base estimated price in baht; used if Smartpost finalcost is missing. */
+  estimatedPrice?: string;
   /** Required: raw JSON from Smartpost addItem after HTTP 201 / statuscode 201. */
   smartpostAddItemResponse: unknown;
 };
@@ -111,7 +113,11 @@ export async function POST(request: Request) {
     let parcelPrice: string | null = null;
     if (smartpostFields.finalcost?.trim()) {
       const p = Number(smartpostFields.finalcost);
-      if (Number.isFinite(p)) parcelPrice = p.toFixed(2);
+      if (Number.isFinite(p) && p > 0) parcelPrice = p.toFixed(2);
+    }
+    if (!parcelPrice && body.estimatedPrice) {
+      const p = Number(body.estimatedPrice);
+      if (Number.isFinite(p) && p > 0) parcelPrice = p.toFixed(2);
     }
 
     const db = getDb();
@@ -145,8 +151,7 @@ export async function POST(request: Request) {
         destination,
         weightKg,
         size,
-      parcelType,
-        status: "registered",
+        status: "pending_payment",
         price: parcelPrice,
         source: `send:${shippingMode}:${autoPrint ? "autoprint" : "manual"}${note ? ":note" : ""}`,
       })
