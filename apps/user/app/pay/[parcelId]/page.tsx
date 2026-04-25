@@ -321,6 +321,13 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                   สร้าง QR ใหม่
                 </button>
               </div>
+            ) : charge?.outstanding.state === "abandoned" ? (
+              <div className="py-8 text-center">
+                <p className="text-lg font-semibold text-rose-700">พัสดุถูกยกเลิกเนื่องจากไม่มีการชำระ</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  ครบกำหนด 24 ชั่วโมงแล้วโดยไม่มีการชำระ ระบบจึงยกเลิกอัตโนมัติ
+                </p>
+              </div>
             ) : charge?.status === "canceled" ? (
               <div className="py-8 text-center">
                 <p className="text-lg font-semibold text-slate-800">ยกเลิกการชำระเงินแล้ว</p>
