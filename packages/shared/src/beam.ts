@@ -130,3 +130,45 @@ function extractQrPayload(obj: Record<string, unknown>): string | null {
   }
   return null;
 }
+
+import { eq, and } from "drizzle-orm";
+import { getDb, payments, parcels } from "./db";
+
+/**
+ * Idempotent state transition called by BOTH the webhook handler and the dev-simulate
+ * endpoint. One DB transaction flips `payments.status` to 'succeeded' (only if currently
+ * 'pending') and sets the parent parcel to `is_paid=true, status='paid'`.
+ *
+ * Returns the paymentId that was updated, or null if nothing changed (e.g. already
+ * succeeded, unknown chargeId). Callers should still return HTTP 200 on null.
+ */
+export async function markPaymentSucceeded({
+  providerChargeId,
+  rawWebhookPayload,
+}: {
+  providerChargeId: string;
+  rawWebhookPayload: unknown;
+}): Promise<{ paymentId: string; parcelId: string } | null> {
+  const db = getDb();
+  return await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(payments)
+      .set({
+        status: "succeeded",
+        paidAt: new Date(),
+        rawWebhookPayload: rawWebhookPayload as any,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(payments.providerChargeId, providerChargeId), eq(payments.status, "pending")),
+      )
+      .returning({ id: payments.id, parcelId: payments.parcelId });
+    const row = updated[0];
+    if (!row) return null;
+    await tx
+      .update(parcels)
+      .set({ isPaid: true, status: "paid", updatedAt: new Date() })
+      .where(eq(parcels.id, row.parcelId));
+    return { paymentId: row.id, parcelId: row.parcelId };
+  });
+}
