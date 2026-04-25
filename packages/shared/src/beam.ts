@@ -50,9 +50,8 @@ export type BeamChargeResult = {
 
 /**
  * Creates a PromptPay charge via Beam Charges API.
- * Request shape is based on docs.beamcheckout.com/charges/charges-api; if Beam's live
- * playground response shape differs from the field names below, adjust the extraction
- * block in this function (and log `rawResponse` for debugging).
+ * Per docs.beamcheckout.com/charges/charges-api: amount is integer in the smallest unit
+ * (satang for THB), and paymentMethod uses { qrPromptPay: { expiryTime }, paymentMethodType }.
  */
 export async function createBeamPromptPayCharge({
   env,
@@ -60,24 +59,39 @@ export async function createBeamPromptPayCharge({
   currency,
   referenceId,
   idempotencyKey,
+  returnUrl,
+  expiryTime,
 }: {
   env: BeamEnv;
-  /** Decimal string, e.g. "85.00". */
+  /** Decimal string in major units, e.g. "85.00". Converted to integer satang internally. */
   amount: string;
   currency: "THB";
   referenceId: string;
   idempotencyKey: string;
+  /** Required by Beam. e.g. "https://example.com/pay/return". */
+  returnUrl: string;
+  /** ISO-8601 timestamp for QR expiry. */
+  expiryTime: string;
 }): Promise<BeamChargeResult> {
   if (!env.baseUrl || !env.merchantId || !env.apiKey) {
     throw new Error("Beam env not configured (BEAM_API_BASE_URL / BEAM_MERCHANT_ID / BEAM_API_KEY)");
   }
+  const major = Number(amount);
+  if (!Number.isFinite(major) || major <= 0) {
+    throw new Error(`Invalid amount: ${amount}`);
+  }
+  const amountSatang = Math.round(major * 100);
   const basic = Buffer.from(`${env.merchantId}:${env.apiKey}`).toString("base64");
   const url = `${env.baseUrl.replace(/\/$/, "")}/api/v1/charges`;
   const body = {
-    amount,
+    amount: amountSatang,
     currency,
     referenceId,
-    paymentMethod: { type: "QR_PROMPT_PAY" },
+    returnUrl,
+    paymentMethod: {
+      paymentMethodType: "QR_PROMPT_PAY",
+      qrPromptPay: { expiryTime },
+    },
   };
   const res = await fetch(url, {
     method: "POST",
@@ -106,12 +120,7 @@ export async function createBeamPromptPayCharge({
         ? obj.chargeId
         : null;
   const qrPayload = extractQrPayload(obj);
-  const expiresAt =
-    typeof obj.expiresAt === "string"
-      ? obj.expiresAt
-      : typeof obj.expiry === "string"
-        ? obj.expiry
-        : null;
+  const expiresAt = extractExpiresAt(obj);
   if (!chargeId || !qrPayload) {
     throw new Error(
       `Beam response missing chargeId or qrPayload. Raw: ${text.slice(0, 500)}`,
@@ -121,11 +130,37 @@ export async function createBeamPromptPayCharge({
 }
 
 function extractQrPayload(obj: Record<string, unknown>): string | null {
-  // Shape uncertainty: Beam's response for QR_PROMPT_PAY may nest the payload under
-  // paymentMethod.qrCode, qrCodeData, qrPayload, or return a base64 image. We accept
-  // common shapes and fall through otherwise.
+  // Beam returns the QR in one of two shapes depending on actionRequired:
+  //   1. ENCODED_IMAGE → encodedImage.imageBase64Encoded (a base64 PNG); we wrap
+  //      it as a data URL so the page can render it directly.
+  //   2. A raw EMVCo PromptPay string under paymentMethod.qrPromptPay.qrCode.
+  const encoded = (obj.encodedImage ?? {}) as Record<string, unknown>;
+  const imageB64 = encoded.imageBase64Encoded;
+  if (typeof imageB64 === "string" && imageB64.length > 0) {
+    return `data:image/png;base64,${imageB64}`;
+  }
   const pm = (obj.paymentMethod ?? {}) as Record<string, unknown>;
-  for (const candidate of [pm.qrPayload, pm.qrCode, pm.qrCodeData, pm.qrString, obj.qrPayload, obj.qrCode]) {
+  const qpp = (pm.qrPromptPay ?? {}) as Record<string, unknown>;
+  for (const candidate of [
+    qpp.qrCode,
+    qpp.qrPayload,
+    qpp.qrString,
+    pm.qrPayload,
+    pm.qrCode,
+    pm.qrCodeData,
+    pm.qrString,
+    obj.qrPayload,
+    obj.qrCode,
+  ]) {
+    if (typeof candidate === "string" && candidate.length > 0) return candidate;
+  }
+  return null;
+}
+
+function extractExpiresAt(obj: Record<string, unknown>): string | null {
+  const pm = (obj.paymentMethod ?? {}) as Record<string, unknown>;
+  const qpp = (pm.qrPromptPay ?? {}) as Record<string, unknown>;
+  for (const candidate of [qpp.expiryTime, qpp.expiresAt, obj.expiresAt, obj.expiry]) {
     if (typeof candidate === "string" && candidate.length > 0) return candidate;
   }
   return null;

@@ -67,6 +67,8 @@ export async function POST(request: Request) {
     // Step 5-7: call Beam, insert row.
     const idempotencyKey = crypto.randomUUID();
     const env = readBeamEnv();
+    const ourExpiryDate = new Date(now.getTime() + QR_EXPIRY_MS);
+    const returnUrl = new URL(`/pay/${parcel.id}`, request.url).toString();
     let beamResult;
     try {
       beamResult = await createBeamPromptPayCharge({
@@ -75,6 +77,8 @@ export async function POST(request: Request) {
         currency: "THB",
         referenceId: parcel.id,
         idempotencyKey,
+        returnUrl,
+        expiryTime: ourExpiryDate.toISOString(),
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -85,10 +89,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const ourExpiry = new Date(now.getTime() + QR_EXPIRY_MS);
     const beamExpiry = beamResult.expiresAt ? new Date(beamResult.expiresAt) : null;
     const expiresAt =
-      beamExpiry && !isNaN(beamExpiry.getTime()) && beamExpiry < ourExpiry ? beamExpiry : ourExpiry;
+      beamExpiry && !Number.isNaN(beamExpiry.getTime()) && beamExpiry < ourExpiryDate
+        ? beamExpiry
+        : ourExpiryDate;
 
     const [inserted] = await db
       .insert(payments)

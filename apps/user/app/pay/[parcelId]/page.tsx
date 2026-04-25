@@ -36,6 +36,13 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
   const canceledRef = useRef(false);
 
   const renderQr = useCallback(async (payload: string) => {
+    // Beam may return the QR as a pre-rendered base64 PNG data URL; use it as-is.
+    // Otherwise treat the payload as an EMVCo PromptPay string and render to a
+    // data URL ourselves.
+    if (payload.startsWith("data:image/")) {
+      setQrDataUrl(payload);
+      return;
+    }
     try {
       const url = await QRCode.toDataURL(payload, { width: 320, margin: 1 });
       setQrDataUrl(url);
@@ -231,7 +238,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 <p className="text-sm text-slate-600">
                   เหลือเวลา <span className="font-semibold text-slate-900">{mm}:{ss}</span>
                 </p>
-                {charge.qrPayload ? (
+                {charge.qrPayload && !charge.qrPayload.startsWith("data:image/") ? (
                   <p className="break-all text-center text-[10px] text-slate-400 select-all">
                     {charge.qrPayload}
                   </p>
