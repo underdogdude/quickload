@@ -253,43 +253,21 @@ function SuccessInner() {
     ? [order.cusAdd, order.cusSub, order.cusAmp, order.cusProv, order.cusZipcode].filter(Boolean).join(", ")
     : "";
 
-  const saveSummaryText = useMemo(() => {
-    const lines = [
-      "สรุปพัสดุ",
-      `หมายเลขพัสดุ: ${primaryParcelDisplay}`,
-      referenceCode ? `Reference code: ${referenceCode}` : "",
-      "",
-      `ผู้ส่ง: ${shipperLine1 ?? "-"}`,
-      shipperLine2,
-      "",
-      `ผู้รับ: ${recipientLine1 ?? parcel?.destination ?? "-"}`,
-      recipientLine2,
-      "",
-      `น้ำหนัก: ${formatWeightGrams(parcel, order)}`,
-      `ขนาด: ${sizeDisplay}`,
-      `ประเภท: ${typeDisplay}`,
-    ];
-    return lines.filter((l) => l !== "").join("\n");
-  }, [
-    parcel,
-    order,
-    primaryParcelDisplay,
-    recipientLine1,
-    recipientLine2,
-    referenceCode,
-    shipperLine1,
-    shipperLine2,
-    sizeDisplay,
-    typeDisplay,
-  ]);
+  const labelPdfUrl = parcelId ? `/api/parcels/${encodeURIComponent(parcelId)}/label.pdf` : "";
 
-  function onSaveSummary() {
-    const blob = new Blob([saveSummaryText], { type: "text/plain;charset=utf-8" });
+  function onDownloadLabelPdf() {
+    if (!labelPdfUrl) return;
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `parcel-${(barcode || referenceCode || parcelTrackingId || "summary").replace(/[^\w-]+/g, "_")}.txt`;
+    a.href = labelPdfUrl;
+    a.download = `parcel-label-${(barcode || referenceCode || parcelTrackingId || "label").replace(/[^\w-]+/g, "_")}.pdf`;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
     a.click();
-    URL.revokeObjectURL(a.href);
+  }
+
+  function onOpenLabelPrintTab() {
+    if (!labelPdfUrl) return;
+    window.open(labelPdfUrl, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -445,12 +423,19 @@ function SuccessInner() {
             </div>
           ) : null}
 
-          {/* Save / Print */}
+          {/* Label actions */}
           {!loading ? (
-            <div className="flex justify-center gap-10 print:hidden">
+            <div className="space-y-3 print:hidden">
+              <div className="flex items-center gap-3 my-8">
+                <span className="h-px flex-1 bg-slate-300" />
+                <span className="text-sm font-normal text-slate-500">ใบปะหน้า</span>
+                <span className="h-px flex-1 bg-slate-300" />
+              </div>
+              <div className="flex justify-center gap-10">
               <button
                 type="button"
-                onClick={onSaveSummary}
+                onClick={onDownloadLabelPdf}
+                disabled={!labelPdfUrl}
                 className="flex flex-col items-center gap-2 text-slate-700"
               >
                 <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#E8E4FF] text-[#5B4FCF] shadow-sm">
@@ -462,11 +447,12 @@ function SuccessInner() {
                     />
                   </svg>
                 </span>
-                <span className="text-xs font-medium">บันทึก</span>
+                <span className="text-xs font-medium">ดาวน์โหลดใบปะหน้า</span>
               </button>
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={onOpenLabelPrintTab}
+                disabled={!labelPdfUrl}
                 className="flex flex-col items-center gap-2 text-slate-700"
               >
                 <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#E8E4FF] text-[#5B4FCF] shadow-sm">
@@ -478,8 +464,9 @@ function SuccessInner() {
                     />
                   </svg>
                 </span>
-                <span className="text-xs font-medium">พิมพ์</span>
+                <span className="text-xs font-medium">พิมพ์ในแท็บใหม่</span>
               </button>
+              </div>
             </div>
           ) : null}
         </div>
