@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { computeOutstanding } from "./penalty";
 
 /** Beam webhook HMAC verification per docs.beamcheckout.com/webhook/webhook. */
 export function verifyBeamWebhookSignature({
@@ -166,7 +167,7 @@ function extractExpiresAt(obj: Record<string, unknown>): string | null {
   return null;
 }
 
-import { eq, and } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import { getDb, payments, parcels } from "./db";
 
 /**
@@ -183,7 +184,7 @@ export async function markPaymentSucceeded({
 }: {
   providerChargeId: string;
   rawWebhookPayload: unknown;
-}): Promise<{ paymentId: string; parcelId: string } | null> {
+}): Promise<{ paymentId: string; parcelId: string; settled: boolean } | null> {
   const db = getDb();
   return await db.transaction(async (tx) => {
     const updated = await tx
@@ -200,10 +201,53 @@ export async function markPaymentSucceeded({
       .returning({ id: payments.id, parcelId: payments.parcelId });
     const row = updated[0];
     if (!row) return null;
-    await tx
-      .update(parcels)
-      .set({ isPaid: true, status: "paid", updatedAt: new Date() })
-      .where(eq(parcels.id, row.parcelId));
-    return { paymentId: row.id, parcelId: row.parcelId };
+
+    // Trigger has updated parcels.amount_paid by now. Re-read parcel state
+    // and find the earliest successful payment so the freeze-on-partial-payment
+    // tier is anchored to the FIRST payment, not to this one.
+    const [parcel] = await tx
+      .select({
+        price: parcels.price,
+        penaltyClockStartedAt: parcels.penaltyClockStartedAt,
+        amountPaid: parcels.amountPaid,
+      })
+      .from(parcels)
+      .where(eq(parcels.id, row.parcelId))
+      .limit(1);
+
+    if (!parcel) {
+      throw new Error(`markPaymentSucceeded: parcel ${row.parcelId} disappeared mid-transaction`);
+    }
+
+    const [firstPayment] = await tx
+      .select({ paidAt: payments.paidAt })
+      .from(payments)
+      .where(and(eq(payments.parcelId, row.parcelId), eq(payments.status, "succeeded")))
+      .orderBy(asc(payments.paidAt))
+      .limit(1);
+
+    const out = computeOutstanding({
+      price: parcel.price ?? "0",
+      penaltyClockStartedAt: parcel.penaltyClockStartedAt,
+      amountPaid: parcel.amountPaid,
+      firstSuccessfulPaymentAt: firstPayment?.paidAt ?? null,
+      now: new Date(),
+    });
+
+    if (out.outstanding === 0) {
+      await tx
+        .update(parcels)
+        .set({ isPaid: true, status: "paid", updatedAt: new Date() })
+        .where(eq(parcels.id, row.parcelId));
+    } else {
+      // Partial settlement: keep parcel pending. The customer will pay the
+      // remainder via a fresh QR.
+      await tx
+        .update(parcels)
+        .set({ updatedAt: new Date() })
+        .where(eq(parcels.id, row.parcelId));
+    }
+
+    return { paymentId: row.id, parcelId: row.parcelId, settled: out.outstanding === 0 };
   });
 }
