@@ -24,12 +24,26 @@ export async function POST(
       return NextResponse.json({ ok: false, error: "Payment not found" }, { status: 404 });
     }
 
-    await db
-      .update(payments)
-      .set({ status: "canceled", updatedAt: new Date() })
-      .where(and(eq(payments.id, paymentId), eq(payments.status, "pending")));
+    // Cancel the open QR; if the parcel has no successful payments yet,
+    // cancel the parcel as well so the order is dead. If amount_paid > 0,
+    // we only kill the QR — the user must still pay the remaining balance.
+    const result = await db.transaction(async (tx) => {
+      await tx
+        .update(payments)
+        .set({ status: "canceled", updatedAt: new Date() })
+        .where(and(eq(payments.id, paymentId), eq(payments.status, "pending")));
 
-    return NextResponse.json({ ok: true });
+      const parcelCancelable = Number(parcel.amountPaid ?? "0") <= 0;
+      if (parcelCancelable) {
+        await tx
+          .update(parcels)
+          .set({ status: "canceled", updatedAt: new Date() })
+          .where(and(eq(parcels.id, parcel.id), eq(parcels.amountPaid, "0")));
+      }
+      return { parcelCanceled: parcelCancelable };
+    });
+
+    return NextResponse.json({ ok: true, parcelCanceled: result.parcelCanceled });
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";

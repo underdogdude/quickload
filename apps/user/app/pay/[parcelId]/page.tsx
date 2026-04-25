@@ -190,12 +190,15 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
     if (!charge || canceling) return;
     setCanceling(true);
     canceledRef.current = true;
+    let parcelCanceled = false;
     try {
-      await fetch(`/api/payment/charges/${charge.paymentId}/cancel`, { method: "POST" });
+      const res = await fetch(`/api/payment/charges/${charge.paymentId}/cancel`, { method: "POST" });
+      const json = (await res.json().catch(() => ({}))) as { parcelCanceled?: boolean };
+      parcelCanceled = Boolean(json?.parcelCanceled);
     } catch {
-      // ignore
+      // ignore — fall through to the safer redirect below
     } finally {
-      router.replace("/send/review");
+      router.replace(parcelCanceled ? "/parcels" : "/send/review");
     }
   };
 
