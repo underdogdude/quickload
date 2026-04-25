@@ -193,12 +193,9 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
   const mm = remainingSeconds != null ? String(Math.floor(remainingSeconds / 60)).padStart(2, "0") : "--";
   const ss = remainingSeconds != null ? String(remainingSeconds % 60).padStart(2, "0") : "--";
 
-  const formattedAmount =
-    charge?.amount != null
-      ? new Intl.NumberFormat("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
-          Number(charge.amount),
-        )
-      : "-";
+  const formatTHB = (n: number): string =>
+    new Intl.NumberFormat("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+  const formattedAmount = charge?.amount != null ? formatTHB(Number(charge.amount)) : "-";
 
   const showMockButton = process.env.NEXT_PUBLIC_PAYMENT_MOCK === "1";
 
@@ -243,8 +240,25 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
               </div>
             ) : charge?.status === "pending" ? (
               <div className="flex flex-col items-center gap-3">
-                <p className="text-sm font-medium text-slate-500">ยอดที่ต้องชำระ</p>
-                <p className="text-4xl font-semibold leading-none text-[#2726F5]">฿ {formattedAmount}</p>
+                {charge.outstanding.frozen ? (
+                  <>
+                    <p className="text-sm font-medium text-slate-500">ยอดคงเหลือ</p>
+                    <p className="text-4xl font-semibold leading-none text-[#2726F5]">
+                      ฿ {formatTHB(charge.outstanding.outstanding)}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      ชำระแล้ว ฿ {formatTHB(charge.outstanding.totalOwed - charge.outstanding.outstanding)} ·
+                      ยอดเต็ม ฿ {formatTHB(charge.outstanding.totalOwed)}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-slate-500">ยอดที่ต้องชำระ</p>
+                    <p className="text-4xl font-semibold leading-none text-[#2726F5]">
+                      ฿ {formatTHB(charge.outstanding.outstanding)}
+                    </p>
+                  </>
+                )}
                 {charge.trackingId ? (
                   <p className="text-xs text-slate-500">หมายเลขพัสดุ: {charge.trackingId}</p>
                 ) : null}
@@ -261,6 +275,8 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 <p className="text-sm text-slate-600">
                   เหลือเวลา <span className="font-semibold text-slate-900">{mm}:{ss}</span>
                 </p>
+                <TierScheduleCard charge={charge} now={now} />
+
                 {charge.qrPayload && !charge.qrPayload.startsWith("data:image/") ? (
                   <p className="break-all text-center text-[10px] text-slate-400 select-all">
                     {charge.qrPayload}
@@ -327,5 +343,67 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
         </div>
       </div>
     </main>
+  );
+}
+
+function TierScheduleCard({ charge, now }: { charge: ChargeData; now: number }) {
+  const o = charge.outstanding;
+  const basePrice =
+    o.totalOwed && o.currentTier
+      ? o.totalOwed / (1 + o.currentTier.multiplier)
+      : Number(charge.amount);
+
+  const fmt = (n: number) =>
+    new Intl.NumberFormat("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+
+  const TIERS = [
+    { label: "ภายใน 30 นาที", multiplier: 0.0, startMin: 0 },
+    { label: "30 นาที – 4 ชั่วโมง", multiplier: 0.5, startMin: 30 },
+    { label: "4 – 16 ชั่วโมง", multiplier: 1.0, startMin: 240 },
+    { label: "มากกว่า 16 ชั่วโมง", multiplier: 2.0, startMin: 960 },
+  ];
+
+  const isCurrent = (m: number) => o.currentTier != null && o.currentTier.multiplier === m;
+
+  let nextLine: string | null = null;
+  if (o.state === "active" && o.nextTier && o.nextTierAt) {
+    const remainingMs = new Date(o.nextTierAt).getTime() - now;
+    if (remainingMs > 0) {
+      const totalSec = Math.floor(remainingMs / 1000);
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      const hh = String(h).padStart(2, "0");
+      const mm = String(m).padStart(2, "0");
+      const ss = String(s).padStart(2, "0");
+      const nextTotal = basePrice * (1 + o.nextTier.multiplier);
+      const jumpBy = nextTotal - o.totalOwed;
+      nextLine = `เพิ่มอีก ฿${fmt(jumpBy)} ใน ${hh}:${mm}:${ss}`;
+    }
+  } else if (o.state === "clock_not_started") {
+    nextLine = "ค่าปรับยังไม่เริ่มคิด — เริ่มคิดเมื่อพัสดุถูกจัดส่ง";
+  } else if (o.state === "frozen") {
+    nextLine = `ยอดถูกตรึงที่ ฿${fmt(o.totalOwed)} เนื่องจากชำระบางส่วนแล้ว`;
+  }
+
+  return (
+    <div className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+      <table className="w-full">
+        <tbody>
+          {TIERS.map((t) => {
+            const total = basePrice * (1 + t.multiplier);
+            const active = isCurrent(t.multiplier);
+            return (
+              <tr key={t.startMin} className={active ? "font-semibold text-[#2726F5]" : "text-slate-600"}>
+                <td className="py-0.5">{t.label}</td>
+                <td className="py-0.5 text-right">฿ {fmt(total)}</td>
+                <td className="py-0.5 pl-2 text-[10px]">{active ? "◀ ปัจจุบัน" : ""}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {nextLine ? <p className="mt-2 text-center text-slate-500">{nextLine}</p> : null}
+    </div>
   );
 }
