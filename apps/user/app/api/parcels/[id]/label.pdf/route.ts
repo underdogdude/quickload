@@ -130,6 +130,7 @@ async function createParcelLabelPdf(input: {
   recipientPhone: string;
   recipientZipcode: string;
   weight: string;
+  items: string;
 }) {
   // Render at 300 dpi equivalent for 102x76mm
   const renderWidth = 1224;
@@ -163,6 +164,83 @@ async function createParcelLabelPdf(input: {
   const barcodeW = 63;
   const barcodeH = 9.5;
   const trackingCenterX = barcodeX + barcodeW / 2;
+
+  const wrapByTokens = (text: string, maxLen: number, maxLines: number) => {
+    const cleaned = text.replace(/\s+/g, " ").trim();
+    if (!cleaned) return ["-"];
+    const tokens = cleaned.split(/\s+/).filter(Boolean);
+    const lines: string[] = [];
+    let current = "";
+    let overflowed = false;
+
+    for (const token of tokens) {
+      let remaining = token;
+      while (remaining.length > maxLen) {
+        const chunk = `${remaining.slice(0, maxLen - 1)}-`;
+        remaining = remaining.slice(maxLen - 1);
+        if (current.trim()) {
+          lines.push(current.trim());
+          current = "";
+        }
+        if (lines.length >= maxLines) {
+          overflowed = true;
+          break;
+        }
+        lines.push(chunk);
+        if (lines.length >= maxLines) {
+          overflowed = true;
+          break;
+        }
+      }
+      if (overflowed) break;
+
+      const candidate = current ? `${current} ${remaining}` : remaining;
+      if (candidate.length <= maxLen) {
+        current = candidate;
+      } else {
+        // If current line still has room, split long token to make previous line visually fuller.
+        if (current) {
+          const room = maxLen - current.length - 1;
+          if (room >= 8 && remaining.length > room + 6) {
+            const splitLen = Math.max(6, room - 1);
+            const head = `${remaining.slice(0, splitLen)}-`;
+            lines.push(`${current} ${head}`.trim());
+            current = "";
+            remaining = remaining.slice(splitLen);
+            if (lines.length >= maxLines) {
+              overflowed = true;
+              break;
+            }
+            // Re-process the remaining part in the next loop iteration.
+            const retryCandidate = remaining;
+            if (retryCandidate.length <= maxLen) {
+              current = retryCandidate;
+            } else {
+              continue;
+            }
+            if (lines.length >= maxLines) {
+              overflowed = true;
+              break;
+            }
+            continue;
+          }
+        }
+        if (current.trim()) lines.push(current.trim());
+        current = remaining;
+      }
+    }
+
+    if (!overflowed && lines.length < maxLines && current.trim()) lines.push(current.trim());
+
+    if (overflowed || lines.length > maxLines || (current && lines.length >= maxLines)) {
+      const trimmed = lines.slice(0, maxLines);
+      return trimmed.filter(Boolean);
+    }
+    return lines.length ? lines : [cleaned.slice(0, maxLen)];
+  };
+  const recipientAddressLines = wrapByTokens(input.recipientAddress, 66, 3);
+  const senderAddressLines = wrapByTokens(input.senderAddress, 44, 2);
+  const footerItems = input.items.replace(/\s+/g, " ").trim() || "-";
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${renderWidth}" height="${renderHeight}" viewBox="0 0 ${renderWidth} ${renderHeight}">
@@ -200,14 +278,24 @@ async function createParcelLabelPdf(input: {
   <line x1="${x(32.2)}" y1="${y(68)}" x2="${x(32.2)}" y2="${y(74)}" stroke="#111" stroke-width="1.5"/>
 
   <!-- sender block -->
-  <text x="${x(32.2)}" y="${y(25.5)}" font-size="${fs(2.8)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(`ผู้ส่ง : ${input.senderName}`)}</text>
-  <text x="${x(32.2)}" y="${y(29.8)}" font-size="${fs(2.3)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(input.senderAddress)}</text>
+  <text x="${x(32.2)}" y="${y(25.5)}" font-size="${fs(2.6)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(`ผู้ส่ง : ${input.senderName}`)}</text>
+  ${senderAddressLines
+    .map(
+      (line, i) =>
+        `<text x="${x(32.2)}" y="${y(29.2 + i * 3.1)}" font-size="${fs(2.2)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(line)}</text>`,
+    )
+    .join("\n  ")}
   <text x="${x(32.2)}" y="${y(35)}" font-size="${fs(3)}" text-anchor="middle" dominant-baseline="auto" font-weight="bold" >${xmlEscape(input.senderPhone)}</text>
 
   <!-- recipient block -->
-  <text x="${x(32.2)}" y="${y(44.4)}" font-size="${fs(3.2)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(`ผู้รับ : ${input.recipientName}`)}</text>
-  <text x="${x(32.2)}" y="${y(49.7)}" font-size="${fs(2.6)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(input.recipientAddress)}</text>
-  <text x="${x(32.2)}" y="${y(55)}" font-size="${fs(3.5)}" text-anchor="middle" dominant-baseline="auto" font-weight="bold" >${xmlEscape(input.recipientPhone)}</text>
+  <text x="${x(32.2)}" y="${y(43.6)}" font-size="${fs(2.6)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(`ผู้รับ : ${input.recipientName}`)}</text>
+  ${recipientAddressLines
+    .map(
+      (line, i) =>
+        `<text x="${x(32.2)}" y="${y(46.9 + i * 2.6)}" font-size="${fs(1.75)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(line)}</text>`,
+    )
+    .join("\n  ")}
+  <text x="${x(32.2)}" y="${y(55)}" font-size="${fs(3.05)}" text-anchor="middle" dominant-baseline="auto" font-weight="bold" >${xmlEscape(input.recipientPhone)}</text>
 
   <!-- zip digit boxes -->
   ${digits
@@ -221,7 +309,7 @@ async function createParcelLabelPdf(input: {
   <!-- footer -->
   <text x="${x(5.2)}" y="${y(71.5)}" font-size="${fs(1.75)}" dominant-baseline="auto">${xmlEscape(`Printed : ${formatPrintedAt()}`)}</text>
   <image x="${x(33.2)}" y="${y(69.2)}" width="${w(28)}" height="${h(2.4)}" href="data:image/png;base64,${footerBarcodeBase64}"/>
-  <text x="${x(47.2)}" y="${y(73.2)}" font-size="${fs(1.2)}" text-anchor="middle" dominant-baseline="auto">ของแห้ง</text>
+  <text x="${x(47.2)}" y="${y(73.2)}" font-size="${fs(1.2)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(footerItems)}</text>
 
   <!-- right service box -->
   <rect x="${x(64.5)}" y="${y(21)}" width="${w(30)}" height="${h(35)}" fill="none" stroke="#111" stroke-width="1.5"/>
@@ -305,6 +393,7 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
       recipientPhone: order?.cusTel?.trim() || "-",
       recipientZipcode: order?.cusZipcode?.trim() || "",
       weight: order?.productWeight?.trim() || (parcel.weightKg ? `${parcel.weightKg} kg` : "-"),
+      items: order?.productInbox?.trim() || "-",
     });
     const filename = `parcel-label-${trackingNumber.replace(/[^\w-]+/g, "_")}.pdf`;
     return new Response(new Uint8Array(pdf), {

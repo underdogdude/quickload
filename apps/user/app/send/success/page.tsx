@@ -464,7 +464,7 @@ function SuccessInner() {
                     />
                   </svg>
                 </span>
-                <span className="text-xs font-medium">พิมพ์ในแท็บใหม่</span>
+                <span className="text-xs font-medium">พิมพ์ใบปะหน้า</span>
               </button>
               </div>
             </div>

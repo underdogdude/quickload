@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
@@ -48,6 +49,14 @@ export default function HelpPage() {
     <main className="min-h-screen bg-slate-100 pb-28">
       <section className="bg-[#2726F5] px-6 pb-14 pt-10 text-white">
         <div className="mx-auto w-full max-w-lg">
+          <Link
+            href="/"
+            className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white/95"
+            aria-label="กลับไปหน้าแรก"
+          >
+            <span aria-hidden>←</span>
+            <span>กลับ</span>
+          </Link>
           <h1 className="text-3xl font-bold leading-none">Quickload Help</h1>
           <p className="mt-1 text-sm text-white/80">ติดต่อทีมงาน Quickload ได้ผ่านแบบฟอร์มด้านล่าง</p>
         </div>

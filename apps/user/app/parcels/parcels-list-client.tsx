@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { parcelBarcodeDataUrl, parcelQrDataUrl } from "@/lib/parcel-scan-media";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 type ParcelRow = {
@@ -154,6 +155,7 @@ export function ParcelsListClient({
   error: string | null;
   initialQuery?: string;
 }) {
+  const router = useRouter();
   const [query, setQuery] = useState(initialQuery);
   const [activeStatus, setActiveStatus] = useState<string>("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -318,7 +320,19 @@ export function ParcelsListClient({
       ) : null}
 
       {filteredItems.map((p) => (
-        <article key={p.id} className="relative overflow-visible rounded-lg bg-white px-5 py-5 shadow-sm ring-1 ring-slate-200">
+        <article
+          key={p.id}
+          role="link"
+          tabIndex={0}
+          onClick={() => router.push(`/parcels/${p.id}`)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              router.push(`/parcels/${p.id}`);
+            }
+          }}
+          className="relative overflow-visible rounded-lg bg-white px-5 py-5 shadow-sm ring-1 ring-slate-200 transition hover:shadow-md hover:ring-slate-300 focus:outline-none focus:ring-2 focus:ring-[#2726F5]"
+        >
           <div className="grid grid-cols-[1fr_auto] items-end gap-2">
             <div className="min-w-0">
               <p className="text-xs font-normal text-slate-400">หมายเลขพัสดุ</p>
@@ -330,7 +344,10 @@ export function ParcelsListClient({
                 </div>
                 <button
                   type="button"
-                  onClick={() => copyTracking(p.id, p.barcode ?? "-")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void copyTracking(p.id, p.barcode ?? "-");
+                  }}
                   aria-label="คัดลอกหมายเลขพัสดุ"
                   className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
                 >
@@ -415,6 +432,7 @@ export function ParcelsListClient({
                 href={`/api/parcels/${p.id}/label.pdf`}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
                 aria-label="พิมพ์ใบปะหน้า"
                 className="transition hover:text-slate-600"
               >
@@ -426,12 +444,13 @@ export function ParcelsListClient({
                 type="button"
                 aria-label="แสดงคิวอาร์โค้ด"
                 className="transition hover:text-slate-600"
-                onClick={() =>
+                onClick={(e) => {
+                  e.stopPropagation();
                   setPlaceholderModal({
                     type: "qr",
                     parcelCode: parcelScanText(p),
-                  })
-                }
+                  });
+                }}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24">
                   <path d="M4 4h6v6H4V4Zm0 10h6v6H4v-6Zm10-10h6v6h-6V4Zm6 12v4h-4m-2 0v-2m0-4v-2m4 2h2" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
@@ -441,12 +460,13 @@ export function ParcelsListClient({
                 type="button"
                 aria-label="แสดงบาร์โค้ด"
                 className="transition hover:text-slate-600"
-                onClick={() =>
+                onClick={(e) => {
+                  e.stopPropagation();
                   setPlaceholderModal({
                     type: "barcode",
                     parcelCode: parcelScanText(p),
-                  })
-                }
+                  });
+                }}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24">
                   <path
@@ -501,7 +521,7 @@ export function ParcelsListClient({
               {placeholderModal.type === "qr" ? "QR CODE" : "BARCODE"}
             </h3>
             <p className="mt-1 text-xs text-slate-500">
-              สแกนเพื่ออ่านเลขพัสดุ (เช่นรูปแบบ WB…TH)
+              สแกนเพื่ออ่านเลขพัสดุ
             </p>
             <div className="mt-4 flex min-h-[11rem] items-center justify-center rounded-lg border border-slate-200 bg-white p-3">
               {scanModalMedia.loading ? (

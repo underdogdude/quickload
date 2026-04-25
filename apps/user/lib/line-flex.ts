@@ -9,6 +9,7 @@ type OrderSuccessFlexInput = {
   sizeText?: string | null;
   parcelType?: string | null;
   trackingUrl?: string | null;
+  labelPdfUrl?: string | null;
   qrCodeImageUrl?: string | null;
 };
 
@@ -123,23 +124,37 @@ export function createOrderSuccessFlexMessage(input: OrderSuccessFlexInput): {
     };
   }
 
+  const footerButtons: Array<Record<string, unknown>> = [];
   if (input.trackingUrl?.trim()) {
+    footerButtons.push({
+      type: "button",
+      style: "primary",
+      color: "#2726F5",
+      action: {
+        type: "uri",
+        label: "ติดตามพัสดุ",
+        uri: input.trackingUrl.trim(),
+      },
+    });
+  }
+  if (input.labelPdfUrl?.trim()) {
+    footerButtons.push({
+      type: "button",
+      style: "secondary",
+      action: {
+        type: "uri",
+        label: "พิมพ์ใบปะหน้า",
+        uri: input.labelPdfUrl.trim(),
+      },
+    });
+  }
+
+  if (footerButtons.length > 0) {
     contents.footer = {
       type: "box",
       layout: "vertical",
       spacing: "sm",
-      contents: [
-        {
-          type: "button",
-          style: "primary",
-          color: "#2726F5",
-          action: {
-            type: "uri",
-            label: "ติดตามพัสดุ",
-            uri: input.trackingUrl.trim(),
-          },
-        },
-      ],
+      contents: footerButtons,
       paddingAll: "16px",
     };
   }
