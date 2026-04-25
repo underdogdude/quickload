@@ -6,6 +6,28 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 
 type ChargeStatus = "pending" | "succeeded" | "failed" | "expired" | "canceled";
 
+type OutstandingState =
+  | "clock_not_started"
+  | "active"
+  | "frozen"
+  | "abandoned"
+  | "settled";
+
+type PenaltyTier = { startMinutes: number; multiplier: number };
+
+type Outstanding = {
+  state: OutstandingState;
+  totalOwed: number;
+  outstanding: number;
+  currentTier: PenaltyTier | null;
+  nextTier: PenaltyTier | null;
+  /** ISO-8601. */
+  nextTierAt: string | null;
+  /** ISO-8601. */
+  abandonAt: string | null;
+  frozen: boolean;
+};
+
 type ChargeData = {
   paymentId: string;
   status: ChargeStatus;
@@ -16,6 +38,7 @@ type ChargeData = {
   paidAt: string | null;
   parcelId: string;
   trackingId: string | null;
+  outstanding: Outstanding;
 };
 
 const POLL_INTERVAL_MS = 2500;
@@ -61,7 +84,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
         body: JSON.stringify({ parcelId }),
       });
       const json = (await res.json()) as
-        | { ok: true; data: Omit<ChargeData, "parcelId" | "trackingId" | "paidAt"> }
+        | { ok: true; data: Omit<ChargeData, "parcelId" | "trackingId" | "paidAt" | "outstanding"> }
         | { ok: false; error: string };
       if (!res.ok || !("ok" in json) || !json.ok) {
         setError(("error" in json && json.error) || "ไม่สามารถสร้าง QR ได้");
