@@ -12,7 +12,8 @@
     "./legacy": "./src/legacy/adapter.ts",
     "./line": "./src/line.ts",
     "./notifications": "./src/notifications.ts",
-    "./beam": "./src/beam.ts"
+    "./beam": "./src/beam.ts",
+    "./penalty": "./src/penalty.ts"
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",
