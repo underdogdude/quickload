@@ -226,7 +226,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
   const showMockButton = process.env.NEXT_PUBLIC_PAYMENT_MOCK === "1";
 
   return (
-    <main className="min-h-screen bg-slate-100 pb-36">
+    <main className="min-h-screen bg-slate-100 pb-12">
       <section className="bg-[#2726F5] px-6 pb-14 pt-10 text-white">
         <div className="mx-auto w-full max-w-lg">
           <button
@@ -319,6 +319,15 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                     [DEV] {simulating ? "กำลังจำลอง..." : "จำลองการชำระสำเร็จ"}
                   </button>
                 ) : null}
+
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  disabled={canceling}
+                  className="mt-3 w-full rounded-full border border-slate-300 bg-white px-6 py-3 text-base font-semibold text-slate-700 disabled:opacity-50"
+                >
+                  ยกเลิก
+                </button>
               </div>
             ) : charge?.status === "succeeded" ? (
               <div className="py-8 text-center">
@@ -362,19 +371,6 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
           </div>
         </div>
       </section>
-
-      <div className="fixed inset-x-0 bottom-0 z-30 bg-slate-100 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 shadow-[0_-6px_20px_rgba(15,23,42,0.08)]">
-        <div className="mx-auto w-full max-w-lg">
-          <button
-            type="button"
-            onClick={handleCancel}
-            disabled={canceling || charge?.status === "succeeded"}
-            className="w-full rounded-full border border-slate-300 bg-white px-6 py-3 text-base font-semibold text-slate-700 disabled:opacity-50"
-          >
-            ยกเลิก
-          </button>
-        </div>
-      </div>
     </main>
   );
 }
