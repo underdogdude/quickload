@@ -11,7 +11,8 @@
     "./types": "./src/types/index.ts",
     "./legacy": "./src/legacy/adapter.ts",
     "./line": "./src/line.ts",
-    "./notifications": "./src/notifications.ts"
+    "./notifications": "./src/notifications.ts",
+    "./beam": "./src/beam.ts"
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",
