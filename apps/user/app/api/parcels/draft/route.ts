@@ -9,6 +9,30 @@ import { createOrderSuccessFlexMessage } from "@/lib/line-flex";
 import { pushLineMessage } from "@/lib/line-messaging";
 import { requireLineSession } from "@/lib/require-user";
 
+function resolvePublicBaseUrl(request: Request): string | null {
+  const envBase =
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.APP_BASE_URL?.trim() ||
+    process.env.PUBLIC_BASE_URL?.trim() ||
+    "";
+  if (envBase) return envBase.replace(/\/+$/, "");
+
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.trim();
+  const forwardedHost = request.headers.get("x-forwarded-host")?.trim();
+  if (forwardedProto && forwardedHost && !/^(0\.0\.0\.0|localhost)(:\d+)?$/i.test(forwardedHost)) {
+    return `${forwardedProto}://${forwardedHost}`.replace(/\/+$/, "");
+  }
+
+  try {
+    const origin = new URL(request.url).origin;
+    const host = new URL(origin).host;
+    if (/^(0\.0\.0\.0|localhost)(:\d+)?$/i.test(host)) return null;
+    return origin.replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
+
 type CreateBody = {
   senderId?: string;
   recipientId?: string;
@@ -107,7 +131,9 @@ export async function POST(request: Request) {
     }
 
     const destination = `${recipient.contactName} · ${recipient.amphoe}, ${recipient.province}`;
-    const size = `${widthCm}x${lengthCm}x${heightCm}cm · ${parcelType}`;
+    // Keep parcel dimensions in parcels.size only.
+    // Parcel type is already persisted in order fields (e.g. productInbox/items).
+    const size = `${widthCm}x${lengthCm}x${heightCm}cm`;
     const weightKg = (weightGram / 1000).toFixed(3);
 
     const inserted = await db
@@ -119,6 +145,7 @@ export async function POST(request: Request) {
         destination,
         weightKg,
         size,
+      parcelType,
         status: "registered",
         price: parcelPrice,
         source: `send:${shippingMode}:${autoPrint ? "autoprint" : "manual"}${note ? ":note" : ""}`,
@@ -171,7 +198,11 @@ export async function POST(request: Request) {
       const barcode = f.barcode?.trim() || parcelRow.barcode?.trim() || "";
       const trackingNumber = barcode || parcelRow.trackingId;
       const referenceCode = f.smartpostTrackingcode?.trim() || "";
-      const trackingUrl = new URL("/tracking", request.url).toString();
+      const publicBaseUrl = resolvePublicBaseUrl(request);
+      const trackingUrl = publicBaseUrl ? new URL("/tracking", publicBaseUrl).toString() : null;
+      const labelPdfUrl = publicBaseUrl
+        ? new URL(`/api/parcels/${encodeURIComponent(parcelRow.id)}/label.pdf`, publicBaseUrl).toString()
+        : null;
       const qrCodeImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(
         trackingNumber,
       )}`;
@@ -186,6 +217,7 @@ export async function POST(request: Request) {
         sizeText: `${widthCm} x ${lengthCm} x ${heightCm} ซม.`,
         parcelType,
         trackingUrl,
+        labelPdfUrl,
         qrCodeImageUrl,
       });
       await pushLineMessage({

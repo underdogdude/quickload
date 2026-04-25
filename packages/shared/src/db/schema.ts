@@ -42,6 +42,7 @@ export const parcels = pgTable("parcels", {
   destination: text("destination"),
   weightKg: numeric("weight_kg", { precision: 12, scale: 3 }),
   size: text("size"),
+  parcelType: text("parcel_type"),
   status: text("status").notNull().default("registered"),
   price: numeric("price", { precision: 14, scale: 2 }),
   isPaid: boolean("is_paid").notNull().default(false),
