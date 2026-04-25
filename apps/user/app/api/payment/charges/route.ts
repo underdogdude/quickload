@@ -118,23 +118,61 @@ export async function POST(request: Request) {
         ? beamExpiry
         : ourExpiryDate;
 
-    const [inserted] = await db
-      .insert(payments)
-      .values({
-        parcelId: parcel.id,
-        userId: parcel.userId,
-        provider: "beam",
-        providerChargeId: beamResult.chargeId,
-        amount: out.outstanding.toFixed(2),
-        currency: "THB",
-        paymentMethod: "promptpay",
-        status: "pending",
-        qrPayload: beamResult.qrPayload,
-        expiresAt,
-        rawCreateResponse: beamResult.rawResponse as any,
-        idempotencyKey,
-      })
-      .returning();
+    let inserted;
+    try {
+      [inserted] = await db
+        .insert(payments)
+        .values({
+          parcelId: parcel.id,
+          userId: parcel.userId,
+          provider: "beam",
+          providerChargeId: beamResult.chargeId,
+          amount: out.outstanding.toFixed(2),
+          currency: "THB",
+          paymentMethod: "promptpay",
+          status: "pending",
+          qrPayload: beamResult.qrPayload,
+          expiresAt,
+          rawCreateResponse: beamResult.rawResponse as any,
+          idempotencyKey,
+        })
+        .returning();
+    } catch (err) {
+      // Partial unique index payments_one_pending_per_parcel_idx blocks
+      // concurrent inserts (e.g. React-StrictMode double-mount race). Recover
+      // by returning the surviving pending row instead of erroring.
+      const code = (err as { code?: string } | null)?.code;
+      if (code === "23505") {
+        const [survivor] = await db
+          .select()
+          .from(payments)
+          .where(
+            and(
+              eq(payments.parcelId, parcel.id),
+              eq(payments.status, "pending"),
+              gt(payments.expiresAt, now),
+            ),
+          )
+          .limit(1);
+        if (survivor) {
+          console.info(
+            `[payment.charges.create] race recovered: returning existing pending paymentId=${survivor.id} parcelId=${parcel.id}`,
+          );
+          return NextResponse.json({
+            ok: true,
+            data: {
+              paymentId: survivor.id,
+              amount: survivor.amount,
+              currency: survivor.currency,
+              qrPayload: survivor.qrPayload,
+              expiresAt: survivor.expiresAt?.toISOString() ?? null,
+              status: survivor.status,
+            },
+          });
+        }
+      }
+      throw err;
+    }
 
     if (!inserted) {
       return NextResponse.json({ ok: false, error: "Failed to persist payment" }, { status: 500 });
