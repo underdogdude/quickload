@@ -270,19 +270,16 @@ function ReviewInner() {
           heightCm,
           parcelType,
           note,
+          estimatedPrice: baseEstimatedPrice > 0 ? baseEstimatedPrice.toFixed(2) : undefined,
           smartpostAddItemResponse: addItemJson.data,
         }),
       });
       const json = (await res.json()) as { ok?: boolean; data?: { id?: string; trackingId?: string }; error?: string };
-      if (!res.ok || !json.ok || !json.data?.id || !json.data?.trackingId) {
+      if (!res.ok || !json.ok || !json.data?.id) {
         setError(json.error ?? "สร้างออเดอร์ไม่สำเร็จ");
         return;
       }
-      const params = new URLSearchParams({
-        parcelId: json.data.id,
-        trackingId: json.data.trackingId,
-      });
-      router.replace(`/send/success?${params.toString()}`);
+      router.replace(`/pay/${json.data.id}`);
     } catch {
       setError("สร้างออเดอร์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
     } finally {
