@@ -23,6 +23,10 @@
     "db:apply:recipient": "node ./scripts/apply-recipient-sql.mjs",
     "db:apply:orders": "node ./scripts/apply-orders-sql.mjs",
     "db:apply:parcels-barcode": "node ./scripts/apply-parcels-barcode-sql.mjs",
+    "db:apply:payments": "node ./scripts/apply-sql.mjs ./sql/20260425_payments.sql",
+    "db:apply:penalty-columns": "node ./scripts/apply-sql.mjs ./sql/20260425_parcels_penalty_columns.sql",
+    "db:apply:amount-paid-trigger": "node ./scripts/apply-sql.mjs ./sql/20260425_amount_paid_trigger.sql",
+    "db:apply:payment-stack": "pnpm db:apply:payments && pnpm db:apply:penalty-columns && pnpm db:apply:amount-paid-trigger",
     "db:reset:parcels": "node ./scripts/reset-parcels-orders-sql.mjs"
   },
   "dependencies": {
