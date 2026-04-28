@@ -1,7 +1,9 @@
 import { and, asc, eq } from "drizzle-orm";
+import { reconcilePendingPaymentFromBeamApi } from "@quickload/shared/beam";
 import { getDb, parcels, payments } from "@quickload/shared/db";
 import { computeOutstanding } from "@quickload/shared/penalty";
 import { NextResponse } from "next/server";
+import { sendPaymentFailedFlexForPayment, sendPaymentSuccessFlexForPayment } from "@/lib/payment-line-notify";
 import { requireLineSession } from "@/lib/require-user";
 
 export async function GET(
@@ -25,31 +27,56 @@ export async function GET(
       return NextResponse.json({ ok: false, error: "Payment not found" }, { status: 404 });
     }
 
+    let paymentRow = payment;
+    let parcelRow = parcel;
+
+    // Beam public webhook docs only guarantee charge.succeeded; failed PromptPay often
+    // finalizes at Beam without a webhook → poll GET charge here while UI polls us.
+    if (paymentRow.status === "pending" && paymentRow.providerChargeId) {
+      const sync = await reconcilePendingPaymentFromBeamApi(paymentRow.providerChargeId);
+      if (sync.synced) {
+        try {
+          if (sync.outcome === "succeeded") {
+            await sendPaymentSuccessFlexForPayment(sync.paymentId, sync.parcelId);
+          } else {
+            await sendPaymentFailedFlexForPayment(sync.paymentId, sync.parcelId, sync.outcome);
+          }
+        } catch (lineErr) {
+          const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
+          console.warn("[payment.charges.get] line notify after beam reconcile:", msg);
+        }
+        const [p2] = await db.select().from(payments).where(eq(payments.id, paymentId)).limit(1);
+        if (p2) paymentRow = p2;
+        const [c2] = await db.select().from(parcels).where(eq(parcels.id, parcelRow.id)).limit(1);
+        if (c2) parcelRow = c2;
+      }
+    }
+
     // Flip to expired lazily.
-    let effectiveStatus = payment.status;
+    let effectiveStatus = paymentRow.status;
     if (
-      payment.status === "pending" &&
-      payment.expiresAt &&
-      payment.expiresAt.getTime() < Date.now()
+      paymentRow.status === "pending" &&
+      paymentRow.expiresAt &&
+      paymentRow.expiresAt.getTime() < Date.now()
     ) {
       await db
         .update(payments)
         .set({ status: "expired", updatedAt: new Date() })
-        .where(eq(payments.id, payment.id));
+        .where(eq(payments.id, paymentRow.id));
       effectiveStatus = "expired";
     }
 
     const [firstPayment] = await db
       .select({ paidAt: payments.paidAt })
       .from(payments)
-      .where(and(eq(payments.parcelId, parcel.id), eq(payments.status, "succeeded")))
+      .where(and(eq(payments.parcelId, parcelRow.id), eq(payments.status, "succeeded")))
       .orderBy(asc(payments.paidAt))
       .limit(1);
 
     const out = computeOutstanding({
-      price: parcel.price ?? "0",
-      penaltyClockStartedAt: parcel.penaltyClockStartedAt,
-      amountPaid: parcel.amountPaid,
+      price: parcelRow.price ?? "0",
+      penaltyClockStartedAt: parcelRow.penaltyClockStartedAt,
+      amountPaid: parcelRow.amountPaid,
       firstSuccessfulPaymentAt: firstPayment?.paidAt ?? null,
       now: new Date(),
     });
@@ -57,15 +84,16 @@ export async function GET(
     return NextResponse.json({
       ok: true,
       data: {
-        paymentId: payment.id,
+        paymentId: paymentRow.id,
         status: effectiveStatus,
-        amount: payment.amount,
-        currency: payment.currency,
-        qrPayload: payment.qrPayload,
-        expiresAt: payment.expiresAt?.toISOString() ?? null,
-        paidAt: payment.paidAt?.toISOString() ?? null,
-        parcelId: parcel.id,
-        trackingId: parcel.trackingId,
+        amount: paymentRow.amount,
+        currency: paymentRow.currency,
+        qrPayload: paymentRow.qrPayload,
+        expiresAt: paymentRow.expiresAt?.toISOString() ?? null,
+        paidAt: paymentRow.paidAt?.toISOString() ?? null,
+        parcelId: parcelRow.id,
+        barcode: parcelRow.barcode,
+        trackingId: parcelRow.trackingId,
         outstanding: {
           state: out.state,
           totalOwed: out.totalOwed,

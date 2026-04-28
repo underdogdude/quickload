@@ -115,6 +115,7 @@ function ReviewInner() {
   const [recipient, setRecipient] = useState<RecipientAddress | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [estimatedPrice, setEstimatedPrice] = useState(0);
   const [baseEstimatedPrice, setBaseEstimatedPrice] = useState(0);
@@ -213,11 +214,12 @@ function ReviewInner() {
           productPrice: insuredValue && Number(insuredValue) > 0 ? insuredValue : "0",
           insurancePrice: extraInsurance && insuredValue && Number(insuredValue) > 0 ? insuredValue : "0",
         });
-        let json: { ok?: boolean; data?: { estimatedTotal?: number } };
+        let json: { ok?: boolean; data?: { estimatedTotal?: number }; error?: string };
         let resOk = true;
         if (process.env.NEXT_PUBLIC_SMARTPOST_MOCK === "1") {
-          const mockTotal = 50 + (Date.now() % 100);
-          json = { ok: true, data: { estimatedTotal: mockTotal } };
+          const res = await fetch("/api/dev/pricing-estimate");
+          resOk = res.ok;
+          json = (await res.json()) as { ok?: boolean; data?: { estimatedTotal?: number }; error?: string };
         } else {
           const res = await fetch(`/api/pricing/estimate?${params.toString()}`);
           resOk = res.ok;
@@ -238,52 +240,32 @@ function ReviewInner() {
   }, [extraInsurance, insuredValue, recipient?.zipcode, weightGram, zipcodeSurcharge]);
 
   async function onConfirmCreateOrder() {
-    if (!sender || !recipient || submitting) return;
+    if (!sender || !recipient || submitting || redirecting) return;
     if (phoneBlockMessage) return;
     setError(null);
     setSubmitting(true);
+    let shouldKeepSubmitting = false;
     try {
       let addItemJson: { ok?: boolean; error?: string; data?: unknown };
       if (process.env.NEXT_PUBLIC_SMARTPOST_MOCK === "1") {
-        const ts = Date.now();
-        addItemJson = {
-          ok: true,
-          data: {
-            statuscode: "201",
-            message: "OK (mock)",
-            data: {
-              smartpost_trackingcode: `MOCK${ts}`,
-              barcode: `MOCKBC${ts}TH`,
-              service_type: "EMS",
-              product_inbox: parcelType,
-              product_weight: String(weightGram),
-              product_price: insuredValue || "0",
-              shipper_name: sender.contactName,
-              shipper_address: sender.addressLine,
-              shipper_subdistrict: sender.tambon,
-              shipper_district: sender.amphoe,
-              shipper_province: sender.province,
-              shipper_zipcode: sender.zipcode,
-              shipper_email: "",
-              shipper_mobile: sender.phone,
-              cus_name: recipient.contactName,
-              cus_add: recipient.addressLine,
-              cus_sub: recipient.tambon,
-              cus_amp: recipient.amphoe,
-              cus_prov: recipient.province,
-              cus_zipcode: recipient.zipcode,
-              cus_tel: recipient.phone,
-              cus_email: "",
-              customer_code: "MOCK",
-              cost: String(baseEstimatedPrice || 0),
-              finalcost: String(baseEstimatedPrice || 0),
-              order_status: "ACCEPTED",
-              items: parcelType,
-              insurance_rate_price: extraInsurance && insuredValue ? insuredValue : "0",
-              reference_id: `mock-${ts}`,
-            },
-          },
-        };
+        const mockRes = await fetch("/api/dev/smartpost-add-item", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            senderId,
+            recipientId,
+            parcelType,
+            weightGram,
+            insuredValue,
+            extraInsurance,
+            baseEstimatedPrice,
+          }),
+        });
+        addItemJson = (await mockRes.json()) as { ok?: boolean; error?: string; data?: unknown };
+        if (!mockRes.ok || !addItemJson.ok) {
+          setError(addItemJson.error ?? "โหลด mock Smartpost ไม่สำเร็จ (ตรวจไฟล์ใน lib/dev-mock/payloads)");
+          return;
+        }
       } else {
         const addItemRes = await fetch("/api/smartpost/add-item", {
           method: "POST",
@@ -318,7 +300,6 @@ function ReviewInner() {
           heightCm,
           parcelType,
           note,
-          estimatedPrice: baseEstimatedPrice > 0 ? baseEstimatedPrice.toFixed(2) : undefined,
           smartpostAddItemResponse: addItemJson.data,
         }),
       });
@@ -327,11 +308,13 @@ function ReviewInner() {
         setError(json.error ?? "สร้างออเดอร์ไม่สำเร็จ");
         return;
       }
-      router.replace(`/pay/${json.data.id}`);
+      shouldKeepSubmitting = true;
+      setRedirecting(true);
+      router.replace(`/parcels/${json.data.id}`);
     } catch {
       setError("สร้างออเดอร์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
     } finally {
-      setSubmitting(false);
+      if (!shouldKeepSubmitting) setSubmitting(false);
     }
   }
 
@@ -447,11 +430,11 @@ function ReviewInner() {
         <div className="mx-auto w-full max-w-lg">
           <button
             type="button"
-            disabled={loading || submitting || !sender || !recipient || Boolean(phoneBlockMessage)}
+            disabled={loading || submitting || redirecting || !sender || !recipient || Boolean(phoneBlockMessage)}
             onClick={onConfirmCreateOrder}
-            className="w-full rounded-full bg-[#2726F5] px-6 py-3 text-base font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)] disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
+            className="w-full rounded-md bg-[#2726F5] px-6 py-3 text-base font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)] disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
           >
-            {submitting ? "กำลังสร้างออเดอร์..." : "ยืนยันสร้างออเดอร์"}
+            {submitting || redirecting ? "กำลังสร้างออเดอร์..." : "ยืนยันสร้างออเดอร์"}
           </button>
         </div>
       </div>

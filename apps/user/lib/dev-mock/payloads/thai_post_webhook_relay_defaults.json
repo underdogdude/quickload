@@ -1,0 +1,8 @@
+{
+  "defaultStation": "ฝ่ายรับฝาก ปณ.บางเขน",
+  "fallbackStatusDescription": "อัปเดตสถานะพัสดุ (mock relay)",
+  "statusDescriptions": {
+    "1": "ปณ.ต้นทางรับฝากแล้ว",
+    "6": "ถึง ปณ.ปลายทาง เตรียมนำจ่าย"
+  }
+}

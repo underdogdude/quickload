@@ -234,20 +234,157 @@ export async function markPaymentSucceeded({
       now: new Date(),
     });
 
-    if (out.outstanding === 0) {
-      await tx
-        .update(parcels)
-        .set({ isPaid: true, status: "paid", updatedAt: new Date() })
-        .where(eq(parcels.id, row.parcelId));
-    } else {
-      // Partial settlement: keep parcel pending. The customer will pay the
-      // remainder via a fresh QR.
-      await tx
-        .update(parcels)
-        .set({ updatedAt: new Date() })
-        .where(eq(parcels.id, row.parcelId));
-    }
+    // Product decision: once Beam confirms this charge as succeeded,
+    // parcel should move to paid immediately for UX consistency.
+    await tx
+      .update(parcels)
+      .set({ isPaid: true, status: "paid", updatedAt: new Date() })
+      .where(eq(parcels.id, row.parcelId));
 
     return { paymentId: row.id, parcelId: row.parcelId, settled: out.outstanding === 0 };
   });
+}
+
+export async function markPaymentTerminalStatus({
+  providerChargeId,
+  nextStatus,
+  rawWebhookPayload,
+}: {
+  providerChargeId: string;
+  nextStatus: "failed" | "expired" | "canceled";
+  rawWebhookPayload: unknown;
+}): Promise<{ paymentId: string; parcelId: string } | null> {
+  const db = getDb();
+  return await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(payments)
+      .set({
+        status: nextStatus,
+        rawWebhookPayload: rawWebhookPayload as any,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(payments.providerChargeId, providerChargeId), eq(payments.status, "pending")),
+      )
+      .returning({ id: payments.id, parcelId: payments.parcelId });
+    const row = updated[0];
+    if (!row) return null;
+    return { paymentId: row.id, parcelId: row.parcelId };
+  });
+}
+
+/**
+ * GET /api/v1/charges/{chargeId} — same auth as create.
+ * Used to reconcile DB when Beam finalizes a charge but does not emit a documented webhook
+ * (e.g. PromptPay failure: docs only guarantee charge.succeeded for success).
+ */
+export async function fetchBeamCharge(
+  env: BeamEnv,
+  providerChargeId: string,
+): Promise<Record<string, unknown>> {
+  if (!env.baseUrl || !env.merchantId || !env.apiKey) {
+    throw new Error("Beam env not configured (BEAM_API_BASE_URL / BEAM_MERCHANT_ID / BEAM_API_KEY)");
+  }
+  const basic = Buffer.from(`${env.merchantId}:${env.apiKey}`).toString("base64");
+  const url = `${env.baseUrl.replace(/\/$/, "")}/api/v1/charges/${encodeURIComponent(providerChargeId)}`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Basic ${basic}`, Accept: "application/json" },
+  });
+  const text = await res.text();
+  let json: unknown = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    /* leave null */
+  }
+  if (!res.ok) {
+    throw new Error(`Beam GET charge returned ${res.status}: ${text.slice(0, 500)}`);
+  }
+  return (json ?? {}) as Record<string, unknown>;
+}
+
+export type ReconcileBeamPaymentResult =
+  | { synced: false; reason: "not_configured" | "still_pending" | "fetch_error" | "unknown_status" }
+  | { synced: true; outcome: "succeeded"; paymentId: string; parcelId: string }
+  | {
+      synced: true;
+      outcome: "failed" | "expired" | "canceled";
+      paymentId: string;
+      parcelId: string;
+    };
+
+function mapBeamApiChargeStatus(
+  statusRaw: unknown,
+): "pending" | "succeeded" | "failed" | "expired" | "canceled" | "unknown" {
+  if (typeof statusRaw !== "string" || !statusRaw.trim()) return "unknown";
+  const u = statusRaw.toUpperCase();
+  if (
+    u === "PENDING" ||
+    u === "PROCESSING" ||
+    u === "REQUIRES_ACTION" ||
+    u === "AWAITING_PAYMENT"
+  ) {
+    return "pending";
+  }
+  if (u === "SUCCEEDED" || u === "SUCCESS") return "succeeded";
+  if (u === "FAILED") return "failed";
+  if (u === "EXPIRED") return "expired";
+  if (u === "CANCELED" || u === "CANCELLED") return "canceled";
+  return "unknown";
+}
+
+/**
+ * Poll Beam for the current charge status and apply the same DB transitions as webhooks.
+ * Safe to call on every client poll while payment row is pending.
+ */
+export async function reconcilePendingPaymentFromBeamApi(
+  providerChargeId: string,
+): Promise<ReconcileBeamPaymentResult> {
+  const env = readBeamEnv();
+  if (!env.baseUrl || !env.merchantId || !env.apiKey) {
+    return { synced: false, reason: "not_configured" };
+  }
+  let raw: Record<string, unknown>;
+  try {
+    raw = await fetchBeamCharge(env, providerChargeId);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn("[beam] reconcile fetchBeamCharge:", msg);
+    return { synced: false, reason: "fetch_error" };
+  }
+  const mapped = mapBeamApiChargeStatus(raw.status);
+  if (mapped === "pending") {
+    return { synced: false, reason: "still_pending" };
+  }
+  if (mapped === "unknown") {
+    if (typeof raw.status === "string" && raw.status.length > 0) {
+      console.info(`[beam] reconcile: unknown status "${raw.status}" charge=${providerChargeId}`);
+    }
+    return { synced: false, reason: "unknown_status" };
+  }
+  if (mapped === "succeeded") {
+    const r = await markPaymentSucceeded({ providerChargeId, rawWebhookPayload: raw });
+    if (!r) return { synced: false, reason: "still_pending" };
+    return { synced: true, outcome: "succeeded", paymentId: r.paymentId, parcelId: r.parcelId };
+  }
+  const terminal = mapped;
+  const r = await markPaymentTerminalStatus({
+    providerChargeId,
+    nextStatus: terminal,
+    rawWebhookPayload: raw,
+  });
+  if (!r) return { synced: false, reason: "still_pending" };
+  return { synced: true, outcome: terminal, paymentId: r.paymentId, parcelId: r.parcelId };
+}
+
+/** Extract charge id from Beam charge-shaped webhook or API JSON. */
+export function extractBeamChargeId(obj: Record<string, unknown>): string | null {
+  if (typeof obj.chargeId === "string" && obj.chargeId.length > 0) return obj.chargeId;
+  if (typeof obj.id === "string" && obj.id.length > 0) return obj.id;
+  const data = obj.data as Record<string, unknown> | undefined;
+  if (data) {
+    if (typeof data.chargeId === "string" && data.chargeId.length > 0) return data.chargeId;
+    if (typeof data.id === "string" && data.id.length > 0) return data.id;
+  }
+  return null;
 }

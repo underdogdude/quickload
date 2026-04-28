@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -36,7 +37,7 @@ export const parcels = pgTable("parcels", {
   id: uuid("id").primaryKey().defaultRandom(),
   /** Primary public tracking: Smartpost `smartpost_trackingcode` when available, else barcode / draft id. */
   trackingId: text("tracking_id").notNull().unique(),
-  /** Thailand Post–style barcode (e.g. WB…TH) when Smartpost returns it; may differ from `tracking_id`. */
+  /** Thailand Post item id: 13 chars, typically `WB` + 9 digits + `TH` (e.g. WB222126989TH). */
   barcode: text("barcode"),
   userId: uuid("user_id").references(() => users.id),
   destination: text("destination"),
@@ -51,6 +52,8 @@ export const parcels = pgTable("parcels", {
   penaltyClockStartedAt: timestamp("penalty_clock_started_at", { withTimezone: true }),
   /** Maintained by DB trigger as SUM(payments.amount WHERE status='succeeded'). */
   amountPaid: numeric("amount_paid", { precision: 14, scale: 2 }).notNull().default("0"),
+  /** Set when Thailand Post webhook applies final postage price (billable amount). */
+  thaiPostPriceConfirmedAt: timestamp("thai_post_price_confirmed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }),
 });
@@ -95,6 +98,24 @@ export const orders = pgTable("orders", {
   referenceId: text("reference_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }),
+});
+
+/** Latest Thailand Post webhook snapshot per parcel; `status_history` holds every received update (oldest → newest). */
+export const thaiPostWebhookEvents = pgTable("thai_post_webhook_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  parcelId: uuid("parcel_id")
+    .notNull()
+    .references(() => parcels.id, { onDelete: "cascade" })
+    .unique(),
+  barcode: text("barcode").notNull(),
+  statusCode: text("status_code").notNull(),
+  statusDescription: text("status_description"),
+  statusDateRaw: text("status_date_raw"),
+  station: text("station"),
+  statusHistory: jsonb("status_history").notNull().default(sql`'[]'::jsonb`),
+  rawPayload: jsonb("raw_payload").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const pickupSlots = pgTable("pickup_slots", {

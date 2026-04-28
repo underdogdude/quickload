@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { desc, eq, inArray } from "drizzle-orm";
-import { getDb, orders, parcels } from "@quickload/shared/db";
+import { thaiPostEventsForApiFromHistory } from "@quickload/shared/thai-post-webhook-history";
+import { getDb, orders, parcels, thaiPostWebhookEvents } from "@quickload/shared/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { ParcelsListClient } from "./parcels-list-client";
 
@@ -10,7 +11,11 @@ type ParcelRow = {
   barcode: string | null;
   status: string;
   destination: string | null;
+  price: string | null;
+  amountPaid: string | null;
   isPaid: boolean;
+  /** ISO timestamp when Thailand Post webhook set final billable price. */
+  thaiPostPriceConfirmedAt: string | null;
   createdAt: string;
   senderProvince: string | null;
   senderName: string | null;
@@ -18,6 +23,16 @@ type ParcelRow = {
   recipientProvince: string | null;
   recipientName: string | null;
   recipientPhone: string | null;
+  /** Thailand Post webhook rows for this parcel (oldest → newest). */
+  thaiPostEvents: Array<{
+    id: string;
+    statusCode: string;
+    description: string | null;
+    statusDateRaw: string | null;
+    station?: string | null;
+    barcode?: string | null;
+    createdAt: string;
+  }>;
 };
 
 async function loadParcels(
@@ -32,7 +47,10 @@ async function loadParcels(
         barcode: parcels.barcode,
         status: parcels.status,
         destination: parcels.destination,
+        price: parcels.price,
+        amountPaid: parcels.amountPaid,
         isPaid: parcels.isPaid,
+        thaiPostPriceConfirmedAt: parcels.thaiPostPriceConfirmedAt,
         createdAt: parcels.createdAt,
       })
       .from(parcels)
@@ -80,13 +98,43 @@ async function loadParcels(
       }
     }
 
+    const thaiPostByParcel = new Map<string, ParcelRow["thaiPostEvents"]>();
+    if (parcelIds.length > 0) {
+      try {
+        const evRows = await db
+          .select({
+            parcelId: thaiPostWebhookEvents.parcelId,
+            statusHistory: thaiPostWebhookEvents.statusHistory,
+          })
+          .from(thaiPostWebhookEvents)
+          .where(inArray(thaiPostWebhookEvents.parcelId, parcelIds));
+
+        for (const row of evRows) {
+          thaiPostByParcel.set(row.parcelId, thaiPostEventsForApiFromHistory(row.statusHistory));
+        }
+      } catch (e) {
+        console.error(
+          "[parcels.page] thai_post_webhook_events query failed (run packages/shared: pnpm db:apply:thai-post-webhook if column status_history is missing):",
+          e,
+        );
+      }
+    }
+
     const items: ParcelRow[] = parcelRows.map((r) => ({
       id: r.id,
       trackingId: r.trackingId,
       barcode: r.barcode,
       status: r.status,
       destination: r.destination,
+      price: r.price == null ? null : String(r.price),
+      amountPaid: r.amountPaid == null ? null : String(r.amountPaid),
       isPaid: r.isPaid,
+      thaiPostPriceConfirmedAt:
+        r.thaiPostPriceConfirmedAt instanceof Date
+          ? r.thaiPostPriceConfirmedAt.toISOString()
+          : r.thaiPostPriceConfirmedAt
+            ? String(r.thaiPostPriceConfirmedAt)
+            : null,
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
       senderProvince: orderMap.get(r.id)?.senderProvince ?? null,
       senderName: orderMap.get(r.id)?.senderName ?? null,
@@ -94,9 +142,11 @@ async function loadParcels(
       recipientProvince: orderMap.get(r.id)?.recipientProvince ?? null,
       recipientName: orderMap.get(r.id)?.recipientName ?? null,
       recipientPhone: orderMap.get(r.id)?.recipientPhone ?? null,
+      thaiPostEvents: thaiPostByParcel.get(r.id) ?? [],
     }));
     return { items, error: null };
-  } catch {
+  } catch (e) {
+    console.error("[parcels.page] loadParcels failed:", e);
     return { items: [], error: "โหลดรายการพัสดุไม่สำเร็จ" };
   }
 }

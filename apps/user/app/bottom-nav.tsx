@@ -46,12 +46,19 @@ function Icon({ name, active }: { name: "home" | "box" | "pin" | "user"; active:
   );
 }
 
+function hideBottomNav(pathname: string) {
+  if (pathname.startsWith("/send")) return true;
+  // /payment must keep nav; only /pay and /pay/[id] hide (startsWith("/pay") would wrongly hide /payment)
+  if (pathname === "/pay" || pathname.startsWith("/pay/")) return true;
+  return false;
+}
+
 export function BottomNav() {
   const pathname = usePathname();
-  if (pathname.startsWith("/send")) return null;
+  if (hideBottomNav(pathname)) return null;
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-20 px-5 pb-[calc(env(safe-area-inset-bottom)+40px)] pt-2 bg-slate-100">
+    <nav className="fixed inset-x-0 bottom-0 z-40 px-5 pb-[calc(env(safe-area-inset-bottom)+40px)] pt-2 bg-slate-100">
       <div className="mx-auto grid w-full max-w-lg grid-cols-5 items-end gap-1 rounded-[28px] bg-[#121316] px-2 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
         {items.map((item) => {
           const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
@@ -88,6 +95,6 @@ export function BottomNav() {
 
 export function BottomNavSpacer() {
   const pathname = usePathname();
-  if (pathname.startsWith("/send")) return null;
+  if (hideBottomNav(pathname)) return null;
   return <div className="h-24" aria-hidden />;
 }

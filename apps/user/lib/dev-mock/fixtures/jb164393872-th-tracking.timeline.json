@@ -1,0 +1,65 @@
+[
+  {
+    "barcode": "JB164393872TH",
+    "station": "คลองจั่น/กรุงเทพฯ",
+    "status": "2",
+    "statusDate": "18/05/2025 12:41:00",
+    "statusDescription": "ปณ.ต้นทางรับฝากแล้ว"
+  },
+  {
+    "barcode": "JB164393872TH",
+    "station": "คลองจั่น/กรุงเทพฯ",
+    "status": "2",
+    "statusDate": "18/05/2025 12:41:50",
+    "statusDescription": "ปณ.ต้นทางรับฝากแล้ว"
+  },
+  {
+    "barcode": "JB164393872TH",
+    "station": "คลองจั่น/กรุงเทพฯ",
+    "status": "62",
+    "statusDate": "18/05/2025 13:08:06",
+    "statusDescription": "อยู่ระหว่างคัดแยกสินค้า"
+  },
+  {
+    "barcode": "JB164393872TH",
+    "station": "คลองจั่น/กรุงเทพฯ",
+    "status": "63",
+    "statusDate": "18/05/2025 17:10:13",
+    "statusDescription": "ส่งออกจากศูนย์คัดแยกสินค้า/ที่ทำการ"
+  },
+  {
+    "barcode": "JB164393872TH",
+    "station": "ศป. EMS/กรุงเทพฯ",
+    "status": "63",
+    "statusDate": "18/05/2025 20:03:17",
+    "statusDescription": "ส่งออกจากศูนย์คัดแยกสินค้า/ที่ทำการ"
+  },
+  {
+    "barcode": "JB164393872TH",
+    "station": "ศป. เด่นชัย/แพร่",
+    "status": "71",
+    "statusDate": "19/05/2025 03:18:35",
+    "statusDescription": "ถึงศูนย์คัดแยกสินค้า/ที่ทำการ"
+  },
+  {
+    "barcode": "JB164393872TH",
+    "station": "ศป. เด่นชัย/แพร่",
+    "status": "63",
+    "statusDate": "19/05/2025 03:33:34",
+    "statusDescription": "ส่งออกจากศูนย์คัดแยกสินค้า/ที่ทำการ"
+  },
+  {
+    "barcode": "JB164393872TH",
+    "station": "น่าน/น่าน",
+    "status": "71",
+    "statusDate": "19/05/2025 06:49:07",
+    "statusDescription": "ถึงศูนย์คัดแยกสินค้า/ที่ทำการ"
+  },
+  {
+    "barcode": "JB164393872TH",
+    "station": "น่าน/น่าน",
+    "status": "3",
+    "statusDate": "19/05/2025 10:35:44",
+    "statusDescription": "ถึง ปณ.ปลายทาง เตรียมนำจ่าย"
+  }
+]

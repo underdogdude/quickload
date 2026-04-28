@@ -1,5 +1,6 @@
 import { getLegacyParcel, getLegacyTrackingEvents } from "@quickload/shared/legacy";
-import { getDb, orders, parcels } from "@quickload/shared/db";
+import { thaiPostEventsForApiFromHistory } from "@quickload/shared/thai-post-webhook-history";
+import { getDb, orders, parcels, thaiPostWebhookEvents } from "@quickload/shared/db";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { requireLineSession } from "@/lib/require-user";
@@ -22,7 +23,13 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
     const order = orderRows[0] ?? null;
     const legacy = await getLegacyParcel(parcel.trackingId);
     const events = await getLegacyTrackingEvents(parcel.trackingId);
-    return NextResponse.json({ ok: true, data: { parcel, order, legacy, events } });
+    const thaiRow = await db
+      .select({ statusHistory: thaiPostWebhookEvents.statusHistory })
+      .from(thaiPostWebhookEvents)
+      .where(eq(thaiPostWebhookEvents.parcelId, id))
+      .limit(1);
+    const thaiPostEvents = thaiPostEventsForApiFromHistory(thaiRow[0]?.statusHistory);
+    return NextResponse.json({ ok: true, data: { parcel, order, legacy, events, thaiPostEvents } });
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";

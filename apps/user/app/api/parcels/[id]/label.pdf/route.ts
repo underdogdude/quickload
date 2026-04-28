@@ -285,7 +285,7 @@ async function createParcelLabelPdf(input: {
         `<text x="${x(32.2)}" y="${y(29.2 + i * 3.1)}" font-size="${fs(2.2)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(line)}</text>`,
     )
     .join("\n  ")}
-  <text x="${x(32.2)}" y="${y(35)}" font-size="${fs(3)}" text-anchor="middle" dominant-baseline="auto" font-weight="bold" >${xmlEscape(input.senderPhone)}</text>
+  <text x="${x(32.2)}" y="${y(37)}" font-size="${fs(3)}" text-anchor="middle" dominant-baseline="auto" font-weight="bold" >${xmlEscape(input.senderPhone)}</text>
 
   <!-- recipient block -->
   <text x="${x(32.2)}" y="${y(43.6)}" font-size="${fs(2.6)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(`ผู้รับ : ${input.recipientName}`)}</text>
@@ -295,7 +295,7 @@ async function createParcelLabelPdf(input: {
         `<text x="${x(32.2)}" y="${y(46.9 + i * 2.6)}" font-size="${fs(1.75)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(line)}</text>`,
     )
     .join("\n  ")}
-  <text x="${x(32.2)}" y="${y(55)}" font-size="${fs(3.05)}" text-anchor="middle" dominant-baseline="auto" font-weight="bold" >${xmlEscape(input.recipientPhone)}</text>
+  <text x="${x(32.2)}" y="${y(56)}" font-size="${fs(3.05)}" text-anchor="middle" dominant-baseline="auto" font-weight="bold" >${xmlEscape(input.recipientPhone)}</text>
 
   <!-- zip digit boxes -->
   ${digits

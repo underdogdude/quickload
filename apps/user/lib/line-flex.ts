@@ -13,6 +13,23 @@ type OrderSuccessFlexInput = {
   qrCodeImageUrl?: string | null;
 };
 
+type PaymentDueFlexInput = {
+  parcelId: string;
+  trackingNumber?: string | null;
+  amountBaht: string | number;
+  payUrl: string;
+};
+
+type PaymentQrFlexInput = {
+  trackingNumber?: string | null;
+  amountBaht: string | number;
+  expiresInMinutes: number;
+  qrCodeImageUrl?: string | null;
+  thaiQrLogoUrl?: string | null;
+  promptPayLogoUrl?: string | null;
+  payUrl?: string | null;
+};
+
 function textOrDash(v?: string | null): string {
   const s = v?.trim();
   return s ? s : "-";
@@ -27,6 +44,15 @@ function formatWeight(v?: string | number | null): string {
   const n = Number(v);
   if (Number.isFinite(n) && n > 0) return `${n.toLocaleString("th-TH")} กรัม`;
   return textOrDash(String(v));
+}
+
+function formatBaht(v: string | number): string {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return "-";
+  return new Intl.NumberFormat("th-TH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
 }
 
 export function createOrderSuccessFlexMessage(input: OrderSuccessFlexInput): {
@@ -163,6 +189,452 @@ export function createOrderSuccessFlexMessage(input: OrderSuccessFlexInput): {
     type: "flex",
     altText: `สร้างพัสดุสำเร็จ หมายเลข ${trackingNumber}`,
     contents,
+  };
+}
+
+export function createPaymentDueFlexMessage(input: PaymentDueFlexInput): {
+  type: "flex";
+  altText: string;
+  contents: Record<string, unknown>;
+} {
+  const trackingNumber = textOrDash(input.trackingNumber);
+  const amount = formatBaht(input.amountBaht);
+
+  return {
+    type: "flex",
+    altText: `พัสดุ ${trackingNumber} มียอดชำระ ฿${amount}`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "text",
+            text: "อัปเดตราคาจริงแล้ว",
+            weight: "bold",
+            size: "xl",
+            color: "#111827",
+          },
+          {
+            type: "text",
+            text: "กรุณาชำระเงินเพื่อดำเนินการส่งพัสดุต่อ",
+            size: "sm",
+            color: "#6B7280",
+            wrap: true,
+          },
+          {
+            type: "separator",
+            margin: "md",
+          },
+          {
+            type: "box",
+            layout: "baseline",
+            margin: "md",
+            contents: [
+              {
+                type: "text",
+                text: "หมายเลขพัสดุ",
+                size: "xs",
+                color: "#6B7280",
+                flex: 3,
+              },
+              {
+                type: "text",
+                text: trackingNumber,
+                size: "sm",
+                color: "#111827",
+                weight: "bold",
+                align: "end",
+                flex: 5,
+                wrap: true,
+              },
+            ],
+          },
+          {
+            type: "box",
+            layout: "baseline",
+            contents: [
+              {
+                type: "text",
+                text: "ยอดที่ต้องชำระ",
+                size: "xs",
+                color: "#6B7280",
+                flex: 3,
+              },
+              {
+                type: "text",
+                text: `฿ ${amount}`,
+                size: "lg",
+                color: "#2726F5",
+                weight: "bold",
+                align: "end",
+                flex: 5,
+              },
+            ],
+          },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "button",
+            style: "primary",
+            color: "#2726F5",
+            action: {
+              type: "uri",
+              label: "ชำระเงิน",
+              uri: input.payUrl,
+            },
+          },
+        ],
+      },
+    },
+  };
+}
+
+export function createPaymentQrFlexMessage(input: PaymentQrFlexInput): {
+  type: "flex";
+  altText: string;
+  contents: Record<string, unknown>;
+} {
+  const trackingNumber = textOrDash(input.trackingNumber);
+  const amount = formatBaht(input.amountBaht);
+  const mins = Math.max(1, Math.floor(input.expiresInMinutes));
+  const contents: Record<string, unknown> = {
+    type: "bubble",
+    size: "mega",
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "md",
+      paddingAll: "16px",
+      contents: [
+        {
+          type: "text",
+          text: "พร้อมชำระด้วย PromptPay",
+          weight: "bold",
+          size: "lg",
+          color: "#111827",
+        },
+        {
+          type: "text",
+          text: `กรุณาชำระภายใน ${mins} นาที`,
+          size: "sm",
+          color: "#6B7280",
+          wrap: true,
+        },
+        {
+          type: "text",
+          text: "ช่องทางชำระ: PromptPay QR",
+          size: "xs",
+          color: "#374151",
+          wrap: true,
+        },
+        ...(input.promptPayLogoUrl?.trim()
+          ? [
+              {
+                type: "image",
+                url: input.promptPayLogoUrl.trim(),
+                size: "md",
+                aspectRatio: "4:1",
+                aspectMode: "fit",
+                margin: "md",
+              },
+            ]
+          : []),
+        ...(!input.qrCodeImageUrl?.trim()
+          ? [
+              {
+                type: "box",
+                layout: "vertical",
+                margin: "md",
+                backgroundColor: "#FEF3C7",
+                cornerRadius: "8px",
+                paddingAll: "10px",
+                contents: [
+                  {
+                    type: "text",
+                    text: "ไม่สามารถแสดงรูป QR ในข้อความนี้",
+                    size: "xs",
+                    color: "#92400E",
+                    weight: "bold",
+                    wrap: true,
+                  },
+                  {
+                    type: "text",
+                    text: "กรุณาเปิดหน้าชำระเงินในแอปเพื่อสแกน QR PromptPay",
+                    size: "xs",
+                    color: "#92400E",
+                    wrap: true,
+                    margin: "sm",
+                  },
+                ],
+              },
+            ]
+          : []),
+        {
+          type: "separator",
+          margin: "md",
+        },
+        {
+          type: "box",
+          layout: "baseline",
+          margin: "md",
+          contents: [
+            { type: "text", text: "หมายเลขพัสดุ", size: "xs", color: "#6B7280", flex: 3 },
+            {
+              type: "text",
+              text: trackingNumber,
+              size: "sm",
+              color: "#111827",
+              weight: "bold",
+              align: "end",
+              flex: 5,
+              wrap: true,
+            },
+          ],
+        },
+        {
+          type: "box",
+          layout: "baseline",
+          contents: [
+            { type: "text", text: "ยอดที่ต้องชำระ", size: "xs", color: "#6B7280", flex: 3 },
+            {
+              type: "text",
+              text: `฿ ${amount}`,
+              size: "lg",
+              color: "#2726F5",
+              weight: "bold",
+              align: "end",
+              flex: 5,
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  if (input.qrCodeImageUrl?.trim()) {
+    contents.hero = {
+      type: "image",
+      url: input.qrCodeImageUrl.trim(),
+      size: "full",
+      aspectRatio: "1:1",
+      aspectMode: "cover",
+    };
+  }
+  if (!input.qrCodeImageUrl?.trim() && input.payUrl?.trim()) {
+    contents.footer = {
+      type: "box",
+      layout: "vertical",
+      spacing: "sm",
+      paddingAll: "16px",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          color: "#2726F5",
+          action: {
+            type: "uri",
+            label: "เปิดหน้าชำระเงิน",
+            uri: input.payUrl.trim(),
+          },
+        },
+      ],
+    };
+  }
+  if (input.thaiQrLogoUrl?.trim()) {
+    contents.header = {
+      type: "box",
+      layout: "vertical",
+      backgroundColor: "#123E6F",
+      paddingAll: "8px",
+      contents: [
+        {
+          type: "image",
+          url: input.thaiQrLogoUrl.trim(),
+          size: "full",
+          aspectRatio: "5:1",
+          aspectMode: "fit",
+        },
+      ],
+    };
+  }
+
+  return {
+    type: "flex",
+    altText: `QR พร้อมชำระ ฿${amount} ภายใน ${mins} นาที`,
+    contents,
+  };
+}
+
+export function createPaymentSuccessFlexMessage(input: {
+  trackingNumber?: string | null;
+  amountBaht: string | number;
+}): {
+  type: "flex";
+  altText: string;
+  contents: Record<string, unknown>;
+} {
+  const trackingNumber = textOrDash(input.trackingNumber);
+  const amount = formatBaht(input.amountBaht);
+  return {
+    type: "flex",
+    altText: `ชำระเงินสำเร็จ สำหรับพัสดุ ${trackingNumber}`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "text",
+            text: "ชำระเงินสำเร็จ",
+            weight: "bold",
+            size: "xl",
+            color: "#059669",
+          },
+          {
+            type: "text",
+            text: "ระบบได้รับการชำระเงินเรียบร้อยแล้ว",
+            size: "sm",
+            color: "#6B7280",
+            wrap: true,
+          },
+          { type: "separator", margin: "md" },
+          {
+            type: "box",
+            layout: "baseline",
+            margin: "md",
+            contents: [
+              { type: "text", text: "หมายเลขพัสดุ", size: "xs", color: "#6B7280", flex: 3 },
+              {
+                type: "text",
+                text: trackingNumber,
+                size: "sm",
+                color: "#111827",
+                weight: "bold",
+                align: "end",
+                flex: 5,
+                wrap: true,
+              },
+            ],
+          },
+          {
+            type: "box",
+            layout: "baseline",
+            contents: [
+              { type: "text", text: "ยอดที่ชำระ", size: "xs", color: "#6B7280", flex: 3 },
+              {
+                type: "text",
+                text: `฿ ${amount}`,
+                size: "lg",
+                color: "#111827",
+                weight: "bold",
+                align: "end",
+                flex: 5,
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+}
+
+export function createPaymentFailedFlexMessage(input: {
+  trackingNumber?: string | null;
+  amountBaht: string | number;
+  reason: "failed" | "expired" | "canceled";
+}): {
+  type: "flex";
+  altText: string;
+  contents: Record<string, unknown>;
+} {
+  const trackingNumber = textOrDash(input.trackingNumber);
+  const amount = formatBaht(input.amountBaht);
+  const reasonText =
+    input.reason === "expired"
+      ? "หมดเวลาในการชำระเงิน"
+      : input.reason === "canceled"
+        ? "รายการชำระเงินถูกยกเลิก"
+        : "การชำระเงินไม่สำเร็จ";
+
+  return {
+    type: "flex",
+    altText: `${reasonText} สำหรับพัสดุ ${trackingNumber}`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "text",
+            text: reasonText,
+            weight: "bold",
+            size: "xl",
+            color: "#BE123C",
+          },
+          {
+            type: "text",
+            text: "กรุณาเปิดหน้าชำระเงินอีกครั้งเพื่อสร้าง QR ใหม่",
+            size: "sm",
+            color: "#6B7280",
+            wrap: true,
+          },
+          { type: "separator", margin: "md" },
+          {
+            type: "box",
+            layout: "baseline",
+            margin: "md",
+            contents: [
+              { type: "text", text: "หมายเลขพัสดุ", size: "xs", color: "#6B7280", flex: 3 },
+              {
+                type: "text",
+                text: trackingNumber,
+                size: "sm",
+                color: "#111827",
+                weight: "bold",
+                align: "end",
+                flex: 5,
+                wrap: true,
+              },
+            ],
+          },
+          {
+            type: "box",
+            layout: "baseline",
+            contents: [
+              { type: "text", text: "ยอดรายการเดิม", size: "xs", color: "#6B7280", flex: 3 },
+              {
+                type: "text",
+                text: `฿ ${amount}`,
+                size: "lg",
+                color: "#111827",
+                weight: "bold",
+                align: "end",
+                flex: 5,
+              },
+            ],
+          },
+        ],
+      },
+    },
   };
 }
 

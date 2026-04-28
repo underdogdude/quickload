@@ -166,7 +166,7 @@ function SuccessInner() {
         ? parcelTrackingId
         : "";
 
-  /** Thailand Post–style tracking on the label (e.g. WB…TH) — must match what scanners expect. */
+  /** Thailand Post item id on the label (13 chars, e.g. WB222126989TH) — must match what scanners expect. */
   const scanPayload = useMemo(() => {
     const b = barcode.trim();
     if (b) return b;

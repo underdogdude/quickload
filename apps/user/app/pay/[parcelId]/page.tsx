@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import QRCode from "qrcode";
 import { use, useCallback, useEffect, useRef, useState } from "react";
 
@@ -37,6 +38,7 @@ type ChargeData = {
   expiresAt: string | null;
   paidAt: string | null;
   parcelId: string;
+  barcode: string | null;
   trackingId: string | null;
   outstanding: Outstanding;
 };
@@ -53,10 +55,12 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
   const [loading, setLoading] = useState(true);
   const [simulating, setSimulating] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canceledRef = useRef(false);
+  const createChargeOnceRef = useRef(false);
 
   const renderQr = useCallback(async (payload: string) => {
     // Beam may return the QR as a pre-rendered base64 PNG data URL; use it as-is.
@@ -84,7 +88,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
         body: JSON.stringify({ parcelId }),
       });
       const json = (await res.json()) as
-        | { ok: true; data: Omit<ChargeData, "parcelId" | "trackingId" | "paidAt" | "outstanding"> }
+        | { ok: true; data: Omit<ChargeData, "parcelId" | "barcode" | "trackingId" | "paidAt" | "outstanding"> }
         | { ok: false; error: string };
       if (!res.ok || !("ok" in json) || !json.ok) {
         // 410 Gone === parcel auto-canceled by the abandonment sweep.
@@ -99,6 +103,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
             expiresAt: null,
             paidAt: null,
             parcelId,
+            barcode: null,
             trackingId: null,
             outstanding: {
               state: "abandoned",
@@ -135,6 +140,8 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
   }, [parcelId, renderQr]);
 
   useEffect(() => {
+    if (createChargeOnceRef.current) return;
+    createChargeOnceRef.current = true;
     createCharge();
   }, [createCharge]);
 
@@ -234,7 +241,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
         <div className="mx-auto w-full max-w-lg">
           <button
             type="button"
-            onClick={handleCancel}
+            onClick={() => setShowLeaveDialog(true)}
             className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white/95"
             aria-label="กลับไปหน้าสรุปคำสั่งซื้อ"
           >
@@ -288,19 +295,53 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                     </p>
                   </>
                 )}
-                {charge.trackingId ? (
-                  <p className="text-xs text-slate-500">หมายเลขพัสดุ: {charge.trackingId}</p>
+                {charge.barcode || charge.trackingId ? (
+                  <p className="text-xs text-slate-500">หมายเลขพัสดุ: {charge.barcode || charge.trackingId}</p>
                 ) : null}
-                {qrDataUrl ? (
-                  <img
-                    src={qrDataUrl}
-                    alt={`QR PromptPay สำหรับยอด ${formattedAmount} บาท`}
-                    className="h-64 w-64 rounded-lg border border-slate-200"
-                  />
-                ) : (
-                  <div className="h-64 w-64 animate-pulse rounded-lg bg-slate-100" />
-                )}
-                <p className="text-xs font-medium text-slate-500">PromptPay</p>
+                <div className="w-full max-w-[320px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                  <div className="flex items-center justify-center gap-2 bg-[#123e6f] px-3 py-2 text-white">
+                    <Image
+                      src="/Thai_QR_Logo.svg"
+                      alt="Thai QR Payment"
+                      width={126}
+                      height={28}
+                      className="h-7 w-auto"
+                      priority
+                    />
+                  </div>
+                  <div className="flex justify-center bg-white pt-3">
+                    <Image
+                      src="/PromptPay-logo.png"
+                      alt="PromptPay"
+                      width={220}
+                      height={80}
+                      className="h-12 w-auto"
+                    />
+                  </div>
+                  <div className="relative flex items-center justify-center bg-white px-4 pb-4">
+                    {qrDataUrl ? (
+                      <Image
+                        src={qrDataUrl}
+                        alt={`QR PromptPay สำหรับยอด ${formattedAmount} บาท`}
+                        width={256}
+                        height={256}
+                        unoptimized
+                        className="h-64 w-64"
+                      />
+                    ) : (
+                      <div className="h-64 w-64 animate-pulse bg-slate-100" />
+                    )}
+                    <span className="pointer-events-none absolute inline-flex h-7 w-7 items-center justify-center">
+                      <Image
+                        src="/promp-pay-logo-square.png"
+                        alt="PromptPay logo"
+                        width={40}
+                        height={40}
+                        className="h-auto w-auto"
+                      />
+                    </span>
+                  </div>
+                </div>
                 <p className="text-sm text-slate-600">
                   เหลือเวลา <span className="font-semibold text-slate-900">{mm}:{ss}</span>
                 </p>
@@ -323,14 +364,6 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                   </button>
                 ) : null}
 
-                <button
-                  type="button"
-                  onClick={handleCancel}
-                  disabled={canceling}
-                  className="mt-3 w-full rounded-full border border-slate-300 bg-white px-6 py-3 text-base font-semibold text-slate-700 disabled:opacity-50"
-                >
-                  ยกเลิก
-                </button>
               </div>
             ) : charge?.status === "succeeded" ? (
               <div className="py-8 text-center">
@@ -374,6 +407,41 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
           </div>
         </div>
       </section>
+
+      {showLeaveDialog ? (
+        <div className="fixed inset-0 z-50 !mt-0 bg-black/50 px-6 py-10" onClick={() => setShowLeaveDialog(false)}>
+          <div
+            className="mx-auto mt-20 w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="leave-payment-title"
+          >
+            <h2 id="leave-payment-title" className="text-base font-semibold text-slate-900">
+              กำลังดำเนินการชำระเงิน
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              การชำระเงินอยู่ระหว่างการดำเนินการ หากคุณออกจากหน้านี้ พัสดุของคุณอาจถูกยกเลิก
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setShowLeaveDialog(false)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700"
+              >
+                อยู่ต่อ
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/parcels")}
+                className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white"
+              >
+                ออก
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

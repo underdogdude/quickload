@@ -87,6 +87,7 @@ function SendParcelInner() {
   const [recipientAddressesLoading, setRecipientAddressesLoading] = useState(true);
   const [showSenderSavedToast, setShowSenderSavedToast] = useState(senderSaved);
   const [showRecipientSavedToast, setShowRecipientSavedToast] = useState(recipientSaved);
+  const [continuing, setContinuing] = useState(false);
 
   function onlyNumber(value: string) {
     return value.replace(/\D/g, "");
@@ -104,6 +105,7 @@ function SendParcelInner() {
   }, [insuredValue]);
 
   function validateAndContinue() {
+    if (continuing) return;
     if (!activeSender) {
       setFormError("กรุณาเพิ่มหรือเลือกข้อมูลผู้ส่ง");
       return;
@@ -117,7 +119,7 @@ function SendParcelInner() {
       return;
     }
     if (Number(weightGram) > MAX_PARCEL_WEIGHT_GRAM) {
-      setFormError("น้ำหนักพัสดุต้องไม่เกิน 30 กิโลกรัม");
+      setFormError("น้ำหนักพัสดุต้องไม่เกิน 30 กิโลกรัม หรือ 30,000 กรัม");
       return;
     }
     if (!widthCm || Number(widthCm) <= 0 || !lengthCm || Number(lengthCm) <= 0 || !heightCm || Number(heightCm) <= 0) {
@@ -133,6 +135,7 @@ function SendParcelInner() {
       return;
     }
     setFormError(null);
+    setContinuing(true);
     const params = new URLSearchParams({
       senderId: activeSender.id,
       recipientId: activeRecipient.id,
@@ -610,9 +613,10 @@ function SendParcelInner() {
           <button
             type="button"
             onClick={validateAndContinue}
-            className="w-full rounded-full bg-[#2726F5] px-6 py-3 text-base font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)]"
+            disabled={continuing}
+            className="w-full rounded-md bg-[#2726F5] px-6 py-3 text-base font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)] disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
           >
-            ยืนยัน
+            {continuing ? "กำลังดำเนินการ..." : "ยืนยัน"}
           </button>
         </div>
       </div>
