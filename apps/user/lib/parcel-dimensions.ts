@@ -11,8 +11,9 @@ export type ParcelDimensionsCm = {
 };
 
 export function parsePositiveCm(value: string | number | undefined): number | null {
+  if (value === undefined || value === "") return null;
   const n = typeof value === "string" ? Number(value) : value;
-  if (value === undefined || value === "" || !Number.isFinite(n) || n <= 0) return null;
+  if (!Number.isFinite(n) || n <= 0) return null;
   return n;
 }
 
