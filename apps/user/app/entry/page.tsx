@@ -1,5 +1,6 @@
 "use client";
 
+import { navigateAfterAuth } from "@/lib/navigate-after-auth";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -68,7 +69,7 @@ export default function EntryPage() {
         return;
       }
       if (!cancelledRef.current) {
-        router.replace(json.needsRegistration ? "/register" : "/");
+        navigateAfterAuth(router, json.needsRegistration ? "/register" : "/");
       }
     } catch (e) {
       if (cancelledRef.current) return;
@@ -90,7 +91,7 @@ export default function EntryPage() {
     cancelledRef.current = false;
 
     if (skipLineAuth) {
-      router.replace("/");
+      navigateAfterAuth(router, "/");
       return;
     }
 
@@ -109,7 +110,7 @@ export default function EntryPage() {
             const complete = Boolean(
               json.data.firstName?.trim() && json.data.lastName?.trim() && json.data.phone?.trim(),
             );
-            router.replace(complete ? "/" : "/register");
+            navigateAfterAuth(router, complete ? "/" : "/register");
             return;
           }
         }

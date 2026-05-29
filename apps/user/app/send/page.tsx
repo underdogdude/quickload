@@ -2,6 +2,11 @@
 
 import type { RecipientAddress, SenderAddress } from "@quickload/shared/types";
 import { SendAddressCardSkeleton } from "@/components/skeleton";
+import {
+  validateParcelDimensionsFromStrings,
+  validateParcelSideCm,
+  validateWeightGram,
+} from "@/lib/parcel-dimensions";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
@@ -18,8 +23,6 @@ const PARCEL_TYPE_OPTIONS = [
   "ต้นไม้",
   "อื่นๆ",
 ] as const;
-const MAX_PARCEL_WEIGHT_GRAM = 30_000;
-
 type ParcelTypeOption = (typeof PARCEL_TYPE_OPTIONS)[number];
 
 function parcelTypeFromQuery(get: (key: string) => string | null): ParcelTypeOption {
@@ -78,7 +81,7 @@ function SendParcelInner() {
   const [lengthCm, setLengthCm] = useState(() => searchParams.get("lengthCm") || "");
   const [heightCm, setHeightCm] = useState(() => searchParams.get("heightCm") || "");
   const [note, setNote] = useState(() => searchParams.get("note") || "");
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(() => searchParams.get("parcelError") || null);
   const [parcelTypeOpen, setParcelTypeOpen] = useState(false);
   const [parcelType, setParcelType] = useState<ParcelTypeOption>(() => parcelTypeFromQuery((k) => searchParams.get(k)));
   const [addresses, setAddresses] = useState<SenderAddress[]>([]);
@@ -104,36 +107,66 @@ function SendParcelInner() {
     return calculateInsuranceFee(productPrice);
   }, [insuredValue]);
 
+  function showParcelFormError(message: string) {
+    setShowSenderSavedToast(false);
+    setShowRecipientSavedToast(false);
+    setFormError(message);
+  }
+
+  function validateWeightField() {
+    const weightError = validateWeightGram(weightGram);
+    if (weightError) {
+      showParcelFormError(weightError);
+      return false;
+    }
+    return true;
+  }
+
+  function validateDimensionsField() {
+    for (const value of [widthCm, lengthCm, heightCm]) {
+      const sideError = validateParcelSideCm(value);
+      if (sideError) {
+        showParcelFormError(sideError);
+        return false;
+      }
+    }
+
+    if (!widthCm || !lengthCm || !heightCm) {
+      return true;
+    }
+
+    const dimensionError = validateParcelDimensionsFromStrings(widthCm, lengthCm, heightCm);
+    if (dimensionError) {
+      showParcelFormError(dimensionError);
+      return false;
+    }
+    return true;
+  }
+
+  useEffect(() => {
+    setContinuing(false);
+  }, []);
+
   function validateAndContinue() {
-    if (continuing) return;
     if (!activeSender) {
-      setFormError("กรุณาเพิ่มหรือเลือกข้อมูลผู้ส่ง");
+      showParcelFormError("กรุณาเพิ่มหรือเลือกข้อมูลผู้ส่ง");
       return;
     }
     if (!activeRecipient) {
-      setFormError("กรุณาเพิ่มหรือเลือกข้อมูลผู้รับ");
+      showParcelFormError("กรุณาเพิ่มหรือเลือกข้อมูลผู้รับ");
       return;
     }
-    if (!weightGram || Number(weightGram) <= 0) {
-      setFormError("กรุณาระบุน้ำหนักพัสดุให้ถูกต้อง");
-      return;
-    }
-    if (Number(weightGram) > MAX_PARCEL_WEIGHT_GRAM) {
-      setFormError("น้ำหนักพัสดุต้องไม่เกิน 30 กิโลกรัม หรือ 30,000 กรัม");
-      return;
-    }
-    if (!widthCm || Number(widthCm) <= 0 || !lengthCm || Number(lengthCm) <= 0 || !heightCm || Number(heightCm) <= 0) {
-      setFormError("กรุณาระบุขนาดพัสดุ (กว้าง/ยาว/สูง) ให้ครบถ้วน");
-      return;
-    }
+    if (!validateWeightField()) return;
+    if (!validateDimensionsField()) return;
     if (!parcelType.trim()) {
-      setFormError("กรุณาเลือกประเภทพัสดุ");
+      showParcelFormError("กรุณาเลือกประเภทพัสดุ");
       return;
     }
     if (extraInsurance && (!insuredValue || Number(insuredValue) <= 0)) {
-      setFormError("กรุณากรอกราคาพัสดุสำหรับการซื้อประกันเพิ่ม");
+      showParcelFormError("กรุณากรอกราคาพัสดุสำหรับการซื้อประกันเพิ่ม");
       return;
     }
+    if (continuing) return;
     setFormError(null);
     setContinuing(true);
     const params = new URLSearchParams({
@@ -448,6 +481,7 @@ function SendParcelInner() {
                     pattern="[0-9]*"
                     value={weightGram}
                     onChange={(e) => setWeightGram(onlyNumber(e.target.value))}
+                    onBlur={validateWeightField}
                     className="w-full rounded-md px-2 py-1 text-right text-sm text-slate-700 outline-none"
                   />
                   <span className="text-sm text-slate-700">กรัม</span>
@@ -462,6 +496,7 @@ function SendParcelInner() {
                   placeholder="ความกว้าง(ซม.)"
                   value={widthCm}
                   onChange={(e) => setWidthCm(onlyNumber(e.target.value))}
+                  onBlur={validateDimensionsField}
                   className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400"
                 />
                 <input
@@ -471,6 +506,7 @@ function SendParcelInner() {
                   placeholder="ความยาว(ซม.)"
                   value={lengthCm}
                   onChange={(e) => setLengthCm(onlyNumber(e.target.value))}
+                  onBlur={validateDimensionsField}
                   className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400"
                 />
                 <input
@@ -480,6 +516,7 @@ function SendParcelInner() {
                   placeholder="ความสูง(ซม.)"
                   value={heightCm}
                   onChange={(e) => setHeightCm(onlyNumber(e.target.value))}
+                  onBlur={validateDimensionsField}
                   className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400"
                 />
               </div>

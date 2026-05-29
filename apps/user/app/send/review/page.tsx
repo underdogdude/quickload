@@ -2,6 +2,7 @@
 
 import type { RecipientAddress, SenderAddress } from "@quickload/shared/types";
 import { ReviewOrderSummarySkeleton } from "@/components/skeleton";
+import { validateParcelDimensionsFromStrings, validateWeightGram } from "@/lib/parcel-dimensions";
 import { isValidThaiPhone } from "@/lib/thai-phone";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -149,6 +150,10 @@ function ReviewInner() {
     return null;
   }, [loading, recipient, sender]);
 
+  const parcelValidationError = useMemo(() => {
+    return validateWeightGram(weightGram) ?? validateParcelDimensionsFromStrings(widthCm, lengthCm, heightCm);
+  }, [heightCm, lengthCm, weightGram, widthCm]);
+
   const isValidInput = useMemo(() => {
     const toPositive = (v: string) => Number(v) > 0;
     return Boolean(
@@ -156,16 +161,18 @@ function ReviewInner() {
         recipientId &&
         parcelType.trim() &&
         toPositive(weightGram) &&
-        toPositive(widthCm) &&
-        toPositive(lengthCm) &&
-        toPositive(heightCm) &&
+        parcelValidationError === null &&
         (!extraInsurance || toPositive(insuredValue)),
     );
-  }, [extraInsurance, heightCm, insuredValue, lengthCm, parcelType, recipientId, senderId, weightGram, widthCm]);
+  }, [extraInsurance, insuredValue, parcelType, parcelValidationError, recipientId, senderId, weightGram]);
 
   useEffect(() => {
     if (!isValidInput) {
-      router.replace("/send");
+      const params = new URLSearchParams(searchParams.toString());
+      if (parcelValidationError) {
+        params.set("parcelError", parcelValidationError);
+      }
+      router.replace(`/send?${params.toString()}`);
       return;
     }
     let cancelled = false;
@@ -198,7 +205,7 @@ function ReviewInner() {
     return () => {
       cancelled = true;
     };
-  }, [isValidInput, recipientId, router, senderId]);
+  }, [isValidInput, parcelValidationError, recipientId, router, searchParams, senderId]);
 
   useEffect(() => {
     if (!recipient?.zipcode) return;
@@ -214,18 +221,9 @@ function ReviewInner() {
           productPrice: insuredValue && Number(insuredValue) > 0 ? insuredValue : "0",
           insurancePrice: extraInsurance && insuredValue && Number(insuredValue) > 0 ? insuredValue : "0",
         });
-        let json: { ok?: boolean; data?: { estimatedTotal?: number }; error?: string };
-        let resOk = true;
-        if (process.env.NEXT_PUBLIC_SMARTPOST_MOCK === "1") {
-          const res = await fetch("/api/dev/pricing-estimate");
-          resOk = res.ok;
-          json = (await res.json()) as { ok?: boolean; data?: { estimatedTotal?: number }; error?: string };
-        } else {
-          const res = await fetch(`/api/pricing/estimate?${params.toString()}`);
-          resOk = res.ok;
-          json = (await res.json()) as { ok?: boolean; data?: { estimatedTotal?: number } };
-        }
-        if (!cancelled && resOk && json.ok && Number.isFinite(json.data?.estimatedTotal)) {
+        const res = await fetch(`/api/pricing/estimate?${params.toString()}`);
+        const json = (await res.json()) as { ok?: boolean; data?: { estimatedTotal?: number } };
+        if (!cancelled && res.ok && json.ok && Number.isFinite(json.data?.estimatedTotal)) {
           const total = Number(json.data?.estimatedTotal);
           setBaseEstimatedPrice(total);
           setEstimatedPrice(total + zipcodeSurcharge);
@@ -246,44 +244,22 @@ function ReviewInner() {
     setSubmitting(true);
     let shouldKeepSubmitting = false;
     try {
-      let addItemJson: { ok?: boolean; error?: string; data?: unknown };
-      if (process.env.NEXT_PUBLIC_SMARTPOST_MOCK === "1") {
-        const mockRes = await fetch("/api/dev/smartpost-add-item", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            senderId,
-            recipientId,
-            parcelType,
-            weightGram,
-            insuredValue,
-            extraInsurance,
-            baseEstimatedPrice,
-          }),
-        });
-        addItemJson = (await mockRes.json()) as { ok?: boolean; error?: string; data?: unknown };
-        if (!mockRes.ok || !addItemJson.ok) {
-          setError(addItemJson.error ?? "โหลด mock Smartpost ไม่สำเร็จ (ตรวจไฟล์ใน lib/dev-mock/payloads)");
-          return;
-        }
-      } else {
-        const addItemRes = await fetch("/api/smartpost/add-item", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            senderId,
-            recipientId,
-            parcelType,
-            weightGram,
-            insuredValue,
-            extraInsurance,
-          }),
-        });
-        addItemJson = (await addItemRes.json()) as { ok?: boolean; error?: string; data?: unknown };
-        if (!addItemRes.ok || !addItemJson.ok) {
-          setError(addItemJson.error ?? "ส่งคำสั่งซื้อไป Smartpost ไม่สำเร็จ");
-          return;
-        }
+      const addItemRes = await fetch("/api/smartpost/add-item", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          senderId,
+          recipientId,
+          parcelType,
+          weightGram,
+          insuredValue,
+          extraInsurance,
+        }),
+      });
+      const addItemJson = (await addItemRes.json()) as { ok?: boolean; error?: string; data?: unknown };
+      if (!addItemRes.ok || !addItemJson.ok) {
+        setError(addItemJson.error ?? "ส่งคำสั่งซื้อไป Smartpost ไม่สำเร็จ");
+        return;
       }
 
       const res = await fetch("/api/parcels/draft", {

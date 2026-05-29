@@ -7,6 +7,7 @@ import {
 } from "@/lib/smartpost-add-item";
 import { createOrderSuccessFlexMessage } from "@/lib/line-flex";
 import { pushLineMessage } from "@/lib/line-messaging";
+import { parsePositiveCm, validateParcelDimensionsCm } from "@/lib/parcel-dimensions";
 import { requireLineSession } from "@/lib/require-user";
 
 function resolvePublicBaseUrl(request: Request): string | null {
@@ -68,15 +69,19 @@ export async function POST(request: Request) {
     const note = body.note?.trim() ?? "";
 
     const weightGram = toPositiveNumber(body.weightGram);
-    const widthCm = toPositiveNumber(body.widthCm);
-    const lengthCm = toPositiveNumber(body.lengthCm);
-    const heightCm = toPositiveNumber(body.heightCm);
+    const widthCm = parsePositiveCm(body.widthCm);
+    const lengthCm = parsePositiveCm(body.lengthCm);
+    const heightCm = parsePositiveCm(body.heightCm);
 
     if (!senderId || !recipientId) {
       return NextResponse.json({ ok: false, error: "senderId and recipientId are required" }, { status: 400 });
     }
-    if (!weightGram || !widthCm || !lengthCm || !heightCm) {
+    if (!weightGram || widthCm === null || lengthCm === null || heightCm === null) {
       return NextResponse.json({ ok: false, error: "weight and dimensions are required" }, { status: 400 });
+    }
+    const dimensionError = validateParcelDimensionsCm({ widthCm, lengthCm, heightCm });
+    if (dimensionError) {
+      return NextResponse.json({ ok: false, error: dimensionError }, { status: 400 });
     }
     if (!parcelType) {
       return NextResponse.json({ ok: false, error: "parcelType is required" }, { status: 400 });

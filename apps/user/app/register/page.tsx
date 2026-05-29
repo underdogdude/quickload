@@ -1,5 +1,6 @@
 "use client";
 
+import { navigateAfterAuth } from "@/lib/navigate-after-auth";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -141,7 +142,7 @@ export default function RegisterPage() {
 
       if (isFirstTime) {
         setTimeout(() => {
-          router.replace("/");
+          navigateAfterAuth(router, "/");
         }, 700);
       }
     } catch {

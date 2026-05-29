@@ -485,87 +485,114 @@ export function ParcelsListClient({
         <article
           key={p.id}
           onClick={() => toggleParcelExpanded(p.id)}
-          className="relative flex cursor-pointer gap-3 overflow-visible rounded-lg bg-white py-5 pl-5 pr-3 shadow-sm ring-1 ring-slate-200 transition hover:ring-slate-300"
+          className="relative cursor-pointer overflow-visible rounded-lg bg-white py-5 shadow-sm ring-1 ring-slate-200 transition hover:ring-slate-300"
         >
-          <div className="min-w-0 flex-1">
-            <div className="min-w-0">
-              <div className="grid grid-cols-[auto_1fr] items-center gap-x-4">
-                <span
-                  className={`row-span-2 inline-flex h-10 w-10 shrink-0 items-center justify-center self-center rounded-full ${getStatusIconCircleClass(
-                    resolveListParcelStatus(p),
-                  )}`}
-                  aria-label={getStatusLabel(resolveListParcelStatus(p))}
-                  title={getStatusLabel(resolveListParcelStatus(p))}
-                >
-                  <StatusCircleIcon status={resolveListParcelStatus(p)} />
-                </span>
-                <p className="min-w-0 text-xs font-normal text-slate-400">หมายเลขพัสดุ</p>
-                <div className="flex min-w-0 items-center gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-xl font-medium leading-tight ">
-                      {p.barcode ?? "-"}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void copyTracking(p.id, p.barcode ?? "-");
-                    }}
-                    aria-label="คัดลอกหมายเลขพัสดุ"
-                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+          <div className="flex gap-2 px-5 pr-3">
+            <div className="min-w-0 flex-1">
+              <div className="min-w-0">
+                <div className="grid grid-cols-[auto_1fr] items-center gap-x-4">
+                  <span
+                    className={`row-span-2 inline-flex h-10 w-10 shrink-0 items-center justify-center self-center rounded-full ${getStatusIconCircleClass(
+                      resolveListParcelStatus(p),
+                    )}`}
+                    aria-label={getStatusLabel(resolveListParcelStatus(p))}
+                    title={getStatusLabel(resolveListParcelStatus(p))}
                   >
-                    {copiedId === p.id ? (
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" aria-hidden>
-                        <path d="m5 13 4 4L19 7" stroke="#16A34A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" aria-hidden>
-                        <rect x="9" y="3" width="12" height="14" rx="2" stroke="currentColor" strokeWidth="1.8" />
-                        <rect x="3" y="7" width="12" height="14" rx="2" stroke="currentColor" strokeWidth="1.8" />
-                      </svg>
-                    )}
-                  </button>
+                    <StatusCircleIcon status={resolveListParcelStatus(p)} />
+                  </span>
+                  <p className="min-w-0 text-xs font-normal text-slate-400">หมายเลขพัสดุ</p>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-xl font-medium leading-tight ">
+                        {p.barcode ?? "-"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void copyTracking(p.id, p.barcode ?? "-");
+                      }}
+                      aria-label="คัดลอกหมายเลขพัสดุ"
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                    >
+                      {copiedId === p.id ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" aria-hidden>
+                          <path d="m5 13 4 4L19 7" stroke="#16A34A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" aria-hidden>
+                          <rect x="9" y="3" width="12" height="14" rx="2" stroke="currentColor" strokeWidth="1.8" />
+                          <rect x="3" y="7" width="12" height="14" rx="2" stroke="currentColor" strokeWidth="1.8" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-start gap-4 text-center">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium leading-tight text-slate-900">
+                    {p.senderProvince ?? p.destination ?? "-"}
+                  </p>
+                  <p className="mt-1 truncate text-xs text-slate-500">{p.senderName ?? "-"}</p>
+                  <p className="mt-1 truncate text-xs text-slate-400">{p.senderPhone ?? "-"}</p>
+                </div>
+                <div className="flex items-center justify-center pt-3">
+                  <div className="flex w-full max-w-[220px] items-center gap-2">
+                    <div className="h-px flex-1 bg-slate-200" />
+                    <div className="flex shrink-0 flex-col items-center">
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-[2px] text-[10px] font-medium ${getTimelineStatusClass(
+                          resolveListParcelStatus(p),
+                        )}`}
+                      >
+                        {getStatusLabel(resolveListParcelStatus(p))}
+                      </span>
+                      <p className="mt-1 text-[10px] font-normal text-slate-400">{formatThaiDateTime(p.createdAt)}</p>
+                    </div>
+                    <div className="h-px flex-1 bg-slate-200" />
+                  </div>
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium leading-tight text-slate-900">
+                    {p.recipientProvince ?? p.destination ?? "-"}
+                  </p>
+                  <p className="mt-1 truncate text-xs text-slate-500">{p.recipientName ?? "-"}</p>
+                  <p className="mt-1 truncate text-xs text-slate-400">{p.recipientPhone ?? "-"}</p>
                 </div>
               </div>
             </div>
 
-          <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-start gap-4 text-center">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium leading-tight text-slate-900">
-                {p.senderProvince ?? p.destination ?? "-"}
-              </p>
-              <p className="mt-1 truncate text-xs text-slate-500">{p.senderName ?? "-"}</p>
-              <p className="mt-1 truncate text-xs text-slate-400">{p.senderPhone ?? "-"}</p>
-            </div>
-            <div className="flex items-center justify-center pt-3">
-              <div className="flex w-full max-w-[220px] items-center gap-2">
-                <div className="h-px flex-1 bg-slate-200" />
-                <div className="flex shrink-0 flex-col items-center">
-                  <span
-                    className={`inline-flex rounded-full border px-2 py-[2px] text-[10px] font-medium ${getTimelineStatusClass(
-                      resolveListParcelStatus(p),
-                    )}`}
-                  >
-                    {getStatusLabel(resolveListParcelStatus(p))}
-                  </span>
-                  <p className="mt-1 text-[10px] font-normal text-slate-400">{formatThaiDateTime(p.createdAt)}</p>
-                </div>
-                <div className="h-px flex-1 bg-slate-200" />
-              </div>
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium leading-tight text-slate-900">
-                {p.recipientProvince ?? p.destination ?? "-"}
-              </p>
-              <p className="mt-1 truncate text-xs text-slate-500">{p.recipientName ?? "-"}</p>
-              <p className="mt-1 truncate text-xs text-slate-400">{p.recipientPhone ?? "-"}</p>
+            <div className="flex w-8 shrink-0 justify-center self-center">
+              <button
+                type="button"
+                aria-expanded={isExpanded}
+                aria-label={isExpanded ? "ย่อความคืบหน้า" : "ขยายดูความคืบหน้า"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleParcelExpanded(p.id);
+                }}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 text-slate-400 outline-none transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-[#2726F5]/40"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  aria-hidden
+                  className={`transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+                >
+                  <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
             </div>
           </div>
 
-          <div className="my-4 border-t border-slate-200" />
-
-          <div className={`flex items-center gap-4 text-slate-400 ${showPaymentInfo ? "justify-between" : "justify-end"}`}>
+          <div className="mt-5 border-t border-slate-200 px-5 pt-4">
+            <div className={`flex w-full items-center gap-4 text-slate-400 ${showPaymentInfo ? "justify-between" : "justify-end"}`}>
             {listStatus === "awaiting_actual_weight" ? (
               <div className="relative flex shrink-0 items-center gap-2">
                 <button
@@ -581,7 +608,7 @@ export function ParcelsListClient({
                     <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
                   </svg>
                 </button>
-                <span className="text-xs font-normal text-slate-700">กรุณานำพัสดุไปลงทะเบียนเพื่อชั่งน้ำหนักจริง</span>
+                <span className="text-xs font-normal text-slate-700">นำพัสดุไปชั่งน้ำหนักที่จุดบริการ</span>
 
                 {weightInfoParcelId === p.id ? (
                   <div
@@ -679,10 +706,11 @@ export function ParcelsListClient({
               </button>
             </div>
           </div>
+          </div>
 
           {isExpanded ? (
             <div
-              className="mt-4 border-t border-slate-200 pt-4"
+              className="mt-4 w-full border-t border-slate-200 px-5 pt-4"
               onClick={(e) => e.stopPropagation()}
             >
               <ListParcelThaiPostProgressHorizontal
@@ -696,32 +724,6 @@ export function ParcelsListClient({
               </Link>
             </div>
           ) : null}
-          </div>
-
-          <div className="flex w-10 shrink-0 justify-center self-stretch">
-            <button
-              type="button"
-              aria-expanded={isExpanded}
-              aria-label={isExpanded ? "ย่อความคืบหน้า" : "ขยายดูความคืบหน้า"}
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleParcelExpanded(p.id);
-              }}
-              className="my-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-400 outline-none transition hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-[#2726F5]/40"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="22"
-                height="22"
-                fill="none"
-                viewBox="0 0 24 24"
-                aria-hidden
-                className={`transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
-              >
-                <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-          </div>
         </article>
         );
       })}

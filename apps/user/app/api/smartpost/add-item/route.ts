@@ -89,15 +89,14 @@ export async function POST(request: Request) {
       items: "-",
     };
 
-    const username = process.env.SMARTPOST_BASIC_AUTH_USERNAME ?? "aramex";
-    const password = process.env.SMARTPOST_BASIC_AUTH_PASSWORD ?? "Tx26kpUp";
+    const username = process.env.SMARTPOST_BASIC_AUTH_USERNAME?.trim() || "ssslineoa";
+    const password = process.env.SMARTPOST_BASIC_AUTH_PASSWORD?.trim() || "SSS12345";
     const auth = Buffer.from(`${username}:${password}`).toString("base64");
-    const apiBaseUrl = process.env.SMARTPOST_API_BASE_URL ?? "http://localhost:8082/api/webservice/";
-    const addItemPath = process.env.SMARTPOST_ADD_ITEM_PATH ?? "addItem";
-    const endpoint = new URL(addItemPath, apiBaseUrl).toString();
-
-    console.log("[smartpost.addItem] endpoint", endpoint);
-    console.log("[smartpost.addItem] payload", payload);
+    // addItem webservice — separate from getcost (SMARTPOST_GETCOST_BASE_URL).
+    const apiBaseUrl =
+      process.env.SMARTPOST_API_BASE_URL?.trim() || "https://api.getsmartpost.com/webservice/";
+    const addItemPath = process.env.SMARTPOST_ADD_ITEM_PATH?.trim() || "addItem";
+    const endpoint = new URL(addItemPath, apiBaseUrl.endsWith("/") ? apiBaseUrl : `${apiBaseUrl}/`).toString();
 
     const upstreamRes = await fetch(endpoint, {
       method: "POST",
@@ -116,9 +115,6 @@ export async function POST(request: Request) {
     } catch {
       // keep raw text
     }
-
-    console.log("[smartpost.addItem] upstreamStatus", upstreamRes.status);
-    console.log("[smartpost.addItem] upstreamBody", upstreamJson);
 
     const normalized = normalizeSmartpostResponse(upstreamJson);
     const smartpostStatus = String(normalized.statuscode ?? "");
