@@ -1,10 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 
 import { and, eq, sql } from "drizzle-orm";
 import {
   mapThaiPostStatus,
   parseThaiPostStatusCodeRaw,
   resolveThaiPostStatusMetaCode,
+  type ParcelFlowStatus,
 } from "@quickload/shared/thai-post-status";
 import { getDb, orders, parcels, thaiPostWebhookEvents, users } from "@quickload/shared/db";
 import { thaiPostStatusDateToMs } from "@quickload/shared/thai-post-webhook-history";
@@ -21,13 +22,52 @@ type ThaiPostWebhookItem = {
   station?: string;
 };
 
-function parseFinalCost(item: ThaiPostWebhookItem): string | null {
-  const raw =
-    (item as Record<string, unknown>).finalCost ??
-    (item as Record<string, unknown>).finalcost ??
-    (item as Record<string, unknown>).cost ??
-    (item as Record<string, unknown>).price ??
-    null;
+/**
+ * Smartpost wraps the tracking data inside a top-level "payload" key.
+ * Fall back to the raw event for flat formats.
+ */
+function resolveSmartpostEvent(rawEvent: Record<string, unknown>): Record<string, unknown> {
+  if (rawEvent.payload && typeof rawEvent.payload === "object" && !Array.isArray(rawEvent.payload)) {
+    return rawEvent.payload as Record<string, unknown>;
+  }
+  return rawEvent;
+}
+
+/**
+ * Keyword-based parcel status mapping.
+ *
+ * Smartpost relays Thailand Post's raw status codes (e.g. "2", "71", "63") which do NOT match
+ * our internal 1–20 scheme. Using statusDescription as primary truth is more reliable.
+ */
+function parcelStatusFromDescription(description: string): ParcelFlowStatus | null {
+  if (!description) return null;
+  if (description.includes("รับฝาก") || description.includes("ปณ.ต้นทาง")) return "pending_payment";
+  if (description.includes("นำจ่ายถึงผู้รับ") || description.includes("นำจ่าย/ชำระเงิน")) return "delivered";
+  if (
+    description.includes("คัดแยก") ||
+    description.includes("ระหว่างการขนส่ง") ||
+    description.includes("สแกน") ||
+    description.includes("ส่งออกจาก") ||
+    description.includes("ถึงศูนย์")
+  )
+    return "in_transit";
+  if (description.includes("ปลายทาง") || description.includes("เตรียมนำจ่าย") || description.includes("รอจ่าย ณ"))
+    return "at_destination_post";
+  if (description.includes("ส่งคืน")) return "returning";
+  if (
+    description.includes("จ่าหน้าไม่") ||
+    description.includes("ไม่มีเลขบ้าน") ||
+    description.includes("ไม่ยอมรับ") ||
+    description.includes("ไม่มีผู้รับ") ||
+    description.includes("ไม่มารับ")
+  )
+    return "failed";
+  if (/drop/i.test(description)) return "canceled";
+  return null;
+}
+
+function parseFinalCost(item: Record<string, unknown>): string | null {
+  const raw = item.finalCost ?? item.finalcost ?? item.cost ?? item.price ?? null;
   if (raw == null) return null;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return null;
@@ -40,6 +80,7 @@ type BatchItem = {
   statusCodeRaw: string;
   knownCode: ReturnType<typeof resolveThaiPostStatusMetaCode>;
   mapped: ReturnType<typeof mapThaiPostStatus> | null;
+  descriptionParcelStatus: ParcelFlowStatus | null;
   descriptionTh: string;
   finalCost: string | null;
   statusDateRaw: string | null;
@@ -89,24 +130,46 @@ function resolvePublicBaseUrl(request: Request): string | null {
 }
 
 export async function POST(request: Request) {
-  const token = process.env.THAI_POST_WEBHOOK_TOKEN?.trim();
-  if (token) {
-    const presented = request.headers.get("x-webhook-token")?.trim() ?? "";
-    if (presented !== token) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  // Always consume body as raw text so we can verify HMAC before parsing.
+  let rawBody: string;
+  try {
+    rawBody = await request.text();
+  } catch {
+    return NextResponse.json(
+      { errorCode: 1, errorDetail: "Cannot read request body", status: "false" },
+      { status: 400 },
+    );
+  }
+
+  // HMAC-SHA256 verification (Smartpost sends X-Webhook-Signature).
+  const hmacSecret = process.env.SMARTPOST_WEBHOOK_SECRET?.trim();
+  if (hmacSecret) {
+    const presented = request.headers.get("x-webhook-signature")?.trim() ?? "";
+    const expected = createHmac("sha256", hmacSecret).update(rawBody).digest("hex");
+    if (presented !== expected) {
+      return NextResponse.json({ errorCode: 1, errorDetail: "Unauthorized", status: "false" }, { status: 401 });
+    }
+  } else {
+    // Fallback: simple bearer token for non-Smartpost callers.
+    const token = process.env.THAI_POST_WEBHOOK_TOKEN?.trim();
+    if (token) {
+      const presented = request.headers.get("x-webhook-token")?.trim() ?? "";
+      if (presented !== token) {
+        return NextResponse.json({ errorCode: 1, errorDetail: "Unauthorized", status: "false" }, { status: 401 });
+      }
     }
   }
 
   let payload: unknown = null;
   try {
-    payload = await request.json();
+    payload = JSON.parse(rawBody);
   } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ errorCode: 1, errorDetail: "Invalid JSON body", status: "false" }, { status: 400 });
   }
 
   const events = Array.isArray(payload) ? payload : [payload];
   if (events.length === 0) {
-    return NextResponse.json({ ok: true, updated: 0, ignored: 0 });
+    return NextResponse.json({ errorCode: 0, errorDetail: "success", status: "true", updated: 0, ignored: 0 });
   }
 
   const db = getDb();
@@ -122,7 +185,11 @@ export async function POST(request: Request) {
   const byBarcode = new Map<string, BatchItem[]>();
 
   for (const rawEvent of events) {
-    const event = (rawEvent ?? {}) as ThaiPostWebhookItem;
+    const raw = (rawEvent ?? {}) as Record<string, unknown>;
+    // Normalize: Smartpost nests the tracking data inside a "payload" key at the top level.
+    const resolved = resolveSmartpostEvent(raw);
+    const event = resolved as ThaiPostWebhookItem;
+
     const barcode = event.barcode?.trim();
     const statusCodeRaw = parseThaiPostStatusCodeRaw(event.status);
     if (!barcode || !statusCodeRaw) {
@@ -132,18 +199,24 @@ export async function POST(request: Request) {
 
     const knownCode = resolveThaiPostStatusMetaCode(statusCodeRaw);
     const mapped = knownCode ? mapThaiPostStatus(knownCode) : null;
-    const descriptionTh =
-      event.statusDescription?.trim() || mapped?.descriptionTh || "อัปเดตสถานะ";
-    const finalCost = parseFinalCost(event);
+
+    // Description-based mapping is the primary source of truth for Smartpost webhooks:
+    // Thailand Post raw codes (2, 63, 71…) differ from our internal 1–20 scheme.
+    const descriptionRaw = event.statusDescription?.trim() ?? "";
+    const descriptionParcelStatus = parcelStatusFromDescription(descriptionRaw);
+    const descriptionTh = descriptionRaw || mapped?.descriptionTh || "อัปเดตสถานะ";
+
+    const finalCost = parseFinalCost(resolved);
     const statusDateRaw = event.statusDate?.trim() || null;
     const station = event.station?.trim() || null;
 
     const item: BatchItem = {
-      rawEvent: rawEvent as Record<string, unknown>,
+      rawEvent: raw,
       event,
       statusCodeRaw,
       knownCode,
       mapped,
+      descriptionParcelStatus,
       descriptionTh,
       finalCost,
       statusDateRaw,
@@ -178,22 +251,25 @@ export async function POST(request: Request) {
       let shouldNotifyPaymentDue = false;
       let notifyAmount: string | null = null;
       for (const w of ordered) {
-        if (w.mapped || w.finalCost) {
-          const nextStatus =
-            w.mapped &&
-            (parcel.status === "paid" && w.mapped.parcelStatus === "pending_payment"
+        // Prefer numeric-code mapping; fall back to description-based for non-standard codes.
+        const effectiveParcelStatus = w.mapped?.parcelStatus ?? w.descriptionParcelStatus;
+
+        if (effectiveParcelStatus || w.finalCost) {
+          // Never downgrade a paid parcel back to pending_payment.
+          const nextStatus = effectiveParcelStatus
+            ? parcel.status === "paid" && effectiveParcelStatus === "pending_payment"
               ? "paid"
-              : w.mapped.parcelStatus);
+              : effectiveParcelStatus
+            : null;
 
           const parcelPatch: {
             status?: string;
             price?: string;
             thaiPostPriceConfirmedAt?: Date;
             updatedAt: Date;
-          } = {
-            updatedAt: new Date(),
-          };
-          if (w.mapped && nextStatus) {
+          } = { updatedAt: new Date() };
+
+          if (nextStatus) {
             parcelPatch.status = nextStatus;
             parcel.status = nextStatus;
           }
@@ -206,12 +282,10 @@ export async function POST(request: Request) {
             parcelPatch.thaiPostPriceConfirmedAt = new Date();
           }
 
-          if (w.mapped || w.finalCost) {
-            await tx
-              .update(parcels)
-              .set(parcelPatch)
-              .where(and(eq(parcels.id, parcel.id), eq(parcels.barcode, barcode)));
-          }
+          await tx
+            .update(parcels)
+            .set(parcelPatch)
+            .where(and(eq(parcels.id, parcel.id), eq(parcels.barcode, barcode)));
         }
       }
 
@@ -317,5 +391,6 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, updated, ignored });
+  // Smartpost checks for exactly {"errorDetail":"success","status":"true"} to mark sent_to_webhook=1.
+  return NextResponse.json({ errorCode: 0, errorDetail: "success", status: "true", updated, ignored });
 }

@@ -107,7 +107,7 @@ export default async function HomePage() {
             ))}
           </div>
         </div>
-        <section className="mt-8 mx-auto rounded-lg bg-gradient-to-r from-[#2726F5] to-[#5655ff] text-white shadow-sm max-w-lg">
+        <section className="mx-auto mt-8 max-w-lg overflow-hidden rounded-lg bg-gradient-to-r from-[#2726F5] to-[#5655ff] text-white shadow-sm">
           <BannerCarousel />
         </section>
       </section>
