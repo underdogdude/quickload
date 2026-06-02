@@ -25,8 +25,6 @@ type PaymentQrFlexInput = {
   amountBaht: string | number;
   expiresInMinutes: number;
   qrCodeImageUrl?: string | null;
-  thaiQrLogoUrl?: string | null;
-  promptPayLogoUrl?: string | null;
   payUrl?: string | null;
 };
 
@@ -331,25 +329,6 @@ export function createPaymentQrFlexMessage(input: PaymentQrFlexInput): {
           color: "#6B7280",
           wrap: true,
         },
-        {
-          type: "text",
-          text: "ช่องทางชำระ: PromptPay QR",
-          size: "xs",
-          color: "#374151",
-          wrap: true,
-        },
-        ...(input.promptPayLogoUrl?.trim()
-          ? [
-              {
-                type: "image",
-                url: input.promptPayLogoUrl.trim(),
-                size: "md",
-                aspectRatio: "4:1",
-                aspectMode: "fit",
-                margin: "md",
-              },
-            ]
-          : []),
         ...(!input.qrCodeImageUrl?.trim()
           ? [
               {
@@ -428,7 +407,7 @@ export function createPaymentQrFlexMessage(input: PaymentQrFlexInput): {
       url: input.qrCodeImageUrl.trim(),
       size: "full",
       aspectRatio: "1:1",
-      aspectMode: "cover",
+      aspectMode: "fit",
     };
   }
   if (!input.qrCodeImageUrl?.trim() && input.payUrl?.trim()) {
@@ -451,24 +430,6 @@ export function createPaymentQrFlexMessage(input: PaymentQrFlexInput): {
       ],
     };
   }
-  if (input.thaiQrLogoUrl?.trim()) {
-    contents.header = {
-      type: "box",
-      layout: "vertical",
-      backgroundColor: "#123E6F",
-      paddingAll: "8px",
-      contents: [
-        {
-          type: "image",
-          url: input.thaiQrLogoUrl.trim(),
-          size: "full",
-          aspectRatio: "5:1",
-          aspectMode: "fit",
-        },
-      ],
-    };
-  }
-
   return {
     type: "flex",
     altText: `QR พร้อมชำระ ฿${amount} ภายใน ${mins} นาที`,

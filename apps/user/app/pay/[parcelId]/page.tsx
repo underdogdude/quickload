@@ -315,7 +315,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                       alt="PromptPay"
                       width={220}
                       height={80}
-                      className="h-12 w-auto"
+                      className="h-8 w-auto"
                     />
                   </div>
                   <div className="relative flex items-center justify-center bg-white px-4 pb-4">
@@ -376,8 +376,10 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 <button
                   type="button"
                   onClick={createCharge}
-                  className="mt-3 inline-flex items-center rounded-full bg-[#2726F5] px-4 py-2 text-sm font-medium text-white"
+                  disabled={loading}
+                  className="mt-3 inline-flex items-center gap-2 rounded-full bg-[#2726F5] px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
                 >
+                  {loading && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />}
                   สร้าง QR ใหม่
                 </button>
               </div>
@@ -387,8 +389,10 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 <button
                   type="button"
                   onClick={createCharge}
-                  className="mt-3 inline-flex items-center rounded-full bg-[#2726F5] px-4 py-2 text-sm font-medium text-white"
+                  disabled={loading}
+                  className="mt-3 inline-flex items-center gap-2 rounded-full bg-[#2726F5] px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
                 >
+                  {loading && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />}
                   สร้าง QR ใหม่
                 </button>
               </div>

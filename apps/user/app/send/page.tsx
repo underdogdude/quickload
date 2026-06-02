@@ -36,7 +36,7 @@ function SendStepDot({ complete, kind }: { complete: boolean; kind: "sender" | "
   const incompleteRecipient = kind === "recipient" && !complete;
   return (
     <div
-      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 ${
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${
         complete
           ? "border-[#2726F5] bg-[#2726F5]"
           : incompleteRecipient
@@ -149,13 +149,13 @@ function SendAddressStepRow({
     <div className={`flex gap-3 ${contentClassName}`}>
       <div className="flex w-7 shrink-0 flex-col items-center self-stretch">
         {bridgePt5 ? (
-          <div aria-hidden className="-mt-5 h-5 w-0 shrink-0 border-l-2 border-dashed border-slate-300" />
+          <div aria-hidden className="-mt-5 h-5 w-0 shrink-0 border-l border-dashed border-slate-300" />
         ) : null}
         <div className="flex min-h-7 shrink-0 items-center justify-center">
           <SendStepDot complete={step.stepComplete} kind={step.stepKind} />
         </div>
         {lineBelow ? (
-          <div aria-hidden className="min-h-4 w-0 flex-1 border-l-2 border-dashed border-slate-300" />
+          <div aria-hidden className="min-h-4 w-0 flex-1 border-l border-dashed border-slate-300" />
         ) : null}
       </div>
       <div

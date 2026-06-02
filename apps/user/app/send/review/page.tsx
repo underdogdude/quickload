@@ -345,10 +345,14 @@ function ReviewInner() {
                 <div className="rounded-lg border border-slate-200 p-3">
                   <p className="mb-2 text-xs font-medium text-slate-500">รายละเอียดพัสดุ</p>
                   <div className="grid grid-cols-2 gap-y-2 text-sm">
-                    <p className="text-slate-500">รูปแบบการส่ง</p>
-                    <p className="text-right font-medium">{shippingMode === "pickup" ? "เรียกรถรับพัสดุ" : "ส่งที่สาขาไปรษณีย์ไทย"}</p>
-                    <p className="text-slate-500">พิมพ์ใบปะหน้า</p>
-                    <p className="text-right font-medium">{autoPrint ? "อัตโนมัติ" : "ปิด"}</p>
+                    <p className="text-slate-500">น้ำหนัก</p>
+                    <p className="text-right font-medium">{weightGram} กรัม</p>
+                    <p className="text-slate-500">ขนาด</p>
+                    <p className="text-right font-medium">
+                      {widthCm} x {lengthCm} x {heightCm} ซม.
+                    </p>
+                    <p className="text-slate-500">ประเภทพัสดุ</p>
+                    <p className="text-right font-medium">{parcelType}</p>
                     <p className="text-slate-500">ซื้อประกันเพิ่ม</p>
                     <p className="text-right font-medium">{extraInsurance ? "ซื้อ" : "ไม่ซื้อ"}</p>
                     {extraInsurance ? (
@@ -359,14 +363,6 @@ function ReviewInner() {
                         <p className="text-right font-medium">{insuranceFee.toLocaleString("th-TH")} บาท</p>
                       </>
                     ) : null}
-                    <p className="text-slate-500">น้ำหนัก</p>
-                    <p className="text-right font-medium">{weightGram} กรัม</p>
-                    <p className="text-slate-500">ขนาด</p>
-                    <p className="text-right font-medium">
-                      {widthCm} x {lengthCm} x {heightCm} ซม.
-                    </p>
-                    <p className="text-slate-500">ประเภทพัสดุ</p>
-                    <p className="text-right font-medium">{parcelType}</p>
                     {note ? (
                       <>
                         <p className="text-slate-500">หมายเหตุ</p>

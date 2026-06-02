@@ -174,6 +174,16 @@ export const recipientAddresses = pgTable("recipient_addresses", {
   updatedAt: timestamp("updated_at", { withTimezone: true }),
 });
 
+/**
+ * Shipping price tiers.
+ * Lookup: find the row with the smallest weight_up_to_grams >= actual_weight_grams.
+ * price_thb is the final sell price (THB) — no adjustments needed.
+ */
+export const pricingTiers = pgTable("pricing_tiers", {
+  weightUpToGrams: integer("weight_up_to_grams").primaryKey(),
+  priceThb: integer("price_thb").notNull(),
+});
+
 /** Payment attempts for parcels; provider is currently always 'beam' (Beam Checkout). */
 export const payments = pgTable("payments", {
   id: uuid("id").primaryKey().defaultRandom(),

@@ -227,17 +227,10 @@ export async function POST(request: Request) {
     try {
       const base = publicBaseUrl;
       const qrCodeImageUrl = base ? toPublicQrImageUrl(inserted.id, inserted.qrPayload, base) : null;
-      const thaiQrLogoUrl = base ? new URL("/Thai_QR_Logo.svg", base).toString() : null;
-      const promptPayLogoUrl = base ? new URL("/PromptPay-logo.png", base).toString() : null;
-
-      const [qrOk, thaiLogoOk, promptLogoOk] = await Promise.all([
-        canFetchPublicImage(qrCodeImageUrl),
-        canFetchPublicImage(thaiQrLogoUrl),
-        canFetchPublicImage(promptPayLogoUrl),
-      ]);
+      const qrOk = await canFetchPublicImage(qrCodeImageUrl);
 
       console.info(
-        `[payment.charges.flex] paymentId=${inserted.id} qr=${qrOk} thaiQrLogo=${thaiLogoOk} promptPayLogo=${promptLogoOk} base=${base ?? "null"}`,
+        `[payment.charges.flex] paymentId=${inserted.id} qr=${qrOk} base=${base ?? "null"}`,
       );
 
       const flex = createPaymentQrFlexMessage({
@@ -245,8 +238,6 @@ export async function POST(request: Request) {
         amountBaht: inserted.amount,
         expiresInMinutes: minutesUntil(inserted.expiresAt, now),
         qrCodeImageUrl: qrOk ? qrCodeImageUrl : null,
-        thaiQrLogoUrl: thaiLogoOk ? thaiQrLogoUrl : null,
-        promptPayLogoUrl: promptLogoOk ? promptPayLogoUrl : null,
         payUrl: base ? new URL(`/pay/${encodeURIComponent(parcel.id)}`, base).toString() : null,
       });
       await pushLineMessage({
