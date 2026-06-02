@@ -215,12 +215,10 @@ function RecipientFormInner() {
         setFormError(json.error ?? recipientCopy.errSave);
         return;
       }
-      if (saveAddress) {
-        router.replace(`/send?recipientSaved=1&recipientId=${encodeURIComponent(json.data.id)}`);
-      } else {
-        router.replace("/send");
-      }
-      router.refresh();
+      const redir = saveAddress
+        ? `/send?recipientSaved=1&recipientId=${encodeURIComponent(json.data.id)}&_t=${Date.now()}`
+        : `/send?recipientId=${encodeURIComponent(json.data.id)}&_t=${Date.now()}`;
+      router.replace(redir);
     } catch {
       setFormError(recipientCopy.errSave);
     } finally {

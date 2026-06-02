@@ -127,6 +127,7 @@ export default function RegisterPage() {
     try {
       const res = await fetch("/api/me", {
         method: "PATCH",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ firstName, lastName, phone: normalizedPhone, email, birthDate }),
       });
@@ -137,12 +138,14 @@ export default function RegisterPage() {
         return;
       }
       setCurrentUser(json.data);
+      setIsFirstTime(false);
       setMsgTone("success");
       setMsg(isFirstTime ? "ยินดีต้อนรับ! กำลังพาไปหน้าหลัก…" : "บันทึกข้อมูลสมาชิกแล้ว");
 
       if (isFirstTime) {
+        // Hard redirect so middleware sees the updated session cookie (LINE WebView).
         setTimeout(() => {
-          navigateAfterAuth(router, "/");
+          navigateAfterAuth(router, "/", { hard: true });
         }, 700);
       }
     } catch {

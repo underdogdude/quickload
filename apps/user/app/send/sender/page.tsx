@@ -207,8 +207,7 @@ function SenderFormInner() {
         setFormError(json.error ?? senderCopy.errSave);
         return;
       }
-      router.replace(`/send?senderSaved=1&senderId=${encodeURIComponent(json.data.id)}&step=recipient`);
-      router.refresh();
+      router.replace(`/send?senderSaved=1&senderId=${encodeURIComponent(json.data.id)}&_t=${Date.now()}`);
     } catch {
       setFormError(senderCopy.errSave);
     } finally {

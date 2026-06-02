@@ -1,7 +1,6 @@
 "use client";
 
 import type { RecipientAddress, SenderAddress } from "@quickload/shared/types";
-import { SendAddressCardSkeleton } from "@/components/skeleton";
 import {
   validateParcelDimensionsFromStrings,
   validateParcelSideCm,
@@ -33,14 +32,178 @@ function parcelTypeFromQuery(get: (key: string) => string | null): ParcelTypeOpt
   return "เอกสาร";
 }
 
-function AddressBookIcon() {
+function SendStepDot({ complete, kind }: { complete: boolean; kind: "sender" | "recipient" }) {
+  const incompleteRecipient = kind === "recipient" && !complete;
+  return (
+    <div
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 ${
+        complete
+          ? "border-[#2726F5] bg-[#2726F5]"
+          : incompleteRecipient
+            ? "border-slate-300 bg-[#ECECEC]"
+            : "border-[#2726F5] bg-white"
+      }`}
+    >
+      {complete ? (
+        <span className="text-xs font-bold text-white">✓</span>
+      ) : kind === "sender" ? (
+        <div className="h-3 w-3 rounded-full bg-[#2726F5]" />
+      ) : null}
+    </div>
+  );
+}
+
+type SendAddressStepProps = {
+  emptyCtaHref: string;
+  emptyCtaText: string;
+  addressBookHref: string;
+  addressBookAriaLabel: string;
+  stepComplete: boolean;
+  stepKind: "sender" | "recipient";
+  loading?: boolean;
+  loadingAriaLabel?: string;
+  selected?: {
+    editHref: string;
+    contactName: string;
+    phone: string;
+    addressLine: string;
+    tambon: string;
+    amphoe: string;
+    province: string;
+    zipcode: string;
+  } | null;
+};
+
+function SendAddressStepContent({
+  emptyCtaHref,
+  emptyCtaText,
+  addressBookHref,
+  addressBookAriaLabel,
+  loading = false,
+  loadingAriaLabel,
+  selected,
+}: Omit<SendAddressStepProps, "stepComplete" | "stepKind">) {
+  const hasSelection = Boolean(selected);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-7 items-center gap-3 justify-between" role="status" aria-live="polite" aria-label={loadingAriaLabel}>
+        <div className="h-4 min-w-0 flex-1 max-w-[14rem] animate-pulse rounded bg-slate-100" />
+        <AddressBookIcon />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="flex min-h-7 items-center gap-3 justify-between">
+        {hasSelection ? (
+          <Link
+            href={selected!.editHref}
+            className="min-w-0 flex-1 truncate text-sm font-medium leading-5 text-slate-900"
+          >
+            {selected!.contactName}{" "}
+            <span className="mx-1 font-light text-slate-400">|</span> {selected!.phone}
+          </Link>
+        ) : (
+          <Link
+            href={emptyCtaHref}
+            className="min-w-0 flex-1 truncate text-sm font-bold leading-5 text-slate-400"
+          >
+            {emptyCtaText}
+          </Link>
+        )}
+        <Link href={addressBookHref} className="shrink-0" aria-label={addressBookAriaLabel}>
+          <AddressBookIcon muted={!hasSelection} />
+        </Link>
+      </div>
+      {hasSelection ? (
+        <div className="space-y-1">
+          <p className="truncate text-xs leading-4 text-slate-400">
+            {selected!.addressLine}, {selected!.tambon}, {selected!.amphoe}, {selected!.province},{" "}
+            {selected!.zipcode}
+          </p>
+          <Link href={selected!.editHref} className="inline-block text-xs font-medium text-[#2726F5]">
+            แก้ไข
+          </Link>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function SendAddressStepRow({
+  step,
+  lineBelow = false,
+  bridgePt5 = false,
+  contentBorderBottom = false,
+  contentClassName = "",
+}: {
+  step: SendAddressStepProps;
+  lineBelow?: boolean;
+  bridgePt5?: boolean;
+  contentBorderBottom?: boolean;
+  contentClassName?: string;
+}) {
+  return (
+    <div className={`flex gap-3 ${contentClassName}`}>
+      <div className="flex w-7 shrink-0 flex-col items-center self-stretch">
+        {bridgePt5 ? (
+          <div aria-hidden className="-mt-5 h-5 w-0 shrink-0 border-l-2 border-dashed border-slate-300" />
+        ) : null}
+        <div className="flex min-h-7 shrink-0 items-center justify-center">
+          <SendStepDot complete={step.stepComplete} kind={step.stepKind} />
+        </div>
+        {lineBelow ? (
+          <div aria-hidden className="min-h-4 w-0 flex-1 border-l-2 border-dashed border-slate-300" />
+        ) : null}
+      </div>
+      <div
+        className={`min-w-0 flex-1 ${contentBorderBottom ? "border-b border-slate-100 pb-3" : ""}`}
+      >
+        {step.loading ? (
+          <div
+            className="flex min-h-7 items-center gap-3 justify-between"
+            role="status"
+            aria-live="polite"
+            aria-label={step.loadingAriaLabel}
+          >
+            <div className="h-4 min-w-0 flex-1 max-w-[14rem] animate-pulse rounded bg-slate-100" />
+            <AddressBookIcon muted={!step.selected} />
+          </div>
+        ) : (
+          <SendAddressStepContent {...step} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SendAddressStepsCard({
+  sender,
+  recipient,
+}: {
+  sender: SendAddressStepProps;
+  recipient: SendAddressStepProps;
+}) {
+  return (
+    <div className="flex flex-col">
+      <SendAddressStepRow step={sender} lineBelow contentBorderBottom />
+      <SendAddressStepRow step={recipient} bridgePt5 contentClassName="pt-3" />
+    </div>
+  );
+}
+
+function AddressBookIcon({ muted = false }: { muted?: boolean }) {
+  const stroke = muted ? "#CBD5E1" : "#2726F5";
+  const fill = muted ? "#CBD5E1" : "#2726F5";
   return (
     <svg viewBox="0 -0.5 25 25" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" aria-hidden>
       <path
         fillRule="evenodd"
         clipRule="evenodd"
         d="M7.5 7V17C7.5 18.1046 8.39543 19 9.5 19H17.5C18.6046 19 19.5 18.1046 19.5 17V7C19.5 5.89543 18.6046 5 17.5 5H9.5C8.39543 5 7.5 5.89543 7.5 7Z"
-        stroke="#2726F5"
+        stroke={stroke}
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -49,14 +212,14 @@ function AddressBookIcon() {
         fillRule="evenodd"
         clipRule="evenodd"
         d="M15.5 10C15.5 11.1046 14.6046 12 13.5 12C12.3954 12 11.5 11.1046 11.5 10C11.5 8.89543 12.3954 8 13.5 8C14.6046 8 15.5 8.89543 15.5 10Z"
-        stroke="#2726F5"
+        stroke={stroke}
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <path
         d="M7.05108 16.3992C6.71926 16.6471 6.65126 17.1171 6.89919 17.4489C7.14713 17.7807 7.61711 17.8487 7.94892 17.6008L7.05108 16.3992ZM19.0511 17.6008C19.3829 17.8487 19.8529 17.7807 20.1008 17.4489C20.3487 17.1171 20.2807 16.6471 19.9489 16.3992L19.0511 17.6008ZM5.5 8.25C5.08579 8.25 4.75 8.58579 4.75 9C4.75 9.41421 5.08579 9.75 5.5 9.75V8.25ZM7.5 9.75C7.91421 9.75 8.25 9.41421 8.25 9C8.25 8.58579 7.91421 8.25 7.5 8.25V9.75ZM5.5 11.25C5.08579 11.25 4.75 11.5858 4.75 12C4.75 12.4142 5.08579 12.75 5.5 12.75V11.25ZM7.5 12.75C7.91421 12.75 8.25 12.4142 8.25 12C8.25 11.5858 7.91421 11.25 7.5 11.25V12.75ZM5.5 14.25C5.08579 14.25 4.75 14.5858 4.75 15C4.75 15.4142 5.08579 15.75 5.5 15.75V14.25ZM7.5 15.75C7.91421 15.75 8.25 15.4142 8.25 15C8.25 14.5858 7.91421 14.25 7.5 14.25V15.75ZM7.94892 17.6008C11.2409 15.141 15.7591 15.141 19.0511 17.6008L19.9489 16.3992C16.1245 13.5416 10.8755 13.5416 7.05108 16.3992L7.94892 17.6008ZM5.5 9.75H7.5V8.25H5.5V9.75ZM5.5 12.75H7.5V11.25H5.5V12.75ZM5.5 15.75H7.5V14.25H5.5V15.75Z"
-        fill="#2726F5"
+        fill={fill}
       />
     </svg>
   );
@@ -69,6 +232,7 @@ function SendParcelInner() {
   const senderIdParam = searchParams.get("senderId");
   const recipientSaved = searchParams.get("recipientSaved") === "1";
   const recipientIdParam = searchParams.get("recipientId");
+  const navT = searchParams.get("_t");
 
   const [shippingMode, setShippingMode] = useState<"branch" | "pickup">(
     () => (searchParams.get("shippingMode") === "pickup" ? "pickup" : "branch"),
@@ -267,21 +431,25 @@ function SendParcelInner() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setAddressesLoading(true);
       try {
-        const res = await fetch("/api/sender-addresses");
-        const json = (await res.json()) as { ok?: boolean; data?: SenderAddress[] };
-        if (cancelled) return;
-        if (res.ok && json.ok && Array.isArray(json.data)) {
-          setAddresses(json.data);
+        if (senderIdParam) {
+          const res = await fetch(`/api/sender-addresses/${encodeURIComponent(senderIdParam)}`);
+          const json = (await res.json()) as { ok?: boolean; data?: SenderAddress };
+          if (cancelled) return;
+          if (res.ok && json.ok && json.data) setAddresses([json.data]);
+        } else {
+          const res = await fetch("/api/sender-addresses");
+          const json = (await res.json()) as { ok?: boolean; data?: SenderAddress[] };
+          if (cancelled) return;
+          if (res.ok && json.ok && Array.isArray(json.data)) setAddresses(json.data);
         }
       } finally {
         if (!cancelled) setAddressesLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    return () => { cancelled = true; };
+  }, [senderIdParam, navT]);
 
   useEffect(() => {
     if (!senderSaved && !recipientSaved) return;
@@ -300,27 +468,31 @@ function SendParcelInner() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setRecipientAddressesLoading(true);
       try {
-        const res = await fetch("/api/recipient-addresses");
-        const json = (await res.json()) as { ok?: boolean; data?: RecipientAddress[] };
-        if (cancelled) return;
-        if (res.ok && json.ok && Array.isArray(json.data)) {
-          setRecipientAddresses(json.data);
+        if (recipientIdParam) {
+          const res = await fetch(`/api/recipient-addresses/${encodeURIComponent(recipientIdParam)}`);
+          const json = (await res.json()) as { ok?: boolean; data?: RecipientAddress };
+          if (cancelled) return;
+          if (res.ok && json.ok && json.data) setRecipientAddresses([json.data]);
+        } else {
+          const res = await fetch("/api/recipient-addresses");
+          const json = (await res.json()) as { ok?: boolean; data?: RecipientAddress[] };
+          if (cancelled) return;
+          if (res.ok && json.ok && Array.isArray(json.data)) setRecipientAddresses(json.data);
         }
       } finally {
         if (!cancelled) setRecipientAddressesLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    return () => { cancelled = true; };
+  }, [recipientIdParam, navT]);
 
   const activeSender = useMemo(() => {
-    if (!addresses.length) return null;
     if (senderIdParam) {
       return addresses.find((a) => a.id === senderIdParam) ?? null;
     }
+    if (!addresses.length) return null;
     const primary = addresses.find((a) => a.isPrimary);
     return primary ?? addresses[0];
   }, [addresses, senderIdParam]);
@@ -376,94 +548,52 @@ function SendParcelInner() {
       <section className="-mt-12 px-6">
         <div className="mx-auto w-full max-w-lg space-y-4">
           <div className="rounded-lg bg-white p-4 shadow-sm">
-            <div className="flex gap-4">
-              <div className="flex w-8 flex-col items-center pt-0.5">
-                <div
-                  className={`flex h-7 w-7 items-center justify-center rounded-full border-2 ${
-                    senderComplete ? "border-[#2726F5] bg-[#2726F5]" : "border-[#2726F5]"
-                  }`}
-                >
-                  {senderComplete ? (
-                    <span className="text-xs font-bold text-white">✓</span>
-                  ) : (
-                    <div className="h-3 w-3 rounded-full bg-[#2726F5]" />
-                  )}
-                </div>
-                <div className="my-1 h-[72px] border-l border-dashed border-slate-300" />
-                <div
-                  className={`flex h-7 w-7 items-center justify-center rounded-full border-2 ${
-                    recipientComplete ? "border-[#2726F5] bg-[#2726F5]" : "border-slate-300 bg-[#ECECEC]"
-                  }`}
-                >
-                  {recipientComplete ? <span className="text-xs font-bold text-white">✓</span> : null}
-                </div>
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="border-b border-slate-300 pb-4">
-                  {addressesLoading ? (
-                    <SendAddressCardSkeleton ariaLabel="กำลังโหลดข้อมูลผู้ส่ง" />
-                  ) : activeSender ? (
-                    <div className="flex items-start justify-between gap-2">
-                      <Link href={`/send/sender?id=${activeSender.id}`} className="min-w-0 flex-1">
-                        <p className="text-xs font-light text-slate-500">ผู้ส่งที่เลือก</p>
-                        <p className="mt-1 truncate text-sm font-medium text-slate-900">
-                          {activeSender.contactName} <span className="mx-1 text-slate-400 font-light">|</span> {activeSender.phone}
-                        </p>
-                        <p className="mt-0.5 truncate text-xs text-slate-400">
-                          {activeSender.addressLine},{" "}
-                          {activeSender.tambon}, {activeSender.amphoe}, {activeSender.province}, {activeSender.zipcode}
-                        </p>
-                        <p className="mt-2 text-xs font-normal text-[#2726F5]">แก้ไข</p>
-                      </Link>
-                      <Link href={addressBookHref.sender} aria-label="เปิดสมุดที่อยู่ผู้ส่ง">
-                        <AddressBookIcon />
-                      </Link>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between gap-2">
-                      <Link href="/send/sender" className="text-sm font-bold text-slate-400">
-                        เพิ่มข้อมูลผู้ส่ง
-                      </Link>
-                      <Link href={addressBookHref.sender} aria-label="เปิดสมุดที่อยู่ผู้ส่ง">
-                        <AddressBookIcon />
-                      </Link>
-                    </div>
-                  )}
-                </div>
-                <div className="pt-4">
-                  {recipientAddressesLoading ? (
-                    <SendAddressCardSkeleton ariaLabel="กำลังโหลดข้อมูลผู้รับ" />
-                  ) : activeRecipient ? (
-                    <div className="flex items-start justify-between gap-2">
-                      <Link href={`/send/recipient?id=${activeRecipient.id}`} className="min-w-0 flex-1">
-                        <p className="text-xs font-light text-slate-500">ผู้รับที่เลือก</p>
-                        <p className="mt-1 truncate text-sm font-medium text-slate-900">
-                          {activeRecipient.contactName} <span className="mx-1 text-slate-400 font-light">|</span> {activeRecipient.phone}
-                        </p>
-                        <p className="mt-0.5 truncate text-xs text-slate-400">
-                          {activeRecipient.addressLine},{" "}
-                          {activeRecipient.tambon}, {activeRecipient.amphoe}, {activeRecipient.province}, {activeRecipient.zipcode}
-                        </p>
-                        <p className="mt-2 text-xs font-normal text-[#2726F5]">แก้ไข</p>
-                      </Link>
-                      <Link href={addressBookHref.recipient} aria-label="เปิดสมุดที่อยู่ผู้รับ">
-                        <AddressBookIcon />
-                      </Link>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between gap-2">
-                      <Link href="/send/recipient" className="text-sm font-bold text-slate-400">
-                        เพิ่มข้อมูลผู้รับ
-                      </Link>
-                      <Link href={addressBookHref.recipient} aria-label="เปิดสมุดที่อยู่ผู้รับ">
-                        <AddressBookIcon />
-                      </Link>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            <SendAddressStepsCard
+              sender={{
+                stepComplete: senderComplete,
+                stepKind: "sender",
+                emptyCtaHref: "/send/sender",
+                emptyCtaText: "เพิ่มข้อมูลผู้ส่ง",
+                addressBookHref: addressBookHref.sender,
+                addressBookAriaLabel: "เปิดสมุดที่อยู่ผู้ส่ง",
+                loading: addressesLoading,
+                loadingAriaLabel: "กำลังโหลดข้อมูลผู้ส่ง",
+                selected: activeSender
+                  ? {
+                      editHref: `/send/sender?id=${activeSender.id}`,
+                      contactName: activeSender.contactName,
+                      phone: activeSender.phone,
+                      addressLine: activeSender.addressLine,
+                      tambon: activeSender.tambon,
+                      amphoe: activeSender.amphoe,
+                      province: activeSender.province,
+                      zipcode: activeSender.zipcode,
+                    }
+                  : null,
+              }}
+              recipient={{
+                stepComplete: recipientComplete,
+                stepKind: "recipient",
+                emptyCtaHref: "/send/recipient",
+                emptyCtaText: "เพิ่มข้อมูลผู้รับ",
+                addressBookHref: addressBookHref.recipient,
+                addressBookAriaLabel: "เปิดสมุดที่อยู่ผู้รับ",
+                loading: recipientAddressesLoading,
+                loadingAriaLabel: "กำลังโหลดข้อมูลผู้รับ",
+                selected: activeRecipient
+                  ? {
+                      editHref: `/send/recipient?id=${activeRecipient.id}`,
+                      contactName: activeRecipient.contactName,
+                      phone: activeRecipient.phone,
+                      addressLine: activeRecipient.addressLine,
+                      tambon: activeRecipient.tambon,
+                      amphoe: activeRecipient.amphoe,
+                      province: activeRecipient.province,
+                      zipcode: activeRecipient.zipcode,
+                    }
+                  : null,
+              }}
+            />
           </div>
 
           <div className="rounded-lg bg-white p-4 shadow-sm">

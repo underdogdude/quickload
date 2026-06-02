@@ -10,7 +10,6 @@ const banners = [
   { src: "/banner/banner.png", alt: "ส่งพัสดุวันนี้ รับเครดิตค่าส่งพิเศษ" },
   { src: "/banner/no-queue.png", alt: "ส่งพัสดุวันนี้ รับเครดิตค่าส่งพิเศษ" },
   { src: "/banner/cheaper.png", alt: "ส่งพัสดุวันนี้ รับเครดิตค่าส่งพิเศษ" },
-  { src: "/banner/cheaper.png", alt: "ส่งพัสดุวันนี้ รับเครดิตค่าส่งพิเศษ" },
 ] as const;
 
 function StaticBannerSlide({ banner }: { banner: (typeof banners)[number] }) {

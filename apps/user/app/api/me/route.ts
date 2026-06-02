@@ -135,7 +135,10 @@ export async function PATCH(request: Request) {
     fullSession.profileCompleted = true;
     await fullSession.save();
 
-    return NextResponse.json({ ok: true, data: updated });
+    return NextResponse.json(
+      { ok: true, data: updated },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";
