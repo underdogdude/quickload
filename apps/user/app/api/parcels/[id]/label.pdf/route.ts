@@ -144,10 +144,12 @@ async function createParcelLabelPdf(input: {
   // Font size: value in mm -> SVG px at render scale
   const fs = (v: number) => Math.round(v * sy);
 
-  const sarabunRegularPath = resolvePublicPath("fonts/Sarabun/Sarabun-Regular.ttf");
-  const sarabunBoldPath = resolvePublicPath("fonts/Sarabun/Sarabun-Bold.ttf");
-  const sarabunRegularUrl = `file://${sarabunRegularPath}`;
-  const sarabunBoldUrl = `file://${sarabunBoldPath}`;
+  const [sarabunRegularBuf, sarabunBoldBuf] = await Promise.all([
+    readPublicFile("fonts/Sarabun/Sarabun-Regular.ttf"),
+    readPublicFile("fonts/Sarabun/Sarabun-Bold.ttf"),
+  ]);
+  const sarabunRegularUrl = `data:font/truetype;base64,${sarabunRegularBuf.toString("base64")}`;
+  const sarabunBoldUrl = `data:font/truetype;base64,${sarabunBoldBuf.toString("base64")}`;
 
   const [barcode, footerBarcode, quickloadLogo] = await Promise.all([
     barcodePng(input.trackingNumber, { scale: 3, height: 11 }),
