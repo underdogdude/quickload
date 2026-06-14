@@ -1,6 +1,6 @@
 import { and, asc, eq, gt } from "drizzle-orm";
 import { getDb, parcels, payments } from "@quickload/shared/db";
-import { createBeamPromptPayCharge, readBeamEnv } from "@quickload/shared/beam";
+import { createBeamCharge, readBeamEnv } from "@quickload/shared/beam";
 import { computeOutstanding } from "@quickload/shared/penalty";
 import { NextResponse } from "next/server";
 import { createPaymentQrFlexMessage } from "@/lib/line-flex";
@@ -136,8 +136,9 @@ export async function POST(request: Request) {
     const returnUrl = new URL(`/pay/${parcel.id}`, request.url).toString();
     let beamResult;
     try {
-      beamResult = await createBeamPromptPayCharge({
+      beamResult = await createBeamCharge({
         env,
+        paymentMethodType: "QR_PROMPT_PAY",
         amount: out.outstanding.toFixed(2),
         currency: "THB",
         referenceId: parcel.id,

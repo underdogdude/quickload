@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { computeOutstanding } from "./penalty";
+import type { BeamPaymentMethodType } from "./payment-methods";
 
 /** Beam webhook HMAC verification per docs.beamcheckout.com/webhook/webhook. */
 export function verifyBeamWebhookSignature({
@@ -41,21 +42,34 @@ export function readBeamEnv(): BeamEnv {
   return { baseUrl, merchantId, apiKey, hmacKeyBase64 };
 }
 
+export type BeamActionRequired = "NONE" | "REDIRECT" | "ENCODED_IMAGE";
+
 export type BeamChargeResult = {
   chargeId: string;
-  qrPayload: string;
+  /** Populated when actionRequired === "ENCODED_IMAGE". */
+  qrPayload: string | null;
+  /** Populated when actionRequired === "REDIRECT". */
+  redirectUrl: string | null;
+  actionRequired: BeamActionRequired;
   /** ISO-8601 timestamp; null if Beam did not return one. */
   expiresAt: string | null;
   rawResponse: unknown;
 };
 
 /**
- * Creates a PromptPay charge via Beam Charges API.
- * Per docs.beamcheckout.com/charges/charges-api: amount is integer in the smallest unit
- * (satang for THB), and paymentMethod uses { qrPromptPay: { expiryTime }, paymentMethodType }.
+ * Creates a Beam charge for the given paymentMethodType.
+ * Per docs.beamcheckout.com/charges/charges-api: amount is integer in the smallest
+ * unit (satang for THB).
+ *
+ * The body shape under `paymentMethod` differs per method. QR_PROMPT_PAY ships
+ * `qrPromptPay: { expiryTime }`. The four mobile-app methods (KPLUS / MAKE /
+ * SCB_EASY / TRUE_MONEY) ship an empty object under their respective key — this
+ * is our current best-guess; verify the exact key against Beam playground during
+ * manual integration (Task 7).
  */
-export async function createBeamPromptPayCharge({
+export async function createBeamCharge({
   env,
+  paymentMethodType,
   amount,
   currency,
   referenceId,
@@ -64,14 +78,14 @@ export async function createBeamPromptPayCharge({
   expiryTime,
 }: {
   env: BeamEnv;
+  paymentMethodType: BeamPaymentMethodType;
   /** Decimal string in major units, e.g. "85.00". Converted to integer satang internally. */
   amount: string;
   currency: "THB";
   referenceId: string;
   idempotencyKey: string;
-  /** Required by Beam. e.g. "https://example.com/pay/return". */
   returnUrl: string;
-  /** ISO-8601 timestamp for QR expiry. */
+  /** ISO-8601 timestamp for QR expiry; only meaningful for QR_PROMPT_PAY. */
   expiryTime: string;
 }): Promise<BeamChargeResult> {
   if (!env.baseUrl || !env.merchantId || !env.apiKey) {
@@ -84,15 +98,32 @@ export async function createBeamPromptPayCharge({
   const amountSatang = Math.round(major * 100);
   const basic = Buffer.from(`${env.merchantId}:${env.apiKey}`).toString("base64");
   const url = `${env.baseUrl.replace(/\/$/, "")}/api/v1/charges`;
+
+  const paymentMethod: Record<string, unknown> = { paymentMethodType };
+  switch (paymentMethodType) {
+    case "QR_PROMPT_PAY":
+      paymentMethod.qrPromptPay = { expiryTime };
+      break;
+    case "KPLUS":
+      paymentMethod.kplus = {};
+      break;
+    case "MAKE":
+      paymentMethod.make = {};
+      break;
+    case "SCB_EASY":
+      paymentMethod.scbEasy = {};
+      break;
+    case "TRUE_MONEY":
+      paymentMethod.trueMoney = {};
+      break;
+  }
+
   const body = {
     amount: amountSatang,
     currency,
     referenceId,
     returnUrl,
-    paymentMethod: {
-      paymentMethodType: "QR_PROMPT_PAY",
-      qrPromptPay: { expiryTime },
-    },
+    paymentMethod,
   };
   const res = await fetch(url, {
     method: "POST",
@@ -111,7 +142,9 @@ export async function createBeamPromptPayCharge({
     // leave as null; we'll surface via error text.
   }
   if (!res.ok) {
-    throw new Error(`Beam charges API returned ${res.status}: ${text.slice(0, 500)}`);
+    throw new Error(
+      `Beam charges API returned ${res.status} for ${paymentMethodType}: ${text.slice(0, 500)}`,
+    );
   }
   const obj = (json ?? {}) as Record<string, unknown>;
   const chargeId =
@@ -120,14 +153,54 @@ export async function createBeamPromptPayCharge({
       : typeof obj.chargeId === "string"
         ? obj.chargeId
         : null;
+  const actionRequired = extractActionRequired(obj);
   const qrPayload = extractQrPayload(obj);
+  const redirectUrl = extractRedirectUrl(obj);
   const expiresAt = extractExpiresAt(obj);
-  if (!chargeId || !qrPayload) {
+  if (!chargeId) {
     throw new Error(
-      `Beam response missing chargeId or qrPayload. Raw: ${text.slice(0, 500)}`,
+      `Beam response missing chargeId for ${paymentMethodType}. Raw: ${text.slice(0, 500)}`,
     );
   }
-  return { chargeId, qrPayload, expiresAt, rawResponse: json };
+  // For QR_PROMPT_PAY the QR payload is required for the UI to render anything.
+  if (paymentMethodType === "QR_PROMPT_PAY" && !qrPayload) {
+    throw new Error(
+      `Beam QR_PROMPT_PAY response missing qrPayload. Raw: ${text.slice(0, 500)}`,
+    );
+  }
+  return { chargeId, qrPayload, redirectUrl, actionRequired, expiresAt, rawResponse: json };
+}
+
+function extractActionRequired(obj: Record<string, unknown>): BeamActionRequired {
+  const raw = obj.actionRequired;
+  if (typeof raw === "string") {
+    const u = raw.toUpperCase();
+    if (u === "REDIRECT" || u === "REDIRECT_TO_URL") return "REDIRECT";
+    if (u === "ENCODED_IMAGE") return "ENCODED_IMAGE";
+    if (u === "NONE") return "NONE";
+    if (raw.length > 0) console.info(`[beam] unknown actionRequired: "${raw}"`);
+  }
+  // Fallback: infer from response shape.
+  if (extractRedirectUrl(obj)) return "REDIRECT";
+  if (extractQrPayload(obj)) return "ENCODED_IMAGE";
+  return "NONE";
+}
+
+function extractRedirectUrl(obj: Record<string, unknown>): string | null {
+  const direct = obj.redirectUrl;
+  if (typeof direct === "string" && direct.length > 0) return direct;
+  const nextAction = obj.nextAction as Record<string, unknown> | undefined;
+  if (nextAction && typeof nextAction.redirectUrl === "string" && nextAction.redirectUrl.length > 0) {
+    return nextAction.redirectUrl;
+  }
+  const pm = (obj.paymentMethod ?? {}) as Record<string, unknown>;
+  for (const key of ["kplus", "make", "scbEasy", "trueMoney"]) {
+    const sub = pm[key] as Record<string, unknown> | undefined;
+    if (sub && typeof sub.redirectUrl === "string" && sub.redirectUrl.length > 0) {
+      return sub.redirectUrl;
+    }
+  }
+  return null;
 }
 
 function extractQrPayload(obj: Record<string, unknown>): string | null {
