@@ -73,6 +73,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canceledRef = useRef(false);
   const createChargeOnceRef = useRef(false);
+  const autoRedirectedRef = useRef<string | null>(null);
 
   const renderQr = useCallback(async (payload: string) => {
     // Beam may return the QR as a pre-rendered base64 PNG data URL; use it as-is.
@@ -213,10 +214,12 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
     if (!charge || charge.actionRequired !== "REDIRECT" || !charge.redirectUrl) return;
     if (charge.status !== "pending") return;
     if (typeof window === "undefined") return;
+    if (autoRedirectedRef.current === charge.paymentId) return;
     const isCoarse =
       typeof window.matchMedia === "function" &&
       window.matchMedia("(pointer: coarse)").matches;
     if (!isCoarse) return;
+    autoRedirectedRef.current = charge.paymentId;
     const url = charge.redirectUrl;
     const t = setTimeout(() => {
       window.location.assign(url);
