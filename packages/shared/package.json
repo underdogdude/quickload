@@ -40,7 +40,8 @@
     "db:reset:parcels": "node ./scripts/reset-parcels-orders-sql.mjs",
     "db:seed:thaipost-demo": "node ./scripts/seed-thaipost-status-demo.mjs",
     "db:seed:thaipost-demo:list-users": "node ./scripts/seed-thaipost-status-demo.mjs --list-users",
-    "db:apply:one-pending-idx": "node ./scripts/apply-sql.mjs ./sql/20260426_payments_one_pending_per_parcel.sql"
+    "db:apply:one-pending-idx": "node ./scripts/apply-sql.mjs ./sql/20260426_payments_one_pending_per_parcel.sql",
+    "db:apply:redirect-url": "node ./scripts/apply-sql.mjs ./sql/20260614_payments_redirect_url.sql"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",

@@ -199,6 +199,7 @@ export const payments = pgTable("payments", {
   // 'pending' | 'succeeded' | 'failed' | 'expired' | 'canceled'
   status: text("status").notNull().default("pending"),
   qrPayload: text("qr_payload"),
+  redirectUrl: text("redirect_url"),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   paidAt: timestamp("paid_at", { withTimezone: true }),
   rawCreateResponse: jsonb("raw_create_response"),
