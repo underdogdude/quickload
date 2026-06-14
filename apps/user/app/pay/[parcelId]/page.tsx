@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import QRCode from "qrcode";
 import { use, useCallback, useEffect, useRef, useState } from "react";
+import { PAYMENT_METHODS, type PaymentMethodId } from "@quickload/shared/payment-methods";
 
 type ChargeStatus = "pending" | "succeeded" | "failed" | "expired" | "canceled";
 
@@ -29,12 +30,17 @@ type Outstanding = {
   frozen: boolean;
 };
 
+type ActionRequired = "NONE" | "REDIRECT" | "ENCODED_IMAGE";
+
 type ChargeData = {
   paymentId: string;
   status: ChargeStatus;
   amount: string;
   currency: string;
+  paymentMethod: PaymentMethodId | string;
   qrPayload: string | null;
+  redirectUrl: string | null;
+  actionRequired: ActionRequired;
   expiresAt: string | null;
   paidAt: string | null;
   parcelId: string;
@@ -44,6 +50,11 @@ type ChargeData = {
 };
 
 const POLL_INTERVAL_MS = 2500;
+
+function methodLabelTh(id: string): string {
+  const def = PAYMENT_METHODS.find((m) => m.id === id);
+  return def?.labelTh ?? id;
+}
 
 export default function PayPage({ params }: { params: { parcelId: string } }) {
   const { parcelId } = params;
@@ -55,6 +66,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
   const [loading, setLoading] = useState(true);
   const [simulating, setSimulating] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const [switching, setSwitching] = useState<PaymentMethodId | null>(null);
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
@@ -99,7 +111,10 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
             status: "canceled",
             amount: "0",
             currency: "THB",
+            paymentMethod: "promptpay",
             qrPayload: null,
+            redirectUrl: null,
+            actionRequired: "NONE",
             expiresAt: null,
             paidAt: null,
             parcelId,
@@ -193,6 +208,22 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
     return () => clearInterval(t);
   }, []);
 
+  // Auto-open the bank/wallet app on mobile when the charge is a redirect.
+  useEffect(() => {
+    if (!charge || charge.actionRequired !== "REDIRECT" || !charge.redirectUrl) return;
+    if (charge.status !== "pending") return;
+    if (typeof window === "undefined") return;
+    const isCoarse =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(pointer: coarse)").matches;
+    if (!isCoarse) return;
+    const url = charge.redirectUrl;
+    const t = setTimeout(() => {
+      window.location.assign(url);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [charge]);
+
   const handleCancel = async () => {
     if (!charge || canceling) return;
     setCanceling(true);
@@ -208,6 +239,62 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
       router.replace(parcelCanceled ? "/parcels" : "/send/review");
     }
   };
+
+  const switchMethod = useCallback(
+    async (nextMethod: PaymentMethodId) => {
+      if (!charge || switching) return;
+      setSwitching(nextMethod);
+      setError(null);
+      try {
+        // Best-effort cancel of the current pending charge — server-side
+        // expire-on-create will catch us either way.
+        try {
+          if (charge.paymentId) {
+            await fetch(`/api/payment/charges/${charge.paymentId}/cancel`, {
+              method: "POST",
+            });
+          }
+        } catch {
+          // ignore
+        }
+
+        const res = await fetch("/api/payment/charges", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ parcelId, paymentMethod: nextMethod }),
+        });
+        const json = (await res.json()) as
+          | { ok: true; data: { paymentId: string } }
+          | { ok: false; error: string };
+        if (!res.ok || !("ok" in json) || !json.ok) {
+          setError(
+            ("error" in json && json.error) || "ไม่สามารถเปลี่ยนวิธีชำระเงินได้",
+          );
+          return;
+        }
+        const statusRes = await fetch(`/api/payment/charges/${json.data.paymentId}`);
+        const statusJson = (await statusRes.json()) as
+          | { ok: true; data: ChargeData }
+          | { ok: false; error: string };
+        if (!statusRes.ok || !("ok" in statusJson) || !statusJson.ok) {
+          setError(
+            ("error" in statusJson && statusJson.error) || "ไม่สามารถโหลดสถานะได้",
+          );
+          return;
+        }
+        setCharge(statusJson.data);
+        setQrDataUrl(null);
+        if (statusJson.data.qrPayload) {
+          await renderQr(statusJson.data.qrPayload);
+        }
+      } catch {
+        setError("เครือข่ายผิดพลาด กรุณาลองใหม่");
+      } finally {
+        setSwitching(null);
+      }
+    },
+    [charge, parcelId, renderQr, switching],
+  );
 
   const handleSimulate = async () => {
     if (!charge || simulating) return;
@@ -275,96 +362,116 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 <div className="h-64 w-64 animate-pulse rounded-lg bg-slate-100" />
               </div>
             ) : charge?.status === "pending" ? (
-              <div className="flex flex-col items-center gap-3">
-                {charge.outstanding.frozen ? (
-                  <>
-                    <p className="text-sm font-medium text-slate-500">ยอดคงเหลือ</p>
-                    <p className="text-4xl font-semibold leading-none text-[#2726F5]">
-                      ฿ {formatTHB(charge.outstanding.outstanding)}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      ชำระแล้ว ฿ {formatTHB(charge.outstanding.totalOwed - charge.outstanding.outstanding)} ·
-                      ยอดเต็ม ฿ {formatTHB(charge.outstanding.totalOwed)}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium text-slate-500">ยอดที่ต้องชำระ</p>
-                    <p className="text-4xl font-semibold leading-none text-[#2726F5]">
-                      ฿ {formatTHB(charge.outstanding.outstanding)}
-                    </p>
-                  </>
-                )}
-                {charge.barcode || charge.trackingId ? (
-                  <p className="text-xs text-slate-500">หมายเลขพัสดุ: {charge.barcode || charge.trackingId}</p>
-                ) : null}
-                <div className="w-full max-w-[320px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-                  <div className="flex items-center justify-center gap-2 bg-[#123e6f] px-3 py-2 text-white">
-                    <Image
-                      src="/Thai_QR_Logo.svg"
-                      alt="Thai QR Payment"
-                      width={126}
-                      height={28}
-                      className="h-7 w-auto"
-                      priority
-                    />
-                  </div>
-                  <div className="flex justify-center bg-white pt-3">
-                    <Image
-                      src="/PromptPay-logo.png"
-                      alt="PromptPay"
-                      width={220}
-                      height={80}
-                      className="h-8 w-auto"
-                    />
-                  </div>
-                  <div className="relative flex items-center justify-center bg-white px-4 pb-4">
-                    {qrDataUrl ? (
-                      <Image
-                        src={qrDataUrl}
-                        alt={`QR PromptPay สำหรับยอด ${formattedAmount} บาท`}
-                        width={256}
-                        height={256}
-                        unoptimized
-                        className="h-64 w-64"
-                      />
-                    ) : (
-                      <div className="h-64 w-64 animate-pulse bg-slate-100" />
-                    )}
-                    <span className="pointer-events-none absolute inline-flex h-7 w-7 items-center justify-center">
-                      <Image
-                        src="/promp-pay-logo-square.png"
-                        alt="PromptPay logo"
-                        width={40}
-                        height={40}
-                        className="h-auto w-auto"
-                      />
-                    </span>
-                  </div>
-                </div>
-                <p className="text-sm text-slate-600">
-                  เหลือเวลา <span className="font-semibold text-slate-900">{mm}:{ss}</span>
-                </p>
-                <TierScheduleCard charge={charge} now={now} />
-
-                {charge.qrPayload && !charge.qrPayload.startsWith("data:image/") ? (
-                  <p className="break-all text-center text-[10px] text-slate-400 select-all">
-                    {charge.qrPayload}
+              charge.actionRequired === "REDIRECT" && charge.redirectUrl ? (
+                <div className="flex flex-col items-center gap-3 py-6">
+                  <p className="text-sm font-medium text-slate-500">ยอดที่ต้องชำระ</p>
+                  <p className="text-4xl font-semibold leading-none text-[#2726F5]">
+                    ฿ {formattedAmount}
                   </p>
-                ) : null}
-
-                {showMockButton ? (
-                  <button
-                    type="button"
-                    onClick={handleSimulate}
-                    disabled={simulating}
-                    className="mt-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800 disabled:opacity-50"
+                  <a
+                    href={charge.redirectUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-4 inline-flex w-full max-w-xs items-center justify-center rounded-md bg-[#2726F5] px-4 py-3 text-base font-medium text-white shadow-[0_6px_14px_rgba(39,38,245,0.28)]"
                   >
-                    [DEV] {simulating ? "กำลังจำลอง..." : "จำลองการชำระสำเร็จ"}
-                  </button>
-                ) : null}
+                    เปิดแอป {methodLabelTh(charge.paymentMethod)}
+                  </a>
+                  <p className="text-xs text-slate-500">
+                    กลับมาที่หน้านี้หลังชำระเสร็จ
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-3">
+                  {charge.outstanding.frozen ? (
+                    <>
+                      <p className="text-sm font-medium text-slate-500">ยอดคงเหลือ</p>
+                      <p className="text-4xl font-semibold leading-none text-[#2726F5]">
+                        ฿ {formatTHB(charge.outstanding.outstanding)}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        ชำระแล้ว ฿ {formatTHB(charge.outstanding.totalOwed - charge.outstanding.outstanding)} ·
+                        ยอดเต็ม ฿ {formatTHB(charge.outstanding.totalOwed)}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium text-slate-500">ยอดที่ต้องชำระ</p>
+                      <p className="text-4xl font-semibold leading-none text-[#2726F5]">
+                        ฿ {formatTHB(charge.outstanding.outstanding)}
+                      </p>
+                    </>
+                  )}
+                  {charge.barcode || charge.trackingId ? (
+                    <p className="text-xs text-slate-500">หมายเลขพัสดุ: {charge.barcode || charge.trackingId}</p>
+                  ) : null}
+                  <div className="w-full max-w-[320px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                    <div className="flex items-center justify-center gap-2 bg-[#123e6f] px-3 py-2 text-white">
+                      <Image
+                        src="/Thai_QR_Logo.svg"
+                        alt="Thai QR Payment"
+                        width={126}
+                        height={28}
+                        className="h-7 w-auto"
+                        priority
+                      />
+                    </div>
+                    <div className="flex justify-center bg-white pt-3">
+                      <Image
+                        src="/PromptPay-logo.png"
+                        alt="PromptPay"
+                        width={220}
+                        height={80}
+                        className="h-8 w-auto"
+                      />
+                    </div>
+                    <div className="relative flex items-center justify-center bg-white px-4 pb-4">
+                      {qrDataUrl ? (
+                        <Image
+                          src={qrDataUrl}
+                          alt={`QR PromptPay สำหรับยอด ${formattedAmount} บาท`}
+                          width={256}
+                          height={256}
+                          unoptimized
+                          className="h-64 w-64"
+                        />
+                      ) : (
+                        <div className="h-64 w-64 animate-pulse bg-slate-100" />
+                      )}
+                      <span className="pointer-events-none absolute inline-flex h-7 w-7 items-center justify-center">
+                        <Image
+                          src="/promp-pay-logo-square.png"
+                          alt="PromptPay logo"
+                          width={40}
+                          height={40}
+                          className="h-auto w-auto"
+                        />
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    เหลือเวลา <span className="font-semibold text-slate-900">{mm}:{ss}</span>
+                  </p>
+                  <TierScheduleCard charge={charge} now={now} />
 
-              </div>
+                  {charge.qrPayload && !charge.qrPayload.startsWith("data:image/") ? (
+                    <p className="break-all text-center text-[10px] text-slate-400 select-all">
+                      {charge.qrPayload}
+                    </p>
+                  ) : null}
+
+                  {showMockButton ? (
+                    <button
+                      type="button"
+                      onClick={handleSimulate}
+                      disabled={simulating}
+                      className="mt-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800 disabled:opacity-50"
+                    >
+                      [DEV] {simulating ? "กำลังจำลอง..." : "จำลองการชำระสำเร็จ"}
+                    </button>
+                  ) : null}
+
+                </div>
+              )
             ) : charge?.status === "succeeded" ? (
               <div className="py-8 text-center">
                 <p className="text-xl font-semibold text-emerald-600">ชำระเงินสำเร็จ</p>
@@ -409,6 +516,39 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
               </div>
             ) : null}
           </div>
+
+          {charge?.status === "pending" ? (
+            <div className="rounded-lg bg-white p-4 shadow-sm">
+              <p className="mb-3 text-sm font-medium text-slate-700">
+                เปลี่ยนวิธีชำระเงิน
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {PAYMENT_METHODS.filter(
+                  (m) => m.id !== charge.paymentMethod,
+                ).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => switchMethod(m.id)}
+                    disabled={switching !== null}
+                    className="flex flex-col items-start rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition hover:border-slate-300 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    <span className="text-sm font-medium text-slate-800">
+                      {m.labelTh}
+                    </span>
+                    <span className="mt-0.5 text-[11px] text-slate-500">
+                      {m.id === "promptpay" ? "สแกน QR" : "ชำระผ่านแอป"}
+                    </span>
+                    {switching === m.id ? (
+                      <span className="mt-1 text-[11px] text-[#2726F5]">
+                        กำลังเปลี่ยน...
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       </section>
 
