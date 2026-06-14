@@ -163,21 +163,22 @@ async function createParcelLabelPdf(input: {
   // ── outer border ─────────────────────────────────────────────────
   rect(0.8, 0.8, 100.4, 74.4, 1.5);
 
-  // ── logo ─────────────────────────────────────────────────────────
-  page.drawImage(logoImg, { x: mm(1.8), y: y(21), width: mm(45), height: mm(20) });
+  // ── logo (natural ratio 3.66:1 → fix height to 12mm, width = 12*3.66 = 43.9mm) ─
+  const logoH = 12;
+  const logoW = logoH * (644 / 176); // ~43.9mm keeps aspect ratio
+  const logoTopMm = (21 - logoH) / 2; // vertically centre in 21mm band
+  page.drawImage(logoImg, { x: mm(1.8), y: y(logoTopMm + logoH), width: mm(logoW), height: mm(logoH) });
 
-  // ── top barcode ───────────────────────────────────────────────────
-  const barcodeX = 43.5;
-  const barcodeY = 2.8;
-  const barcodeW = 63;
-  const barcodeH = 9.5;
+  // ── top barcode (starts after logo, fits within page 102mm) ──────
+  const barcodeX = 47;          // start after logo (~1.8+43.9+1.5 gap)
+  const barcodeY = 2.5;
+  const barcodeW = 52;          // 47+52=99mm — fits within 101.2mm border
+  const barcodeH = 10;
   page.drawImage(barcodeTopImg, { x: mm(barcodeX), y: y(barcodeY) - mm(barcodeH), width: mm(barcodeW), height: mm(barcodeH) });
-  txt(input.trackingNumber, barcodeX + barcodeW / 2, 14, 7, { bold: true, center: true, centerWidthMm: 0 });
-  // manually centre tracking number under barcode
   {
     const tw = bold.widthOfTextAtSize(input.trackingNumber, 7);
     const cx = mm(barcodeX) + mm(barcodeW) / 2 - tw / 2;
-    page.drawText(input.trackingNumber, { x: cx, y: y(14.5), size: 7, font: bold, color: BK });
+    page.drawText(input.trackingNumber, { x: cx, y: y(barcodeY + barcodeH + 2.5), size: 7, font: bold, color: BK });
   }
 
   // ── top/bottom separator ──────────────────────────────────────────
@@ -286,10 +287,13 @@ async function createParcelLabelPdf(input: {
   }
 
   // ── right-edge rotated fragile warning ────────────────────────────
+  // With rotate(-90°) in pdf-lib (bottom-left origin), text flows downward.
+  // x = horizontal position of the text baseline strip (~97mm = centre of right margin)
+  // y = top starting point of the text (top of content area = 21mm from top → PH-mm(21))
   const fragile = "<< ข้างในนี้มีของสำคัญของใครบางคนอยู่ โปรดส่งต่ออย่างเบามือ >>";
   page.drawText(fragile, {
-    x: mm(99.5),
-    y: PH / 2,
+    x: mm(98),
+    y: PH - mm(22),
     size: 4.5,
     font: regular,
     color: BK,
