@@ -230,7 +230,7 @@ async function runRemindUnpaid() {
     ranAt: now.toISOString(),
     scanned: candidates.length,
     sent,
-    skipped: skipped.length,
+    skipped,
     failed,
   });
 }
