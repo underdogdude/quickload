@@ -192,7 +192,11 @@ export async function POST(request: Request) {
 
     const barcode = event.barcode?.trim();
     const statusCodeRaw = parseThaiPostStatusCodeRaw(event.status);
+    console.info(
+      `[thai-post-webhook] barcode=${barcode ?? "null"} status=${JSON.stringify(event.status)} statusCodeRaw=${statusCodeRaw ?? "null"} finalcost=${JSON.stringify((resolved as Record<string,unknown>).finalcost ?? (resolved as Record<string,unknown>).finalCost ?? null)}`,
+    );
     if (!barcode || !statusCodeRaw) {
+      console.warn(`[thai-post-webhook] ignored: barcode=${barcode ?? "null"} statusCodeRaw=${statusCodeRaw ?? "null"}`);
       ignored += 1;
       continue;
     }
@@ -289,6 +293,9 @@ export async function POST(request: Request) {
         }
       }
 
+      console.info(
+        `[thai-post-webhook] parcelId=${parcel.id} shouldNotify=${shouldNotifyPaymentDue} amount=${notifyAmount} hasUserId=${!!parcel.userId} hasBaseUrl=${!!publicBaseUrl} thaiPostPriceConfirmedAt=${parcel.thaiPostPriceConfirmedAt?.toISOString() ?? "null"}`,
+      );
       if (shouldNotifyPaymentDue && notifyAmount && parcel.userId && publicBaseUrl) {
         const [user] = await tx
           .select({ lineUserId: users.lineUserId })
