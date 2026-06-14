@@ -255,8 +255,11 @@ export async function POST(request: Request) {
       let shouldNotifyPaymentDue = false;
       let notifyAmount: string | null = null;
       for (const w of ordered) {
-        // Prefer numeric-code mapping; fall back to description-based for non-standard codes.
-        const effectiveParcelStatus = w.mapped?.parcelStatus ?? w.descriptionParcelStatus;
+        // Description-based mapping is more reliable for Smartpost: they reuse TP codes
+        // with different meanings (e.g. code "2" sent as "ปณ.ต้นทางรับฝากแล้ว" should be
+        // pending_payment, not delivered). Use description first; fall back to code only when
+        // description yields nothing.
+        const effectiveParcelStatus = w.descriptionParcelStatus ?? w.mapped?.parcelStatus;
 
         if (effectiveParcelStatus || w.finalCost) {
           // Never downgrade a paid parcel back to pending_payment.
