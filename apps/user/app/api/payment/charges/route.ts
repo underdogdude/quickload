@@ -279,7 +279,8 @@ export async function POST(request: Request) {
         paymentMethod: inserted.paymentMethod,
         qrPayload: inserted.qrPayload,
         redirectUrl: inserted.redirectUrl,
-        actionRequired: beamResult.actionRequired,
+        actionRequired:
+          inserted.redirectUrl ? "REDIRECT" : inserted.qrPayload ? "ENCODED_IMAGE" : "NONE",
         expiresAt: inserted.expiresAt?.toISOString() ?? null,
         status: inserted.status,
       },
