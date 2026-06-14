@@ -193,6 +193,15 @@ function extractRedirectUrl(obj: Record<string, unknown>): string | null {
   if (nextAction && typeof nextAction.redirectUrl === "string" && nextAction.redirectUrl.length > 0) {
     return nextAction.redirectUrl;
   }
+  const actionRequired = obj.actionRequired as Record<string, unknown> | undefined;
+  if (
+    actionRequired &&
+    typeof actionRequired === "object" &&
+    typeof actionRequired.redirectUrl === "string" &&
+    actionRequired.redirectUrl.length > 0
+  ) {
+    return actionRequired.redirectUrl;
+  }
   const pm = (obj.paymentMethod ?? {}) as Record<string, unknown>;
   for (const key of ["kplus", "make", "scbEasy", "trueMoney"]) {
     const sub = pm[key] as Record<string, unknown> | undefined;
