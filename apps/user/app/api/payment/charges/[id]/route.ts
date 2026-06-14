@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { reconcilePendingPaymentFromBeamApi } from "@quickload/shared/beam";
 import { getDb, parcels, payments } from "@quickload/shared/db";
 import { computeOutstanding } from "@quickload/shared/penalty";
@@ -66,19 +66,9 @@ export async function GET(
       effectiveStatus = "expired";
     }
 
-    const [firstPayment] = await db
-      .select({ paidAt: payments.paidAt })
-      .from(payments)
-      .where(and(eq(payments.parcelId, parcelRow.id), eq(payments.status, "succeeded")))
-      .orderBy(asc(payments.paidAt))
-      .limit(1);
-
     const out = computeOutstanding({
       price: parcelRow.price ?? "0",
-      penaltyClockStartedAt: parcelRow.penaltyClockStartedAt,
       amountPaid: parcelRow.amountPaid,
-      firstSuccessfulPaymentAt: firstPayment?.paidAt ?? null,
-      now: new Date(),
     });
 
     return NextResponse.json({
@@ -98,11 +88,6 @@ export async function GET(
           state: out.state,
           totalOwed: out.totalOwed,
           outstanding: out.outstanding,
-          currentTier: out.currentTier,
-          nextTier: out.nextTier,
-          nextTierAt: out.nextTierAt?.toISOString() ?? null,
-          abandonAt: out.abandonAt?.toISOString() ?? null,
-          frozen: out.frozen,
         },
       },
     });

@@ -1,7 +1,8 @@
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { getDb, parcels, payments } from "@quickload/shared/db";
 import { createBeamPromptPayCharge, readBeamEnv } from "@quickload/shared/beam";
 import { computeOutstanding } from "@quickload/shared/penalty";
+import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
 import { NextResponse } from "next/server";
 import { createPaymentQrFlexMessage } from "@/lib/line-flex";
 import { pushLineMessage } from "@/lib/line-messaging";
@@ -82,42 +83,25 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     }
-    if (!parcel.thaiPostPriceConfirmedAt) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Parcel has no confirmed price from Thailand Post yet",
-        },
-        { status: 409 },
-      );
-    }
     if (!parcel.price || Number(parcel.price) <= 0) {
       return NextResponse.json({ ok: false, error: "Parcel has no price" }, { status: 400 });
     }
-
-    const [firstPayment] = await db
-      .select({ paidAt: payments.paidAt })
-      .from(payments)
-      .where(and(eq(payments.parcelId, parcelId), eq(payments.status, "succeeded")))
-      .orderBy(asc(payments.paidAt))
-      .limit(1);
+    if (!parcel.thaiPostPriceConfirmedAt) {
+      // Smartpost cron webhooks omit finalcost, so thaiPostPriceConfirmedAt may never have been
+      // set even though we have a valid price. Confirm it now so payment can proceed.
+      await db
+        .update(parcels)
+        .set({ thaiPostPriceConfirmedAt: new Date(), updatedAt: new Date() })
+        .where(eq(parcels.id, parcelId));
+    }
 
     const out = computeOutstanding({
       price: parcel.price,
-      penaltyClockStartedAt: parcel.penaltyClockStartedAt,
       amountPaid: parcel.amountPaid,
-      firstSuccessfulPaymentAt: firstPayment?.paidAt ?? null,
-      now: new Date(),
     });
 
     if (out.state === "settled") {
       return NextResponse.json({ ok: false, error: "Parcel already paid" }, { status: 400 });
-    }
-    if (out.state === "abandoned") {
-      return NextResponse.json(
-        { ok: false, error: "Parcel canceled due to abandonment" },
-        { status: 410 },
-      );
     }
 
     // Step 3: always rotate to a fresh charge.
@@ -234,7 +218,10 @@ export async function POST(request: Request) {
       );
 
       const flex = createPaymentQrFlexMessage({
-        trackingNumber: parcel.barcode || parcel.trackingId,
+        trackingNumber: resolveParcelDisplayCode({
+          barcode: parcel.barcode,
+          trackingId: parcel.trackingId,
+        }),
         amountBaht: inserted.amount,
         expiresInMinutes: minutesUntil(inserted.expiresAt, now),
         qrCodeImageUrl: qrOk ? qrCodeImageUrl : null,

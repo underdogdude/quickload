@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { getDb, orders, parcels, thaiPostWebhookEvents } from "@quickload/shared/db";
+import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
 import { loadDevMockPayload } from "@/lib/dev-mock/load-payload";
 import { createPaymentDueFlexMessage } from "@/lib/line-flex";
 import { pushLineMessage } from "@/lib/line-messaging";
@@ -270,7 +271,10 @@ export async function POST(request: Request) {
         const payUrl = new URL(`/pay/${encodeURIComponent(target.id)}`, publicBaseUrl).toString();
         const flex = createPaymentDueFlexMessage({
           parcelId: target.id,
-          trackingNumber: barcode || target.id,
+          trackingNumber: resolveParcelDisplayCode({
+            barcode,
+            trackingId: target.id,
+          }),
           amountBaht: fixedPrice,
           payUrl,
         });

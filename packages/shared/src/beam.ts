@@ -167,7 +167,7 @@ function extractExpiresAt(obj: Record<string, unknown>): string | null {
   return null;
 }
 
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { getDb, payments, parcels } from "./db";
 
 /**
@@ -202,13 +202,10 @@ export async function markPaymentSucceeded({
     const row = updated[0];
     if (!row) return null;
 
-    // Trigger has updated parcels.amount_paid by now. Re-read parcel state
-    // and find the earliest successful payment so the freeze-on-partial-payment
-    // tier is anchored to the FIRST payment, not to this one.
+    // Trigger has updated parcels.amount_paid by now. Re-read parcel state.
     const [parcel] = await tx
       .select({
         price: parcels.price,
-        penaltyClockStartedAt: parcels.penaltyClockStartedAt,
         amountPaid: parcels.amountPaid,
       })
       .from(parcels)
@@ -219,19 +216,9 @@ export async function markPaymentSucceeded({
       throw new Error(`markPaymentSucceeded: parcel ${row.parcelId} disappeared mid-transaction`);
     }
 
-    const [firstPayment] = await tx
-      .select({ paidAt: payments.paidAt })
-      .from(payments)
-      .where(and(eq(payments.parcelId, row.parcelId), eq(payments.status, "succeeded")))
-      .orderBy(asc(payments.paidAt))
-      .limit(1);
-
     const out = computeOutstanding({
       price: parcel.price ?? "0",
-      penaltyClockStartedAt: parcel.penaltyClockStartedAt,
       amountPaid: parcel.amountPaid,
-      firstSuccessfulPaymentAt: firstPayment?.paidAt ?? null,
-      now: new Date(),
     });
 
     // Product decision: once Beam confirms this charge as succeeded,
