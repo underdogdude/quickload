@@ -10,7 +10,7 @@ import {
 import { getDb, orders, parcels, thaiPostWebhookEvents, users } from "@quickload/shared/db";
 import { thaiPostStatusDateToMs } from "@quickload/shared/thai-post-webhook-history";
 import { NextResponse } from "next/server";
-import { createPaymentDueFlexMessage } from "@/lib/line-flex";
+import { createParcelStatusUpdateFlexMessage, createPaymentDueFlexMessage } from "@/lib/line-flex";
 import { pushLineMessage } from "@/lib/line-messaging";
 
 type ThaiPostWebhookItem = {
@@ -180,6 +180,10 @@ export async function POST(request: Request) {
     lineUserId: string;
     message: ReturnType<typeof createPaymentDueFlexMessage>;
   }> = [];
+  const pendingStatusNotifications: Array<{
+    lineUserId: string;
+    message: ReturnType<typeof createParcelStatusUpdateFlexMessage>;
+  }> = [];
 
   /** Group all items in this POST by barcode (array or single object). */
   const byBarcode = new Map<string, BatchItem[]>();
@@ -242,6 +246,7 @@ export async function POST(request: Request) {
           userId: parcels.userId,
           trackingId: parcels.trackingId,
           thaiPostPriceConfirmedAt: parcels.thaiPostPriceConfirmedAt,
+          price: parcels.price,
         })
         .from(parcels)
         .where(eq(parcels.barcode, barcode))
@@ -254,6 +259,8 @@ export async function POST(request: Request) {
 
       let shouldNotifyPaymentDue = false;
       let notifyAmount: string | null = null;
+      const statusChanges: Array<{ descriptionTh: string; station: string | null; toStatus: string }> = [];
+
       for (const w of ordered) {
         // Description-based mapping is more reliable for Smartpost: they reuse TP codes
         // with different meanings (e.g. code "2" sent as "ปณ.ต้นทางรับฝากแล้ว" should be
@@ -277,9 +284,14 @@ export async function POST(request: Request) {
           } = { updatedAt: new Date() };
 
           if (nextStatus) {
+            // Track real status changes (excluding no-op transitions) for LINE notifications.
+            if (nextStatus !== parcel.status) {
+              statusChanges.push({ descriptionTh: w.descriptionTh, station: w.station, toStatus: nextStatus });
+            }
             parcelPatch.status = nextStatus;
             parcel.status = nextStatus;
           }
+
           if (w.finalCost) {
             if (!shouldNotifyPaymentDue && notifyAmount == null && parcel.thaiPostPriceConfirmedAt == null) {
               shouldNotifyPaymentDue = true;
@@ -287,6 +299,22 @@ export async function POST(request: Request) {
             }
             parcelPatch.price = w.finalCost;
             parcelPatch.thaiPostPriceConfirmedAt = new Date();
+            // Keep in-memory consistent so subsequent loop iterations see the updated value.
+            parcel.thaiPostPriceConfirmedAt = new Date();
+          } else if (
+            nextStatus === "pending_payment" &&
+            parcel.thaiPostPriceConfirmedAt == null &&
+            parcel.price != null &&
+            Number(parcel.price) > 0
+          ) {
+            // Smartpost status webhooks omit finalcost — confirm the price using the parcel's
+            // existing estimated price so the user can proceed to payment.
+            if (!shouldNotifyPaymentDue && notifyAmount == null) {
+              shouldNotifyPaymentDue = true;
+              notifyAmount = parcel.price;
+            }
+            parcelPatch.thaiPostPriceConfirmedAt = new Date();
+            parcel.thaiPostPriceConfirmedAt = new Date();
           }
 
           await tx
@@ -296,24 +324,47 @@ export async function POST(request: Request) {
         }
       }
 
-      console.info(
-        `[thai-post-webhook] parcelId=${parcel.id} shouldNotify=${shouldNotifyPaymentDue} amount=${notifyAmount} hasUserId=${!!parcel.userId} hasBaseUrl=${!!publicBaseUrl} thaiPostPriceConfirmedAt=${parcel.thaiPostPriceConfirmedAt?.toISOString() ?? "null"}`,
-      );
-      if (shouldNotifyPaymentDue && notifyAmount && parcel.userId && publicBaseUrl) {
+      // Fetch lineUserId once for all notifications in this parcel's batch.
+      const needsLineNotification =
+        (shouldNotifyPaymentDue && notifyAmount != null && publicBaseUrl != null) ||
+        statusChanges.length > 0;
+      let lineUserId: string | null = null;
+      if (parcel.userId && needsLineNotification) {
         const [user] = await tx
           .select({ lineUserId: users.lineUserId })
           .from(users)
           .where(eq(users.id, parcel.userId))
           .limit(1);
-        if (user?.lineUserId) {
-          const payUrl = new URL(`/pay/${encodeURIComponent(parcel.id)}`, publicBaseUrl).toString();
-          pendingPaymentNotifications.push({
-            lineUserId: user.lineUserId,
-            message: createPaymentDueFlexMessage({
-              parcelId: parcel.id,
+        lineUserId = user?.lineUserId ?? null;
+      }
+
+      console.info(
+        `[thai-post-webhook] parcelId=${parcel.id} shouldNotify=${shouldNotifyPaymentDue} amount=${notifyAmount} hasUserId=${!!parcel.userId} hasBaseUrl=${!!publicBaseUrl} thaiPostPriceConfirmedAt=${parcel.thaiPostPriceConfirmedAt?.toISOString() ?? "null"} statusChanges=${statusChanges.length}`,
+      );
+
+      if (shouldNotifyPaymentDue && notifyAmount && lineUserId && publicBaseUrl) {
+        const payUrl = new URL(`/pay/${encodeURIComponent(parcel.id)}`, publicBaseUrl).toString();
+        pendingPaymentNotifications.push({
+          lineUserId,
+          message: createPaymentDueFlexMessage({
+            parcelId: parcel.id,
+            trackingNumber: parcel.trackingId || barcode,
+            amountBaht: notifyAmount,
+            payUrl,
+          }),
+        });
+      }
+
+      if (lineUserId) {
+        for (const change of statusChanges) {
+          // Skip pending_payment here when payment-due notification already covers it.
+          if (change.toStatus === "pending_payment" && shouldNotifyPaymentDue) continue;
+          pendingStatusNotifications.push({
+            lineUserId,
+            message: createParcelStatusUpdateFlexMessage({
               trackingNumber: parcel.trackingId || barcode,
-              amountBaht: notifyAmount,
-              payUrl,
+              statusDescriptionTh: change.descriptionTh,
+              station: change.station,
             }),
           });
         }
@@ -391,13 +442,19 @@ export async function POST(request: Request) {
 
   for (const n of pendingPaymentNotifications) {
     try {
-      await pushLineMessage({
-        to: n.lineUserId,
-        message: n.message,
-      });
+      await pushLineMessage({ to: n.lineUserId, message: n.message });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.warn("[line-flex] payment due send failed:", msg);
+    }
+  }
+
+  for (const n of pendingStatusNotifications) {
+    try {
+      await pushLineMessage({ to: n.lineUserId, message: n.message });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("[line-flex] status update send failed:", msg);
     }
   }
 

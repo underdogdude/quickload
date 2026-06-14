@@ -514,6 +514,95 @@ export function createPaymentSuccessFlexMessage(input: {
   };
 }
 
+type ParcelStatusUpdateFlexInput = {
+  trackingNumber?: string | null;
+  statusDescriptionTh: string;
+  station?: string | null;
+};
+
+export function createParcelStatusUpdateFlexMessage(input: ParcelStatusUpdateFlexInput): {
+  type: "flex";
+  altText: string;
+  contents: Record<string, unknown>;
+} {
+  const trackingNumber = textOrDash(input.trackingNumber);
+  const description = input.statusDescriptionTh?.trim() || "อัปเดตสถานะ";
+  const station = input.station?.trim() || null;
+
+  const rows: Array<{ label: string; value: string }> = [
+    { label: "หมายเลขพัสดุ", value: trackingNumber },
+  ];
+  if (station) {
+    rows.push({ label: "สถานี", value: station });
+  }
+
+  return {
+    type: "flex",
+    altText: `อัปเดตสถานะพัสดุ ${trackingNumber}: ${description}`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "text",
+            text: "อัปเดตสถานะพัสดุ",
+            weight: "bold",
+            size: "lg",
+            color: "#111827",
+          },
+          {
+            type: "text",
+            text: description,
+            size: "sm",
+            color: "#374151",
+            wrap: true,
+          },
+          {
+            type: "separator",
+            margin: "md",
+          },
+          {
+            type: "box",
+            layout: "vertical",
+            spacing: "sm",
+            margin: "md",
+            contents: rows.map((row) => ({
+              type: "box",
+              layout: "baseline",
+              spacing: "sm",
+              contents: [
+                {
+                  type: "text",
+                  text: row.label,
+                  color: "#6B7280",
+                  size: "xs",
+                  flex: 3,
+                  wrap: true,
+                },
+                {
+                  type: "text",
+                  text: row.value,
+                  color: "#111827",
+                  size: "sm",
+                  weight: "bold",
+                  align: "end",
+                  flex: 5,
+                  wrap: true,
+                },
+              ],
+            })),
+          },
+        ],
+      },
+    },
+  };
+}
+
 export function createPaymentFailedFlexMessage(input: {
   trackingNumber?: string | null;
   amountBaht: string | number;
