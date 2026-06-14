@@ -3,24 +3,28 @@ import bwipjs from "bwip-js/node";
 import { and, eq } from "drizzle-orm";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, rgb, degrees } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import { NextResponse } from "next/server";
-import sharp from "sharp";
 import { requireLineSession } from "@/lib/require-user";
 
 export const runtime = "nodejs";
 
-const MM_TO_PT = 72 / 25.4;
-const pageWidth = 102 * MM_TO_PT;
-const pageHeight = 76 * MM_TO_PT;
+// ─── units ────────────────────────────────────────────────────────────────────
+const PT_PER_MM = 72 / 25.4;
+const W_MM = 102;
+const H_MM = 76;
+const PW = W_MM * PT_PER_MM; // page width  in pt
+const PH = H_MM * PT_PER_MM; // page height in pt
+const mm = (v: number) => v * PT_PER_MM;
 
-function mm(value: number) {
-  return value * MM_TO_PT;
-}
+// pdf-lib origin is bottom-left; we author in top-left coords
+const y = (topMm: number) => PH - mm(topMm);
 
+// ─── helpers ──────────────────────────────────────────────────────────────────
 function compact(parts: Array<string | null | undefined>) {
   return parts
-    .map((part) => part?.replace(/\s+/g, " ").trim())
+    .map((p) => p?.replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .join(" ");
 }
@@ -29,37 +33,50 @@ function compactAddress(parts: Array<string | null | undefined>) {
   const segments: string[] = [];
   for (const raw of parts) {
     if (!raw) continue;
-    const cleaned = raw
-      .replace(/\s+/g, " ")
-      .replace(/[,\u060C\uFE50\uFF0C]+/g, ",")
-      .replace(/\s*,\s*/g, ",")
-      .trim();
-    if (!cleaned) continue;
+    const cleaned = raw.replace(/\s+/g, " ").trim().replace(/[,]+/g, ",");
     for (const piece of cleaned.split(",")) {
-      const token = piece.trim();
-      if (!token) continue;
-      if (segments[segments.length - 1] === token) continue;
-      segments.push(token);
+      const t = piece.trim();
+      if (t && segments[segments.length - 1] !== t) segments.push(t);
     }
   }
   return segments.join(", ");
 }
 
-function zipDigits(zipcode: string) {
-  const digits = zipcode.replace(/\D/g, "").slice(0, 5);
-  return Array.from({ length: 5 }, (_, i) => digits[i] ?? "");
+function zipDigits(zip: string) {
+  const d = zip.replace(/\D/g, "").slice(0, 5);
+  return Array.from({ length: 5 }, (_, i) => d[i] ?? "");
 }
 
-function formatPrintedAt() {
-  return new Date().toLocaleString("th-TH", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
+function wrapText(text: string, maxChars: number, maxLines: number): string[] {
+  const words = text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    if (lines.length >= maxLines) break;
+    const candidate = cur ? `${cur} ${w}` : w;
+    if (candidate.length <= maxChars) {
+      cur = candidate;
+    } else {
+      if (cur) lines.push(cur);
+      cur = w.slice(0, maxChars);
+    }
+  }
+  if (cur && lines.length < maxLines) lines.push(cur);
+  return lines.length ? lines : [text.slice(0, maxChars)];
+}
+
+function resolvePublic(rel: string) {
+  const norm = rel.replace(/^\/+/, "");
+  const cwd = process.cwd();
+  for (const base of [path.join(cwd, "public"), path.join(cwd, "apps", "user", "public")]) {
+    const fp = path.join(base, norm);
+    try { require("node:fs").accessSync(fp); return fp; } catch { /* try next */ }
+  }
+  return path.join(cwd, "public", norm);
+}
+
+async function readPublic(rel: string) {
+  return readFile(resolvePublic(rel));
 }
 
 async function barcodePng(text: string, opts?: { scale?: number; height?: number }) {
@@ -74,52 +91,14 @@ async function barcodePng(text: string, opts?: { scale?: number; height?: number
   });
 }
 
-function resolvePublicPath(relativePath: string): string {
-  const normalized = relativePath.replace(/^\/+/, "");
-  const cwd = process.cwd();
-  const candidates = [
-    path.join(cwd, "public", normalized),
-    path.join(cwd, "apps", "user", "public", normalized),
-  ];
-  for (const p of candidates) {
-    try {
-      require("node:fs").accessSync(p);
-      return p;
-    } catch {
-      // try next
-    }
-  }
-  return candidates[0];
+function formatPrintedAt() {
+  return new Date().toLocaleString("th-TH", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  });
 }
 
-async function readPublicFile(relativePath: string) {
-  const normalized = relativePath.replace(/^\/+/, "");
-  const cwd = process.cwd();
-  const candidates = [
-    path.join(cwd, "public", normalized),
-    path.join(cwd, "apps", "user", "public", normalized),
-  ];
-  for (const filePath of candidates) {
-    try {
-      return await readFile(filePath);
-    } catch {
-      // try next
-    }
-  }
-  throw new Error(`Public asset not found: ${relativePath}`);
-}
-
-function xmlEscape(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
-}
-
-const quickloadLogoPromise = readPublicFile("quickload-logo.png");
-
+// ─── main label builder ───────────────────────────────────────────────────────
 async function createParcelLabelPdf(input: {
   trackingNumber: string;
   senderName: string;
@@ -132,228 +111,195 @@ async function createParcelLabelPdf(input: {
   weight: string;
   items: string;
 }) {
-  // Render at 300 dpi equivalent for 102x76mm
-  const renderWidth = 1224;
-  const renderHeight = 912;
-  const sx = renderWidth / 102;
-  const sy = renderHeight / 76;
-  const x = (v: number) => Math.round(v * sx);
-  const y = (v: number) => Math.round(v * sy);
-  const w = (v: number) => Math.round(v * sx);
-  const h = (v: number) => Math.round(v * sy);
-  // Font size: value in mm -> SVG px at render scale
-  const fs = (v: number) => Math.round(v * sy);
-
-  const [sarabunRegularBuf, sarabunBoldBuf] = await Promise.all([
-    readPublicFile("fonts/Sarabun/Sarabun-Regular.ttf"),
-    readPublicFile("fonts/Sarabun/Sarabun-Bold.ttf"),
-  ]);
-  const sarabunRegularUrl = `data:font/truetype;base64,${sarabunRegularBuf.toString("base64")}`;
-  const sarabunBoldUrl = `data:font/truetype;base64,${sarabunBoldBuf.toString("base64")}`;
-
-  const [barcode, footerBarcode, quickloadLogo] = await Promise.all([
+  const [regularBuf, boldBuf, logoBuf, barcodeTopBuf, barcodeFootBuf] = await Promise.all([
+    readPublic("fonts/Sarabun/Sarabun-Regular.ttf"),
+    readPublic("fonts/Sarabun/Sarabun-Bold.ttf"),
+    readPublic("quickload-logo.png"),
     barcodePng(input.trackingNumber, { scale: 3, height: 11 }),
     barcodePng(input.trackingNumber, { scale: 2, height: 6 }),
-    quickloadLogoPromise,
   ]);
-  const barcodeBase64 = barcode.toString("base64");
-  const footerBarcodeBase64 = footerBarcode.toString("base64");
-  const quickloadLogoBase64 = quickloadLogo.toString("base64");
-  const digits = zipDigits(input.recipientZipcode);
 
+  const doc = await PDFDocument.create();
+  doc.registerFontkit(fontkit);
+
+  const [regular, bold] = await Promise.all([
+    doc.embedFont(regularBuf),
+    doc.embedFont(boldBuf),
+  ]);
+
+  const [logoImg, barcodeTopImg, barcodeFootImg] = await Promise.all([
+    doc.embedPng(logoBuf),
+    doc.embedPng(barcodeTopBuf),
+    doc.embedPng(barcodeFootBuf),
+  ]);
+
+  const page = doc.addPage([PW, PH]);
+  const BK = rgb(0.07, 0.07, 0.07);
+  const WHITE = rgb(1, 1, 1);
+
+  const line = (x1: number, y1: number, x2: number, y2: number, thickness = 0.8) =>
+    page.drawLine({ start: { x: mm(x1), y: y(y1) }, end: { x: mm(x2), y: y(y2) }, thickness, color: BK });
+
+  const rect = (xMm: number, yMm: number, wMm: number, hMm: number, thickness = 0.8) =>
+    page.drawRectangle({ x: mm(xMm), y: y(yMm) - mm(hMm), width: mm(wMm), height: mm(hMm), borderColor: BK, borderWidth: thickness, color: WHITE });
+
+  // Draw text — top-left baseline aligned
+  const txt = (
+    str: string,
+    xMm: number,
+    yMm: number,
+    sizePt: number,
+    opts?: { bold?: boolean; center?: boolean; centerWidthMm?: number },
+  ) => {
+    const font = opts?.bold ? bold : regular;
+    let drawX = mm(xMm);
+    if (opts?.center && opts.centerWidthMm != null) {
+      const textW = font.widthOfTextAtSize(str, sizePt);
+      drawX = mm(xMm) + (mm(opts.centerWidthMm) - textW) / 2;
+    }
+    page.drawText(str, { x: drawX, y: y(yMm), size: sizePt, font, color: BK });
+  };
+
+  // ── outer border ─────────────────────────────────────────────────
+  rect(0.8, 0.8, 100.4, 74.4, 1.5);
+
+  // ── logo ─────────────────────────────────────────────────────────
+  page.drawImage(logoImg, { x: mm(1.8), y: y(21), width: mm(45), height: mm(20) });
+
+  // ── top barcode ───────────────────────────────────────────────────
   const barcodeX = 43.5;
   const barcodeY = 2.8;
   const barcodeW = 63;
   const barcodeH = 9.5;
-  const trackingCenterX = barcodeX + barcodeW / 2;
+  page.drawImage(barcodeTopImg, { x: mm(barcodeX), y: y(barcodeY) - mm(barcodeH), width: mm(barcodeW), height: mm(barcodeH) });
+  txt(input.trackingNumber, barcodeX + barcodeW / 2, 14, 7, { bold: true, center: true, centerWidthMm: 0 });
+  // manually centre tracking number under barcode
+  {
+    const tw = bold.widthOfTextAtSize(input.trackingNumber, 7);
+    const cx = mm(barcodeX) + mm(barcodeW) / 2 - tw / 2;
+    page.drawText(input.trackingNumber, { x: cx, y: y(14.5), size: 7, font: bold, color: BK });
+  }
 
-  const wrapByTokens = (text: string, maxLen: number, maxLines: number) => {
-    const cleaned = text.replace(/\s+/g, " ").trim();
-    if (!cleaned) return ["-"];
-    const tokens = cleaned.split(/\s+/).filter(Boolean);
-    const lines: string[] = [];
-    let current = "";
-    let overflowed = false;
+  // ── top/bottom separator ──────────────────────────────────────────
+  line(0.8, 21, 101.2, 21, 1.2);
 
-    for (const token of tokens) {
-      let remaining = token;
-      while (remaining.length > maxLen) {
-        const chunk = `${remaining.slice(0, maxLen - 1)}-`;
-        remaining = remaining.slice(maxLen - 1);
-        if (current.trim()) {
-          lines.push(current.trim());
-          current = "";
-        }
-        if (lines.length >= maxLines) {
-          overflowed = true;
-          break;
-        }
-        lines.push(chunk);
-        if (lines.length >= maxLines) {
-          overflowed = true;
-          break;
-        }
-      }
-      if (overflowed) break;
+  // ── left content box ─────────────────────────────────────────────
+  rect(2.2, 21, 60, 53, 1.2);
+  line(2.2, 39.5, 62.2, 39.5, 1);
+  line(2.2, 68, 62.2, 68, 1);
+  line(32.2, 68, 32.2, 74, 1);
 
-      const candidate = current ? `${current} ${remaining}` : remaining;
-      if (candidate.length <= maxLen) {
-        current = candidate;
-      } else {
-        // If current line still has room, split long token to make previous line visually fuller.
-        if (current) {
-          const room = maxLen - current.length - 1;
-          if (room >= 8 && remaining.length > room + 6) {
-            const splitLen = Math.max(6, room - 1);
-            const head = `${remaining.slice(0, splitLen)}-`;
-            lines.push(`${current} ${head}`.trim());
-            current = "";
-            remaining = remaining.slice(splitLen);
-            if (lines.length >= maxLines) {
-              overflowed = true;
-              break;
-            }
-            // Re-process the remaining part in the next loop iteration.
-            const retryCandidate = remaining;
-            if (retryCandidate.length <= maxLen) {
-              current = retryCandidate;
-            } else {
-              continue;
-            }
-            if (lines.length >= maxLines) {
-              overflowed = true;
-              break;
-            }
-            continue;
-          }
-        }
-        if (current.trim()) lines.push(current.trim());
-        current = remaining;
-      }
+  // ── sender block ─────────────────────────────────────────────────
+  // font sizes: old SVG used mm values; 1mm ≈ 2.835pt
+  const senderLabel = `ผู้ส่ง : ${input.senderName}`;
+  {
+    const tw = regular.widthOfTextAtSize(senderLabel, 7.4);
+    page.drawText(senderLabel, { x: mm(32.2) - tw / 2, y: y(25.5), size: 7.4, font: regular, color: BK });
+  }
+  const senderLines = wrapText(input.senderAddress, 44, 2);
+  senderLines.forEach((l, i) => {
+    const tw = regular.widthOfTextAtSize(l, 6.2);
+    page.drawText(l, { x: mm(32.2) - tw / 2, y: y(29.2 + i * 3.1), size: 6.2, font: regular, color: BK });
+  });
+  {
+    const tw = bold.widthOfTextAtSize(input.senderPhone, 8.5);
+    page.drawText(input.senderPhone, { x: mm(32.2) - tw / 2, y: y(37), size: 8.5, font: bold, color: BK });
+  }
+
+  // ── recipient block ───────────────────────────────────────────────
+  const recipientLabel = `ผู้รับ : ${input.recipientName}`;
+  {
+    const tw = regular.widthOfTextAtSize(recipientLabel, 7.4);
+    page.drawText(recipientLabel, { x: mm(32.2) - tw / 2, y: y(43.6), size: 7.4, font: regular, color: BK });
+  }
+  const recipientLines = wrapText(input.recipientAddress, 66, 3);
+  recipientLines.forEach((l, i) => {
+    const tw = regular.widthOfTextAtSize(l, 5.0);
+    page.drawText(l, { x: mm(32.2) - tw / 2, y: y(46.9 + i * 2.6), size: 5.0, font: regular, color: BK });
+  });
+  {
+    const tw = bold.widthOfTextAtSize(input.recipientPhone, 8.6);
+    page.drawText(input.recipientPhone, { x: mm(32.2) - tw / 2, y: y(56), size: 8.6, font: bold, color: BK });
+  }
+
+  // ── zip digit boxes ───────────────────────────────────────────────
+  const digits = zipDigits(input.recipientZipcode);
+  digits.forEach((digit, i) => {
+    const dx = 8.6 + i * 9.7;
+    rect(dx, 57.6, 8.5, 7.5, 1);
+    if (digit) {
+      const tw = bold.widthOfTextAtSize(digit, 13.6);
+      page.drawText(digit, { x: mm(dx) + mm(8.5) / 2 - tw / 2, y: y(63.2), size: 13.6, font: bold, color: BK });
     }
+  });
 
-    if (!overflowed && lines.length < maxLines && current.trim()) lines.push(current.trim());
+  // ── footer ────────────────────────────────────────────────────────
+  txt(`Printed : ${formatPrintedAt()}`, 5.2, 71.5, 5.0);
+  page.drawImage(barcodeFootImg, { x: mm(33.2), y: y(69.2) - mm(2.4), width: mm(28), height: mm(2.4) });
+  {
+    const itemsText = input.items.replace(/\s+/g, " ").trim() || "-";
+    const tw = regular.widthOfTextAtSize(itemsText, 3);
+    page.drawText(itemsText, { x: mm(47.2) - tw / 2, y: y(73.5), size: 3, font: regular, color: BK });
+  }
 
-    if (overflowed || lines.length > maxLines || (current && lines.length >= maxLines)) {
-      const trimmed = lines.slice(0, maxLines);
-      return trimmed.filter(Boolean);
-    }
-    return lines.length ? lines : [cleaned.slice(0, maxLen)];
-  };
-  const recipientAddressLines = wrapByTokens(input.recipientAddress, 66, 3);
-  const senderAddressLines = wrapByTokens(input.senderAddress, 44, 2);
-  const footerItems = input.items.replace(/\s+/g, " ").trim() || "-";
+  // ── right service box ─────────────────────────────────────────────
+  rect(64.5, 21, 30, 35, 1.2);
+  line(64.5, 43, 94.5, 43, 1);
+  line(64.5, 50, 94.5, 50, 1);
+  line(84.5, 50, 84.5, 56, 1);
 
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${renderWidth}" height="${renderHeight}" viewBox="0 0 ${renderWidth} ${renderHeight}">
-  <defs>
-    <style>
-      @font-face {
-        font-family: "Sarabun";
-        font-weight: normal;
-        src: url("${sarabunRegularUrl}") format("truetype");
-      }
-      @font-face {
-        font-family: "Sarabun";
-        font-weight: bold;
-        src: url("${sarabunBoldUrl}") format("truetype");
-      }
-      text { font-family: "Sarabun", sans-serif; fill: #111; }
-    </style>
-  </defs>
+  const cx = 64.5;
+  const cw = 30;
+  const cLines: [string, number][] = [
+    ["บริการจัดส่งสินค้า (e-Commerce)", 24.3],
+    ["(บริการ e-Parcel)", 27.8],
+    ["ใบอนุญาตสำหรับลูกค้าธุรกิจ", 31.5],
+    ["เลขที่ ปณท ขล.(บม.4)/0059", 35],
+    ["ชำระค่าฝากส่งตามที่ ปณท กำหนด", 38.8],
+  ];
+  for (const [text, yy] of cLines) {
+    const tw = regular.widthOfTextAtSize(text, 5.4);
+    page.drawText(text, { x: mm(cx) + mm(cw) / 2 - tw / 2, y: y(yy), size: 5.4, font: regular, color: BK });
+  }
+  {
+    const tw = bold.widthOfTextAtSize("Non COD", 13.6);
+    page.drawText("Non COD", { x: mm(cx) + mm(cw) / 2 - tw / 2, y: y(47.5), size: 13.6, font: bold, color: BK });
+  }
+  {
+    const tw = bold.widthOfTextAtSize("-", 11.1);
+    page.drawText("-", { x: mm(cx) + mm(10) / 2 - tw / 2, y: y(53.3), size: 11.1, font: bold, color: BK });
+  }
+  {
+    const tw = bold.widthOfTextAtSize("1", 11.1);
+    page.drawText("1", { x: mm(cx + 20) + mm(10) / 2 - tw / 2, y: y(53.3), size: 11.1, font: bold, color: BK });
+  }
 
-  <!-- outer border -->
-  <rect x="${x(0.8)}" y="${y(0.8)}" width="${w(100.4)}" height="${h(74.4)}" fill="#fff" stroke="#111" stroke-width="2"/>
+  const rightLines: [string, number][] = [
+    ["พัสดุชิ้นนี้มีคนรอรับอยู่ปลายทาง", 59.7],
+    ["หากพบว่ามีความเสียหายหรือชำรุด", 63.4],
+    ["กรุณาแจ้ง 081 487 8448", 67.1],
+    ["ก่อนนำจ่ายถึงผู้รับ", 70.8],
+  ];
+  for (const [text, yy] of rightLines) {
+    const tw = regular.widthOfTextAtSize(text, 5.7);
+    page.drawText(text, { x: mm(cx) + mm(cw) / 2 - tw / 2, y: y(yy), size: 5.7, font: regular, color: BK });
+  }
 
-  <!-- top band separator -->
-  <line x1="${x(0.8)}" y1="${y(21)}" x2="${x(101.2)}" y2="${y(21)}" stroke="#111" stroke-width="1.5"/>
+  // ── right-edge rotated fragile warning ────────────────────────────
+  const fragile = "<< ข้างในนี้มีของสำคัญของใครบางคนอยู่ โปรดส่งต่ออย่างเบามือ >>";
+  page.drawText(fragile, {
+    x: mm(99.5),
+    y: PH / 2,
+    size: 4.5,
+    font: regular,
+    color: BK,
+    rotate: degrees(-90),
+  });
 
-  <!-- logo + barcode -->
-  <image x="${x(1.8)}" y="${y(1)}" width="${w(45)}" height="${h(20)}" href="data:image/png;base64,${quickloadLogoBase64}"/>
-  <image x="${x(barcodeX)}" y="${y(barcodeY)}" width="${w(barcodeW)}" height="${h(barcodeH)}" href="data:image/png;base64,${barcodeBase64}"/>
-  <text x="${x(trackingCenterX)}" y="${y(18.5)}" font-size="${fs(4.9)}" font-weight="bold" text-anchor="middle" dominant-baseline="auto">${xmlEscape(input.trackingNumber)}</text>
-
-  <!-- left sender/recipient box -->
-  <rect x="${x(2.2)}" y="${y(21)}" width="${w(60)}" height="${h(53)}" fill="none" stroke="#111" stroke-width="1.5"/>
-  <line x1="${x(2.2)}" y1="${y(39.5)}" x2="${x(62.2)}" y2="${y(39.5)}" stroke="#111" stroke-width="1.5"/>
-  <line x1="${x(2.2)}" y1="${y(68)}" x2="${x(62.2)}" y2="${y(68)}" stroke="#111" stroke-width="1.5"/>
-  <line x1="${x(32.2)}" y1="${y(68)}" x2="${x(32.2)}" y2="${y(74)}" stroke="#111" stroke-width="1.5"/>
-
-  <!-- sender block -->
-  <text x="${x(32.2)}" y="${y(25.5)}" font-size="${fs(2.6)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(`ผู้ส่ง : ${input.senderName}`)}</text>
-  ${senderAddressLines
-    .map(
-      (line, i) =>
-        `<text x="${x(32.2)}" y="${y(29.2 + i * 3.1)}" font-size="${fs(2.2)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(line)}</text>`,
-    )
-    .join("\n  ")}
-  <text x="${x(32.2)}" y="${y(37)}" font-size="${fs(3)}" text-anchor="middle" dominant-baseline="auto" font-weight="bold" >${xmlEscape(input.senderPhone)}</text>
-
-  <!-- recipient block -->
-  <text x="${x(32.2)}" y="${y(43.6)}" font-size="${fs(2.6)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(`ผู้รับ : ${input.recipientName}`)}</text>
-  ${recipientAddressLines
-    .map(
-      (line, i) =>
-        `<text x="${x(32.2)}" y="${y(46.9 + i * 2.6)}" font-size="${fs(1.75)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(line)}</text>`,
-    )
-    .join("\n  ")}
-  <text x="${x(32.2)}" y="${y(56)}" font-size="${fs(3.05)}" text-anchor="middle" dominant-baseline="auto" font-weight="bold" >${xmlEscape(input.recipientPhone)}</text>
-
-  <!-- zip digit boxes -->
-  ${digits
-    .map((digit, i) => {
-      const dx = 8.6 + i * 9.7;
-      return `<rect x="${x(dx)}" y="${y(57.6)}" width="${w(8.5)}" height="${h(7.5)}" fill="none" stroke="#111" stroke-width="1.1"/>
-  <text x="${x(dx + 4.2)}" y="${y(63.2)}" font-size="${fs(4.8)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(digit)}</text>`;
-    })
-    .join("\n  ")}
-
-  <!-- footer -->
-  <text x="${x(5.2)}" y="${y(71.5)}" font-size="${fs(1.75)}" dominant-baseline="auto">${xmlEscape(`Printed : ${formatPrintedAt()}`)}</text>
-  <image x="${x(33.2)}" y="${y(69.2)}" width="${w(28)}" height="${h(2.4)}" href="data:image/png;base64,${footerBarcodeBase64}"/>
-  <text x="${x(47.2)}" y="${y(73.2)}" font-size="${fs(1.2)}" text-anchor="middle" dominant-baseline="auto">${xmlEscape(footerItems)}</text>
-
-  <!-- right service box -->
-  <rect x="${x(64.5)}" y="${y(21)}" width="${w(30)}" height="${h(35)}" fill="none" stroke="#111" stroke-width="1.5"/>
-  <line x1="${x(64.5)}" y1="${y(43)}" x2="${x(94.5)}" y2="${y(43)}" stroke="#111" stroke-width="1.2"/>
-  <line x1="${x(64.5)}" y1="${y(50)}" x2="${x(94.5)}" y2="${y(50)}" stroke="#111" stroke-width="1.2"/>
-  <line x1="${x(84.5)}" y1="${y(50)}" x2="${x(84.5)}" y2="${y(56)}" stroke="#111" stroke-width="1.2"/>
-
-  <text x="${x(79.5)}" y="${y(24.3)}" font-size="${fs(1.9)}" text-anchor="middle" dominant-baseline="auto">บริการจัดส่งสินค้า (e-Commerce)</text>
-  <text x="${x(79.5)}" y="${y(27.8)}" font-size="${fs(1.9)}" text-anchor="middle" dominant-baseline="auto">(บริการ e-Parcel)</text>
-  <text x="${x(79.5)}" y="${y(31.5)}" font-size="${fs(1.9)}" text-anchor="middle" dominant-baseline="auto">ใบอนุญาตสำหรับลูกค้าธุรกิจ</text>
-  <text x="${x(79.5)}" y="${y(35)}" font-size="${fs(1.9)}" text-anchor="middle" dominant-baseline="auto">เลขที่ ปณท ขล.(บม.4)/0059</text>
-  <text x="${x(79.5)}" y="${y(38.8)}" font-size="${fs(1.9)}" text-anchor="middle" dominant-baseline="auto">ชำระค่าฝากส่งตามที่ ปณท กำหนด</text>
-  <text x="${x(79.5)}" y="${y(47.5)}" font-size="${fs(4.8)}" text-anchor="middle" dominant-baseline="auto">Non COD</text>
-  <text x="${x(74.5)}" y="${y(53.3)}" font-size="${fs(3.9)}" text-anchor="middle" dominant-baseline="auto">-</text>
-  <text x="${x(89.5)}" y="${y(53.3)}" font-size="${fs(3.9)}" text-anchor="middle" dominant-baseline="auto">1</text>
-
-  <text x="${x(79.5)}" y="${y(59.7)}" font-size="${fs(2)}" text-anchor="middle" dominant-baseline="auto">พัสดุชิ้นนี้มีคนรอรับอยู่ปลายทาง</text>
-  <text x="${x(79.5)}" y="${y(63.4)}" font-size="${fs(2)}" text-anchor="middle" dominant-baseline="auto">หากพบว่ามีความเสียหายหรือชำรุด</text>
-  <text x="${x(79.5)}" y="${y(67.1)}" font-size="${fs(2)}" text-anchor="middle" dominant-baseline="auto">กรุณาแจ้ง 081 487 8448</text>
-  <text x="${x(79.5)}" y="${y(70.8)}" font-size="${fs(2)}" text-anchor="middle" dominant-baseline="auto">ก่อนนำจ่ายถึงผู้รับ</text>
-
-  <!-- right-edge fragile warning rotated -->
-  <text
-    x="${x(88)}"
-    y="${y(76 / 2)}"
-    font-size="${fs(1.8)}"
-    text-anchor="middle"
-    dominant-baseline="middle"
-    transform="rotate(-90, ${x(98)}, ${y(76 / 2)})"
-  >&lt;&lt; ข้างในนี้มีของสำคัญของใครบางคนอยู่ โปรดส่งต่ออย่างเบามือ &gt;&gt;</text>
-</svg>`;
-
-  const png = await sharp(Buffer.from(svg)).png({ compressionLevel: 8 }).toBuffer();
-
-  const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([pageWidth, pageHeight]);
-  const labelImage = await pdfDoc.embedPng(png);
-  page.drawImage(labelImage, { x: 0, y: 0, width: pageWidth, height: pageHeight });
-
-  return Buffer.from(await pdfDoc.save({ useObjectStreams: false }));
+  return Buffer.from(await doc.save({ useObjectStreams: false }));
 }
 
+// ─── route ────────────────────────────────────────────────────────────────────
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireLineSession();
@@ -365,38 +311,31 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
       .where(and(eq(parcels.id, id), eq(parcels.userId, session.userId)))
       .limit(1);
     const parcel = parcelRows[0];
-    if (!parcel) {
-      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
-    }
+    if (!parcel) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+
     const orderRows = await db.select().from(orders).where(eq(orders.parcelId, id)).limit(1);
     const order = orderRows[0] ?? null;
     const trackingNumber = order?.barcode?.trim() || parcel.barcode?.trim() || parcel.trackingId.trim();
-    if (!trackingNumber) {
-      return NextResponse.json({ ok: false, error: "Missing tracking number" }, { status: 400 });
-    }
+    if (!trackingNumber) return NextResponse.json({ ok: false, error: "Missing tracking number" }, { status: 400 });
 
     const pdf = await createParcelLabelPdf({
       trackingNumber,
       senderName: order?.shipperName?.trim() || "-",
-      senderAddress:
-        compactAddress([
-          order?.shipperAddress,
-          order?.shipperSubdistrict,
-          order?.shipperDistrict,
-          order?.shipperProvince,
-          order?.shipperZipcode,
-        ]) || "-",
+      senderAddress: compactAddress([
+        order?.shipperAddress, order?.shipperSubdistrict,
+        order?.shipperDistrict, order?.shipperProvince, order?.shipperZipcode,
+      ]) || "-",
       senderPhone: order?.shipperMobile?.trim() || "-",
       recipientName: order?.cusName?.trim() || "-",
-      recipientAddress:
-        compactAddress([order?.cusAdd, order?.cusSub, order?.cusAmp, order?.cusProv, order?.cusZipcode]) ||
-        parcel.destination ||
-        "-",
+      recipientAddress: compactAddress([
+        order?.cusAdd, order?.cusSub, order?.cusAmp, order?.cusProv, order?.cusZipcode,
+      ]) || parcel.destination || "-",
       recipientPhone: order?.cusTel?.trim() || "-",
       recipientZipcode: order?.cusZipcode?.trim() || "",
       weight: order?.productWeight?.trim() || (parcel.weightKg ? `${parcel.weightKg} kg` : "-"),
       items: order?.productInbox?.trim() || "-",
     });
+
     const filename = `parcel-label-${trackingNumber.replace(/[^\w-]+/g, "_")}.pdf`;
     return new Response(new Uint8Array(pdf), {
       headers: {
