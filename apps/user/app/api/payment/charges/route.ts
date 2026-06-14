@@ -1,6 +1,7 @@
 import { and, asc, eq, gt } from "drizzle-orm";
 import { getDb, parcels, payments } from "@quickload/shared/db";
 import { createBeamCharge, readBeamEnv } from "@quickload/shared/beam";
+import { getPaymentMethod } from "@quickload/shared/payment-methods";
 import { computeOutstanding } from "@quickload/shared/penalty";
 import { NextResponse } from "next/server";
 import { createPaymentQrFlexMessage } from "@/lib/line-flex";
@@ -9,7 +10,10 @@ import { requireLineSession } from "@/lib/require-user";
 
 const QR_EXPIRY_MS = 10 * 60 * 1000;
 
-type CreateChargeBody = { parcelId?: string };
+type CreateChargeBody = {
+  parcelId?: string;
+  paymentMethod?: string;
+};
 
 function resolvePublicBaseUrl(request: Request): string | null {
   const envBase =
@@ -67,6 +71,15 @@ export async function POST(request: Request) {
     const parcelId = body.parcelId?.trim();
     if (!parcelId) {
       return NextResponse.json({ ok: false, error: "parcelId required" }, { status: 400 });
+    }
+
+    const methodId = (body.paymentMethod ?? "promptpay").trim();
+    const methodDef = getPaymentMethod(methodId);
+    if (!methodDef) {
+      return NextResponse.json(
+        { ok: false, error: "Unsupported payment method" },
+        { status: 400 },
+      );
     }
 
     const db = getDb();
@@ -138,7 +151,7 @@ export async function POST(request: Request) {
     try {
       beamResult = await createBeamCharge({
         env,
-        paymentMethodType: "QR_PROMPT_PAY",
+        paymentMethodType: methodDef.beamType,
         amount: out.outstanding.toFixed(2),
         currency: "THB",
         referenceId: parcel.id,
@@ -172,9 +185,10 @@ export async function POST(request: Request) {
           providerChargeId: beamResult.chargeId,
           amount: out.outstanding.toFixed(2),
           currency: "THB",
-          paymentMethod: "promptpay",
+          paymentMethod: methodDef.id,
           status: "pending",
           qrPayload: beamResult.qrPayload,
+          redirectUrl: beamResult.redirectUrl,
           expiresAt,
           rawCreateResponse: beamResult.rawResponse as any,
           idempotencyKey,
@@ -207,7 +221,11 @@ export async function POST(request: Request) {
               paymentId: survivor.id,
               amount: survivor.amount,
               currency: survivor.currency,
+              paymentMethod: survivor.paymentMethod,
               qrPayload: survivor.qrPayload,
+              redirectUrl: survivor.redirectUrl,
+              actionRequired:
+                survivor.redirectUrl ? "REDIRECT" : survivor.qrPayload ? "ENCODED_IMAGE" : "NONE",
               expiresAt: survivor.expiresAt?.toISOString() ?? null,
               status: survivor.status,
             },
@@ -225,29 +243,31 @@ export async function POST(request: Request) {
       `[payment.charges.create] paymentId=${inserted.id} parcelId=${parcel.id} amount=${parcel.price}`,
     );
 
-    try {
-      const base = publicBaseUrl;
-      const qrCodeImageUrl = base ? toPublicQrImageUrl(inserted.id, inserted.qrPayload, base) : null;
-      const qrOk = await canFetchPublicImage(qrCodeImageUrl);
+    if (methodDef.id === "promptpay") {
+      try {
+        const base = publicBaseUrl;
+        const qrCodeImageUrl = base ? toPublicQrImageUrl(inserted.id, inserted.qrPayload, base) : null;
+        const qrOk = await canFetchPublicImage(qrCodeImageUrl);
 
-      console.info(
-        `[payment.charges.flex] paymentId=${inserted.id} qr=${qrOk} base=${base ?? "null"}`,
-      );
+        console.info(
+          `[payment.charges.flex] paymentId=${inserted.id} qr=${qrOk} base=${base ?? "null"}`,
+        );
 
-      const flex = createPaymentQrFlexMessage({
-        trackingNumber: parcel.barcode || parcel.trackingId,
-        amountBaht: inserted.amount,
-        expiresInMinutes: minutesUntil(inserted.expiresAt, now),
-        qrCodeImageUrl: qrOk ? qrCodeImageUrl : null,
-        payUrl: base ? new URL(`/pay/${encodeURIComponent(parcel.id)}`, base).toString() : null,
-      });
-      await pushLineMessage({
-        to: session.lineUserId,
-        message: flex,
-      });
-    } catch (lineErr) {
-      const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
-      console.warn("[line-flex] payment qr send failed (new):", msg);
+        const flex = createPaymentQrFlexMessage({
+          trackingNumber: parcel.barcode || parcel.trackingId,
+          amountBaht: inserted.amount,
+          expiresInMinutes: minutesUntil(inserted.expiresAt, now),
+          qrCodeImageUrl: qrOk ? qrCodeImageUrl : null,
+          payUrl: base ? new URL(`/pay/${encodeURIComponent(parcel.id)}`, base).toString() : null,
+        });
+        await pushLineMessage({
+          to: session.lineUserId,
+          message: flex,
+        });
+      } catch (lineErr) {
+        const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
+        console.warn("[line-flex] payment qr send failed (new):", msg);
+      }
     }
 
     return NextResponse.json({
@@ -256,7 +276,10 @@ export async function POST(request: Request) {
         paymentId: inserted.id,
         amount: inserted.amount,
         currency: inserted.currency,
+        paymentMethod: inserted.paymentMethod,
         qrPayload: inserted.qrPayload,
+        redirectUrl: inserted.redirectUrl,
+        actionRequired: beamResult.actionRequired,
         expiresAt: inserted.expiresAt?.toISOString() ?? null,
         status: inserted.status,
       },
