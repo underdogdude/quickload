@@ -13,6 +13,7 @@
     "./line": "./src/line.ts",
     "./notifications": "./src/notifications.ts",
     "./beam": "./src/beam.ts",
+    "./payment-methods": "./src/payment-methods.ts",
     "./penalty": "./src/penalty.ts",
     "./thai-post-status": "./src/thai-post-status.ts",
     "./thai-post-webhook-history": "./src/thai-post-webhook-history.ts"
