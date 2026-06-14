@@ -143,9 +143,9 @@ No changes. It already routes by `providerChargeId` and is method-agnostic.
 
 ## 5. Data model
 
-No migration. `payments.payment_method` (existing `text` column, default `"promptpay"`) stores the new ids verbatim.
+No migration for `payments.payment_method` — existing `text` column, default `"promptpay"`, stores the new ids verbatim.
 
-Add one new column **only if** the redirect URL needs to persist across page reloads (the user may close LIFF, reopen, and we want the same button). Spec recommendation: **add `payments.redirect_url text NULL`** in a single small migration (`supabase/migrations/<timestamp>_add_payment_redirect_url.sql`). Cheap, avoids re-creating charges on reload. The GET status route reads from this column.
+Add one new column to persist the redirect URL across page reloads (the user may close LIFF, reopen, and we want the same button). **Add `payments.redirect_url text NULL`** as a new SQL migration in `packages/shared/sql/` (matching repo convention) plus a `pnpm` apply script. Drizzle schema in `packages/shared/src/db/schema.ts` gains `redirectUrl: text("redirect_url")`. The GET status route reads from this column.
 
 `actionRequired` itself is **not** persisted — it's derived at read time:
 
