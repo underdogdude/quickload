@@ -61,11 +61,8 @@ export type BeamChargeResult = {
  * Per docs.beamcheckout.com/charges/charges-api: amount is integer in the smallest
  * unit (satang for THB).
  *
- * The body shape under `paymentMethod` differs per method. QR_PROMPT_PAY ships
- * `qrPromptPay: { expiryTime }`. The four mobile-app methods (KPLUS / MAKE /
- * SCB_EASY / TRUE_MONEY) ship an empty object under their respective key — this
- * is our current best-guess; verify the exact key against Beam playground during
- * manual integration (Task 7).
+ * Each method ships an empty object under its respective key (kplus / make /
+ * scbEasy / trueMoney). Beam Playground returns ENCODED_IMAGE for these methods.
  */
 export async function createBeamCharge({
   env,
@@ -85,7 +82,7 @@ export async function createBeamCharge({
   referenceId: string;
   idempotencyKey: string;
   returnUrl: string;
-  /** ISO-8601 timestamp for QR expiry; only meaningful for QR_PROMPT_PAY. */
+  /** ISO-8601 timestamp passed through for API compatibility; unused by app methods. */
   expiryTime: string;
 }): Promise<BeamChargeResult> {
   if (!env.baseUrl || !env.merchantId || !env.apiKey) {
@@ -162,7 +159,6 @@ export async function createBeamCharge({
       `Beam response missing chargeId for ${paymentMethodType}. Raw: ${text.slice(0, 500)}`,
     );
   }
-  // For QR_PROMPT_PAY the QR payload is required for the UI to render anything.
   if (paymentMethodType === "QR_PROMPT_PAY" && !qrPayload) {
     throw new Error(
       `Beam QR_PROMPT_PAY response missing qrPayload. Raw: ${text.slice(0, 500)}`,
@@ -172,6 +168,7 @@ export async function createBeamCharge({
 }
 
 function extractActionRequired(obj: Record<string, unknown>): BeamActionRequired {
+  if (extractRedirectUrl(obj)) return "REDIRECT";
   const raw = obj.actionRequired;
   if (typeof raw === "string") {
     const u = raw.toUpperCase();
@@ -187,6 +184,14 @@ function extractActionRequired(obj: Record<string, unknown>): BeamActionRequired
 }
 
 function extractRedirectUrl(obj: Record<string, unknown>): string | null {
+  const beamRedirect = obj.redirect as Record<string, unknown> | undefined;
+  if (
+    beamRedirect &&
+    typeof beamRedirect.redirectUrl === "string" &&
+    beamRedirect.redirectUrl.length > 0
+  ) {
+    return beamRedirect.redirectUrl;
+  }
   const direct = obj.redirectUrl;
   if (typeof direct === "string" && direct.length > 0) return direct;
   const nextAction = obj.nextAction as Record<string, unknown> | undefined;
@@ -208,6 +213,15 @@ function extractRedirectUrl(obj: Record<string, unknown>): string | null {
     const sub = pm[key] as Record<string, unknown> | undefined;
     if (sub && typeof sub.redirectUrl === "string" && sub.redirectUrl.length > 0) {
       return sub.redirectUrl;
+    }
+  }
+  // Beam Playground: app methods may return a payment URL in encodedImage.rawData.
+  const paymentMethodType = obj.paymentMethodType;
+  if (paymentMethodType !== "QR_PROMPT_PAY") {
+    const encoded = (obj.encodedImage ?? {}) as Record<string, unknown>;
+    const rawData = encoded.rawData;
+    if (typeof rawData === "string" && /^https?:\/\//i.test(rawData)) {
+      return rawData;
     }
   }
   return null;

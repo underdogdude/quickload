@@ -1,11 +1,13 @@
 import { and, asc, eq, gt } from "drizzle-orm";
 import { getDb, parcels, payments } from "@quickload/shared/db";
 import { createBeamCharge, readBeamEnv } from "@quickload/shared/beam";
-import { getPaymentMethod } from "@quickload/shared/payment-methods";
+import {
+  DEFAULT_PAYMENT_METHOD_ID,
+  getPaymentMethod,
+  PROMPTPAY_METHOD_ID,
+} from "@quickload/shared/payment-methods";
 import { computeOutstanding } from "@quickload/shared/penalty";
 import { NextResponse } from "next/server";
-import { createPaymentQrFlexMessage } from "@/lib/line-flex";
-import { pushLineMessage } from "@/lib/line-messaging";
 import { requireLineSession } from "@/lib/require-user";
 
 const QR_EXPIRY_MS = 10 * 60 * 1000;
@@ -14,55 +16,6 @@ type CreateChargeBody = {
   parcelId?: string;
   paymentMethod?: string;
 };
-
-function resolvePublicBaseUrl(request: Request): string | null {
-  const envBase =
-    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-    process.env.APP_BASE_URL?.trim() ||
-    process.env.PUBLIC_BASE_URL?.trim() ||
-    "";
-  if (envBase) return envBase.replace(/\/+$/, "");
-
-  const forwardedProto = request.headers.get("x-forwarded-proto")?.trim();
-  const forwardedHost = request.headers.get("x-forwarded-host")?.trim();
-  if (forwardedProto && forwardedHost && !/^(0\.0\.0\.0|localhost)(:\d+)?$/i.test(forwardedHost)) {
-    return `${forwardedProto}://${forwardedHost}`.replace(/\/+$/, "");
-  }
-
-  try {
-    const origin = new URL(request.url).origin;
-    const host = new URL(origin).host;
-    if (/^(0\.0\.0\.0|localhost)(:\d+)?$/i.test(host)) return null;
-    return origin.replace(/\/+$/, "");
-  } catch {
-    return null;
-  }
-}
-
-function toPublicQrImageUrl(
-  paymentId: string,
-  qrPayload: string | null | undefined,
-  baseUrl: string | null,
-): string | null {
-  if (!baseUrl || !qrPayload?.trim()) return null;
-  return new URL(`/api/payment/charges/${encodeURIComponent(paymentId)}/qr.png`, baseUrl).toString();
-}
-
-async function canFetchPublicImage(url: string | null): Promise<boolean> {
-  if (!url) return false;
-  try {
-    const res = await fetch(url, { method: "GET", cache: "no-store" });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-function minutesUntil(expiresAt: Date | null | undefined, now: Date): number {
-  if (!expiresAt) return 1;
-  const ms = expiresAt.getTime() - now.getTime();
-  return Math.max(1, Math.ceil(ms / 60000));
-}
 
 export async function POST(request: Request) {
   try {
@@ -73,7 +26,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "parcelId required" }, { status: 400 });
     }
 
-    const methodId = (body.paymentMethod ?? "promptpay").trim();
+    const methodId = (body.paymentMethod ?? DEFAULT_PAYMENT_METHOD_ID).trim();
     const methodDef = getPaymentMethod(methodId);
     if (!methodDef) {
       return NextResponse.json(
@@ -83,7 +36,6 @@ export async function POST(request: Request) {
     }
 
     const db = getDb();
-    const publicBaseUrl = resolvePublicBaseUrl(request);
     const [parcel] = await db.select().from(parcels).where(eq(parcels.id, parcelId)).limit(1);
     if (!parcel || parcel.userId !== session.userId) {
       // 404 to avoid leaking existence.
@@ -173,6 +125,11 @@ export async function POST(request: Request) {
       beamExpiry && !Number.isNaN(beamExpiry.getTime()) && beamExpiry < ourExpiryDate
         ? beamExpiry
         : ourExpiryDate;
+    const persistedQrPayload =
+      methodDef.id === PROMPTPAY_METHOD_ID ? beamResult.qrPayload : null;
+    const persistedRedirectUrl =
+      methodDef.id === PROMPTPAY_METHOD_ID ? null : beamResult.redirectUrl;
+    const actionRequired = beamResult.actionRequired;
 
     let inserted;
     try {
@@ -187,8 +144,8 @@ export async function POST(request: Request) {
           currency: "THB",
           paymentMethod: methodDef.id,
           status: "pending",
-          qrPayload: beamResult.qrPayload,
-          redirectUrl: beamResult.redirectUrl,
+          qrPayload: persistedQrPayload,
+          redirectUrl: persistedRedirectUrl,
           expiresAt,
           rawCreateResponse: beamResult.rawResponse as any,
           idempotencyKey,
@@ -243,33 +200,6 @@ export async function POST(request: Request) {
       `[payment.charges.create] paymentId=${inserted.id} parcelId=${parcel.id} amount=${parcel.price}`,
     );
 
-    if (methodDef.id === "promptpay") {
-      try {
-        const base = publicBaseUrl;
-        const qrCodeImageUrl = base ? toPublicQrImageUrl(inserted.id, inserted.qrPayload, base) : null;
-        const qrOk = await canFetchPublicImage(qrCodeImageUrl);
-
-        console.info(
-          `[payment.charges.flex] paymentId=${inserted.id} qr=${qrOk} base=${base ?? "null"}`,
-        );
-
-        const flex = createPaymentQrFlexMessage({
-          trackingNumber: parcel.barcode || parcel.trackingId,
-          amountBaht: inserted.amount,
-          expiresInMinutes: minutesUntil(inserted.expiresAt, now),
-          qrCodeImageUrl: qrOk ? qrCodeImageUrl : null,
-          payUrl: base ? new URL(`/pay/${encodeURIComponent(parcel.id)}`, base).toString() : null,
-        });
-        await pushLineMessage({
-          to: session.lineUserId,
-          message: flex,
-        });
-      } catch (lineErr) {
-        const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
-        console.warn("[line-flex] payment qr send failed (new):", msg);
-      }
-    }
-
     return NextResponse.json({
       ok: true,
       data: {
@@ -280,7 +210,7 @@ export async function POST(request: Request) {
         qrPayload: inserted.qrPayload,
         redirectUrl: inserted.redirectUrl,
         actionRequired:
-          inserted.redirectUrl ? "REDIRECT" : inserted.qrPayload ? "ENCODED_IMAGE" : "NONE",
+          inserted.redirectUrl ? "REDIRECT" : inserted.qrPayload ? "ENCODED_IMAGE" : actionRequired,
         expiresAt: inserted.expiresAt?.toISOString() ?? null,
         status: inserted.status,
       },

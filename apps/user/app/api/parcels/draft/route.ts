@@ -9,6 +9,7 @@ import { createOrderSuccessFlexMessage } from "@/lib/line-flex";
 import { pushLineMessage } from "@/lib/line-messaging";
 import { parsePositiveCm, validateParcelDimensionsCm } from "@/lib/parcel-dimensions";
 import { requireLineSession } from "@/lib/require-user";
+import { createFlexToken } from "@/lib/flex-token";
 
 function resolvePublicBaseUrl(request: Request): string | null {
   const envBase =
@@ -16,7 +17,15 @@ function resolvePublicBaseUrl(request: Request): string | null {
     process.env.APP_BASE_URL?.trim() ||
     process.env.PUBLIC_BASE_URL?.trim() ||
     "";
-  if (envBase) return envBase.replace(/\/+$/, "");
+  if (envBase) {
+    try {
+      const host = new URL(envBase).host;
+      if (/^(0\.0\.0\.0|localhost)(:\d+)?$/i.test(host)) return null;
+    } catch {
+      return null;
+    }
+    return envBase.replace(/\/+$/, "");
+  }
 
   const forwardedProto = request.headers.get("x-forwarded-proto")?.trim();
   const forwardedHost = request.headers.get("x-forwarded-host")?.trim();
@@ -198,9 +207,21 @@ export async function POST(request: Request) {
       const trackingNumber = barcode || parcelRow.trackingId;
       const referenceCode = f.smartpostTrackingcode?.trim() || "";
       const publicBaseUrl = resolvePublicBaseUrl(request);
-      const trackingUrl = publicBaseUrl ? new URL("/tracking", publicBaseUrl).toString() : null;
+
+      // Signed tokens make Flex buttons work even after the user's session expires.
+      // The label token authenticates the PDF download without a cookie.
+      // The track token auto-establishes a session then redirects to the parcel page.
+      const labelToken = createFlexToken({ userId: session.userId, parcelId: parcelRow.id, action: "label" });
+      const trackToken = createFlexToken({ userId: session.userId, parcelId: parcelRow.id, action: "track" });
+
       const labelPdfUrl = publicBaseUrl
-        ? new URL(`/api/parcels/${encodeURIComponent(parcelRow.id)}/label.pdf`, publicBaseUrl).toString()
+        ? new URL(
+            `/api/parcels/${encodeURIComponent(parcelRow.id)}/label.pdf?token=${labelToken}`,
+            publicBaseUrl,
+          ).toString()
+        : null;
+      const trackingUrl = publicBaseUrl
+        ? new URL(`/api/open/parcel?token=${trackToken}`, publicBaseUrl).toString()
         : null;
       const qrCodeImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(
         trackingNumber,

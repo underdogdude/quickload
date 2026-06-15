@@ -7,6 +7,7 @@ import { PDFDocument, rgb, degrees } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { NextResponse } from "next/server";
 import { requireLineSession } from "@/lib/require-user";
+import { verifyFlexToken } from "@/lib/flex-token";
 
 export const runtime = "nodejs";
 
@@ -304,15 +305,35 @@ async function createParcelLabelPdf(input: {
 }
 
 // ─── route ────────────────────────────────────────────────────────────────────
-export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const session = await requireLineSession();
     const { id } = await context.params;
+    const { searchParams } = new URL(request.url);
+    const token = searchParams.get("token")?.trim() ?? "";
+
+    let userId: string;
+
+    if (token) {
+      // Token path: used by LINE Flex message buttons (no active session required).
+      const payload = verifyFlexToken(token);
+      if (!payload || payload.action !== "label" || payload.parcelId !== id) {
+        return NextResponse.json(
+          { ok: false, error: "ลิงก์ไม่ถูกต้องหรือหมดอายุแล้ว" },
+          { status: 403 },
+        );
+      }
+      userId = payload.userId;
+    } else {
+      // Session path: used by in-app buttons (user is already logged in).
+      const session = await requireLineSession();
+      userId = session.userId;
+    }
+
     const db = getDb();
     const parcelRows = await db
       .select()
       .from(parcels)
-      .where(and(eq(parcels.id, id), eq(parcels.userId, session.userId)))
+      .where(and(eq(parcels.id, id), eq(parcels.userId, userId)))
       .limit(1);
     const parcel = parcelRows[0];
     if (!parcel) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
