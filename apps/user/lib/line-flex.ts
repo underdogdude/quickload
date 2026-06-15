@@ -13,6 +13,12 @@ type OrderSuccessFlexInput = {
   qrCodeImageUrl?: string | null;
 };
 
+type PaymentReminderFlexInput = {
+  trackingNumber?: string | null;
+  amountBaht: string | number;
+  payUrl: string;
+};
+
 type PaymentDueFlexInput = {
   parcelId: string;
   trackingNumber?: string | null;
@@ -681,6 +687,186 @@ export function createPaymentFailedFlexMessage(input: {
                 flex: 5,
               },
             ],
+          },
+        ],
+      },
+    },
+  };
+}
+
+/** Day 1 — gentle nudge: assumes good intent, no shame language. */
+export function createPaymentReminderDay1FlexMessage(input: PaymentReminderFlexInput): {
+  type: "flex";
+  altText: string;
+  contents: Record<string, unknown>;
+} {
+  const trackingNumber = textOrDash(input.trackingNumber);
+  const amount = formatBaht(input.amountBaht);
+
+  return {
+    type: "flex",
+    altText: `แจ้งเตือนค่าส่งพัสดุ ${trackingNumber}`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "text",
+            text: "แจ้งเตือนค่าส่งพัสดุ",
+            weight: "bold",
+            size: "xl",
+            color: "#111827",
+          },
+          {
+            type: "text",
+            text: "พัสดุของคุณพร้อมชำระแล้วค่ะ หากชำระไปแล้วขออภัยที่รบกวนนะคะ 🙏",
+            size: "sm",
+            color: "#6B7280",
+            wrap: true,
+          },
+          { type: "separator", margin: "md" },
+          {
+            type: "box",
+            layout: "baseline",
+            margin: "md",
+            contents: [
+              { type: "text", text: "หมายเลขพัสดุ", size: "xs", color: "#6B7280", flex: 3 },
+              {
+                type: "text",
+                text: trackingNumber,
+                size: "sm",
+                color: "#111827",
+                weight: "bold",
+                align: "end",
+                flex: 5,
+                wrap: true,
+              },
+            ],
+          },
+          {
+            type: "box",
+            layout: "baseline",
+            contents: [
+              { type: "text", text: "ยอดที่ต้องชำระ", size: "xs", color: "#6B7280", flex: 3 },
+              {
+                type: "text",
+                text: `฿ ${amount}`,
+                size: "lg",
+                color: "#2726F5",
+                weight: "bold",
+                align: "end",
+                flex: 5,
+              },
+            ],
+          },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "button",
+            style: "primary",
+            color: "#2726F5",
+            action: { type: "uri", label: "ชำระเงิน", uri: input.payUrl },
+          },
+        ],
+      },
+    },
+  };
+}
+
+/** Day 7 — clear deadline, respectful tone (loss aversion without aggression). */
+export function createPaymentReminderDay7FlexMessage(input: PaymentReminderFlexInput): {
+  type: "flex";
+  altText: string;
+  contents: Record<string, unknown>;
+} {
+  const trackingNumber = textOrDash(input.trackingNumber);
+  const amount = formatBaht(input.amountBaht);
+
+  return {
+    type: "flex",
+    altText: `วันสุดท้ายชำระค่าส่ง ${trackingNumber}`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "text",
+            text: "วันสุดท้ายของกำหนดชำระ",
+            weight: "bold",
+            size: "xl",
+            color: "#111827",
+          },
+          {
+            type: "text",
+            text: "ครบ 7 วันแล้วค่ะ ยังไม่ได้รับชำระสำหรับพัสดุนี้ กดชำระได้เลยด้านล่างนะคะ",
+            size: "sm",
+            color: "#6B7280",
+            wrap: true,
+          },
+          { type: "separator", margin: "md" },
+          {
+            type: "box",
+            layout: "baseline",
+            margin: "md",
+            contents: [
+              { type: "text", text: "หมายเลขพัสดุ", size: "xs", color: "#6B7280", flex: 3 },
+              {
+                type: "text",
+                text: trackingNumber,
+                size: "sm",
+                color: "#111827",
+                weight: "bold",
+                align: "end",
+                flex: 5,
+                wrap: true,
+              },
+            ],
+          },
+          {
+            type: "box",
+            layout: "baseline",
+            contents: [
+              { type: "text", text: "ยอดที่ต้องชำระ", size: "xs", color: "#6B7280", flex: 3 },
+              {
+                type: "text",
+                text: `฿ ${amount}`,
+                size: "lg",
+                color: "#BE123C",
+                weight: "bold",
+                align: "end",
+                flex: 5,
+              },
+            ],
+          },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "button",
+            style: "primary",
+            color: "#BE123C",
+            action: { type: "uri", label: "ชำระเงินวันนี้", uri: input.payUrl },
           },
         ],
       },

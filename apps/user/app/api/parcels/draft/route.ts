@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, orders, parcels, recipientAddresses, senderAddresses } from "@quickload/shared/db";
+import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
 import { NextResponse } from "next/server";
 import {
   mapSmartpostInnerToOrderFields,
@@ -204,7 +205,11 @@ export async function POST(request: Request) {
 
     try {
       const barcode = f.barcode?.trim() || parcelRow.barcode?.trim() || "";
-      const trackingNumber = barcode || parcelRow.trackingId;
+      const trackingNumber = resolveParcelDisplayCode({
+        barcode,
+        smartpostTrackingcode: f.smartpostTrackingcode,
+        trackingId: parcelRow.trackingId,
+      });
       const referenceCode = f.smartpostTrackingcode?.trim() || "";
       const publicBaseUrl = resolvePublicBaseUrl(request);
 

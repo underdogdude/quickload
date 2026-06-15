@@ -9,6 +9,7 @@ import {
 } from "@quickload/shared/thai-post-status";
 import { getDb, orders, parcels, thaiPostWebhookEvents, users } from "@quickload/shared/db";
 import { thaiPostStatusDateToMs } from "@quickload/shared/thai-post-webhook-history";
+import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
 import { NextResponse } from "next/server";
 import { createParcelStatusUpdateFlexMessage, createPaymentDueFlexMessage } from "@/lib/line-flex";
 import { pushLineMessage } from "@/lib/line-messaging";
@@ -257,9 +258,13 @@ export async function POST(request: Request) {
         return;
       }
 
+      const initialStatus = parcel.status;
       let shouldNotifyPaymentDue = false;
       let notifyAmount: string | null = null;
-      const statusChanges: Array<{ descriptionTh: string; station: string | null; toStatus: string }> = [];
+      // Tracks status changes that need a LINE notification. Keyed by descriptionTh to deduplicate
+      // identical descriptions sent in the same batch.
+      const statusChanges: Array<{ descriptionTh: string; station: string | null; toStatus: string | null }> = [];
+      const seenDescriptions = new Set<string>();
 
       for (const w of ordered) {
         // Description-based mapping is more reliable for Smartpost: they reuse TP codes
@@ -285,8 +290,9 @@ export async function POST(request: Request) {
 
           if (nextStatus) {
             // Track real status changes (excluding no-op transitions) for LINE notifications.
-            if (nextStatus !== parcel.status) {
+            if (nextStatus !== parcel.status && !seenDescriptions.has(w.descriptionTh)) {
               statusChanges.push({ descriptionTh: w.descriptionTh, station: w.station, toStatus: nextStatus });
+              seenDescriptions.add(w.descriptionTh);
             }
             parcelPatch.status = nextStatus;
             parcel.status = nextStatus;
@@ -321,7 +327,43 @@ export async function POST(request: Request) {
             .update(parcels)
             .set(parcelPatch)
             .where(and(eq(parcels.id, parcel.id), eq(parcels.barcode, barcode)));
+        } else if (w.descriptionTh && !seenDescriptions.has(w.descriptionTh)) {
+          // The description doesn't map to any internal status and there's no finalcost,
+          // but we still want to notify the user (e.g. "โทรศัพท์ติดต่อผู้รับ ให้เก็บรอนำจ่าย").
+          // These are informational carrier events — no DB parcel update, just LINE notification.
+          statusChanges.push({ descriptionTh: w.descriptionTh, station: w.station, toStatus: null });
+          seenDescriptions.add(w.descriptionTh);
         }
+      }
+
+      // If any webhook arrived for a priced parcel but thaiPostPriceConfirmedAt was never set
+      // (Smartpost cron omits finalcost from all tracking events), confirm the price now so the
+      // outstanding tab and the payment route can see it.
+      if (parcel.price != null && Number(parcel.price) > 0 && parcel.thaiPostPriceConfirmedAt == null) {
+        await tx
+          .update(parcels)
+          .set({ thaiPostPriceConfirmedAt: new Date(), updatedAt: new Date() })
+          .where(and(eq(parcels.id, parcel.id), eq(parcels.barcode, barcode)));
+        parcel.thaiPostPriceConfirmedAt = new Date();
+        if (!shouldNotifyPaymentDue && notifyAmount == null) {
+          shouldNotifyPaymentDue = true;
+          notifyAmount = parcel.price;
+        }
+      }
+
+      // If the parcel was awaiting payment and the carrier moved it on (e.g. pending_payment →
+      // in_transit) but the user still hasn't paid, re-send the payment-due reminder.
+      if (
+        initialStatus === "pending_payment" &&
+        parcel.status !== "pending_payment" &&
+        parcel.status !== "paid" &&
+        !shouldNotifyPaymentDue &&
+        notifyAmount == null &&
+        parcel.price != null &&
+        Number(parcel.price) > 0
+      ) {
+        shouldNotifyPaymentDue = true;
+        notifyAmount = parcel.price;
       }
 
       // Fetch lineUserId once for all notifications in this parcel's batch.
@@ -348,7 +390,7 @@ export async function POST(request: Request) {
           lineUserId,
           message: createPaymentDueFlexMessage({
             parcelId: parcel.id,
-            trackingNumber: parcel.trackingId || barcode,
+            trackingNumber: resolveParcelDisplayCode({ barcode, trackingId: parcel.trackingId }),
             amountBaht: notifyAmount,
             payUrl,
           }),
@@ -357,12 +399,12 @@ export async function POST(request: Request) {
 
       if (lineUserId) {
         for (const change of statusChanges) {
-          // Skip pending_payment here when payment-due notification already covers it.
+          // Skip pending_payment when payment-due notification already covers it with richer info.
           if (change.toStatus === "pending_payment" && shouldNotifyPaymentDue) continue;
           pendingStatusNotifications.push({
             lineUserId,
             message: createParcelStatusUpdateFlexMessage({
-              trackingNumber: parcel.trackingId || barcode,
+              trackingNumber: resolveParcelDisplayCode({ barcode, trackingId: parcel.trackingId }),
               statusDescriptionTh: change.descriptionTh,
               station: change.station,
             }),

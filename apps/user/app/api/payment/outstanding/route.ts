@@ -1,11 +1,12 @@
-import { and, asc, desc, eq, inArray, isNotNull, notInArray } from "drizzle-orm";
-import { getDb, orders, parcels, payments } from "@quickload/shared/db";
+import { and, desc, eq, inArray, isNotNull, notInArray } from "drizzle-orm";
+import { getDb, orders, parcels } from "@quickload/shared/db";
 import { computeOutstanding } from "@quickload/shared/penalty";
+import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
 import { NextResponse } from "next/server";
 import { requireLineSession } from "@/lib/require-user";
 
 /** Parcels eligible for the payment tab: unpaid, not canceled, ready to pay (has price & not waiting weight). */
-const EXCLUDED_STATUSES = ["canceled", "awaiting_actual_weight", "draft"] as const;
+const EXCLUDED_STATUSES = ["canceled", "awaiting_actual_weight", "draft", "registered"] as const;
 
 function calculateInsuranceFee(productPrice: number): number {
   if (productPrice <= 2000) return 0;
@@ -26,7 +27,6 @@ export async function GET() {
         status: parcels.status,
         price: parcels.price,
         isPaid: parcels.isPaid,
-        penaltyClockStartedAt: parcels.penaltyClockStartedAt,
         amountPaid: parcels.amountPaid,
         createdAt: parcels.createdAt,
         updatedAt: parcels.updatedAt,
@@ -36,27 +36,13 @@ export async function GET() {
         and(
           eq(parcels.userId, session.userId),
           eq(parcels.isPaid, false),
-          isNotNull(parcels.thaiPostPriceConfirmedAt),
+          isNotNull(parcels.price),
           notInArray(parcels.status, [...EXCLUDED_STATUSES]),
         ),
       )
       .orderBy(desc(parcels.createdAt));
 
     const parcelIds = parcelRows.map((p) => p.id);
-
-    const firstPaidByParcel = new Map<string, Date>();
-    if (parcelIds.length > 0) {
-      const paidRows = await db
-        .select({ parcelId: payments.parcelId, paidAt: payments.paidAt })
-        .from(payments)
-        .where(and(inArray(payments.parcelId, parcelIds), eq(payments.status, "succeeded")))
-        .orderBy(asc(payments.paidAt));
-      for (const row of paidRows) {
-        if (row.paidAt && !firstPaidByParcel.has(row.parcelId)) {
-          firstPaidByParcel.set(row.parcelId, row.paidAt);
-        }
-      }
-    }
 
     const orderMap = new Map<
       string,
@@ -66,6 +52,7 @@ export async function GET() {
         cost: string | null;
         finalcost: string | null;
         productPrice: string | null;
+        smartpostTrackingcode: string | null;
       }
     >();
 
@@ -78,6 +65,7 @@ export async function GET() {
           cost: orders.cost,
           finalcost: orders.finalcost,
           productPrice: orders.productPrice,
+          smartpostTrackingcode: orders.smartpostTrackingcode,
           createdAt: orders.createdAt,
         })
         .from(orders)
@@ -92,6 +80,7 @@ export async function GET() {
             cost: row.cost != null ? String(row.cost) : null,
             finalcost: row.finalcost != null ? String(row.finalcost) : null,
             productPrice: row.productPrice,
+            smartpostTrackingcode: row.smartpostTrackingcode,
           });
         }
       }
@@ -122,16 +111,13 @@ export async function GET() {
       try {
         out = computeOutstanding({
           price: priceStr,
-          penaltyClockStartedAt: p.penaltyClockStartedAt,
           amountPaid: String(p.amountPaid ?? "0"),
-          firstSuccessfulPaymentAt: firstPaidByParcel.get(p.id) ?? null,
-          now,
         });
       } catch {
         continue;
       }
 
-      if (out.state === "settled" || out.state === "abandoned") continue;
+      if (out.state === "settled") continue;
       if (out.outstanding <= 0) continue;
 
       const ord = orderMap.get(p.id);
@@ -142,7 +128,11 @@ export async function GET() {
 
       const sender = ord?.shipperProvince?.trim() || "—";
       const dest = ord?.cusProv?.trim() || p.destination?.split("·")[1]?.trim() || "—";
-      const displayCode = p.barcode?.trim() || p.trackingId;
+      const displayCode = resolveParcelDisplayCode({
+        barcode: p.barcode,
+        smartpostTrackingcode: ord?.smartpostTrackingcode,
+        trackingId: p.trackingId,
+      });
 
       const touch = p.updatedAt ?? p.createdAt;
       if (touch && (!latestTouch || touch > latestTouch)) latestTouch = touch;

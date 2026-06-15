@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { getDb, parcels, payments, users } from "@quickload/shared/db";
+import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
 import { createPaymentFailedFlexMessage, createPaymentSuccessFlexMessage } from "@/lib/line-flex";
 import { pushLineMessage } from "@/lib/line-messaging";
 
@@ -28,7 +29,10 @@ export async function sendPaymentSuccessFlexForPayment(
   await pushLineMessage({
     to: user.lineUserId,
     message: createPaymentSuccessFlexMessage({
-      trackingNumber: parcel.barcode || parcel.trackingId,
+      trackingNumber: resolveParcelDisplayCode({
+        barcode: parcel.barcode,
+        trackingId: parcel.trackingId,
+      }),
       amountBaht: payment.amount,
     }),
   });
@@ -60,7 +64,10 @@ export async function sendPaymentFailedFlexForPayment(
   await pushLineMessage({
     to: user.lineUserId,
     message: createPaymentFailedFlexMessage({
-      trackingNumber: parcel.barcode || parcel.trackingId,
+      trackingNumber: resolveParcelDisplayCode({
+        barcode: parcel.barcode,
+        trackingId: parcel.trackingId,
+      }),
       amountBaht: payment.amount,
       reason,
     }),

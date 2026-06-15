@@ -1,4 +1,4 @@
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { getDb, parcels, payments } from "@quickload/shared/db";
 import { createBeamCharge, readBeamEnv } from "@quickload/shared/beam";
 import {
@@ -7,7 +7,10 @@ import {
   PROMPTPAY_METHOD_ID,
 } from "@quickload/shared/payment-methods";
 import { computeOutstanding } from "@quickload/shared/penalty";
+import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
 import { NextResponse } from "next/server";
+import { createPaymentQrFlexMessage } from "@/lib/line-flex";
+import { pushLineMessage } from "@/lib/line-messaging";
 import { requireLineSession } from "@/lib/require-user";
 
 const QR_EXPIRY_MS = 10 * 60 * 1000;
@@ -16,6 +19,55 @@ type CreateChargeBody = {
   parcelId?: string;
   paymentMethod?: string;
 };
+
+function resolvePublicBaseUrl(request: Request): string | null {
+  const envBase =
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.APP_BASE_URL?.trim() ||
+    process.env.PUBLIC_BASE_URL?.trim() ||
+    "";
+  if (envBase) return envBase.replace(/\/+$/, "");
+
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.trim();
+  const forwardedHost = request.headers.get("x-forwarded-host")?.trim();
+  if (forwardedProto && forwardedHost && !/^(0\.0\.0\.0|localhost)(:\d+)?$/i.test(forwardedHost)) {
+    return `${forwardedProto}://${forwardedHost}`.replace(/\/+$/, "");
+  }
+
+  try {
+    const origin = new URL(request.url).origin;
+    const host = new URL(origin).host;
+    if (/^(0\.0\.0\.0|localhost)(:\d+)?$/i.test(host)) return null;
+    return origin.replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
+
+function toPublicQrImageUrl(
+  paymentId: string,
+  qrPayload: string | null | undefined,
+  baseUrl: string | null,
+): string | null {
+  if (!baseUrl || !qrPayload?.trim()) return null;
+  return new URL(`/api/payment/charges/${encodeURIComponent(paymentId)}/qr.png`, baseUrl).toString();
+}
+
+async function canFetchPublicImage(url: string | null): Promise<boolean> {
+  if (!url) return false;
+  try {
+    const res = await fetch(url, { method: "GET", cache: "no-store" });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function minutesUntil(expiresAt: Date | null | undefined, now: Date): number {
+  if (!expiresAt) return 1;
+  const ms = expiresAt.getTime() - now.getTime();
+  return Math.max(1, Math.ceil(ms / 60000));
+}
 
 export async function POST(request: Request) {
   try {
@@ -36,6 +88,7 @@ export async function POST(request: Request) {
     }
 
     const db = getDb();
+    const publicBaseUrl = resolvePublicBaseUrl(request);
     const [parcel] = await db.select().from(parcels).where(eq(parcels.id, parcelId)).limit(1);
     if (!parcel || parcel.userId !== session.userId) {
       // 404 to avoid leaking existence.
@@ -47,42 +100,25 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     }
-    if (!parcel.thaiPostPriceConfirmedAt) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Parcel has no confirmed price from Thailand Post yet",
-        },
-        { status: 409 },
-      );
-    }
     if (!parcel.price || Number(parcel.price) <= 0) {
       return NextResponse.json({ ok: false, error: "Parcel has no price" }, { status: 400 });
     }
-
-    const [firstPayment] = await db
-      .select({ paidAt: payments.paidAt })
-      .from(payments)
-      .where(and(eq(payments.parcelId, parcelId), eq(payments.status, "succeeded")))
-      .orderBy(asc(payments.paidAt))
-      .limit(1);
+    if (!parcel.thaiPostPriceConfirmedAt) {
+      // Smartpost cron webhooks omit finalcost, so thaiPostPriceConfirmedAt may never have been
+      // set even though we have a valid price. Confirm it now so payment can proceed.
+      await db
+        .update(parcels)
+        .set({ thaiPostPriceConfirmedAt: new Date(), updatedAt: new Date() })
+        .where(eq(parcels.id, parcelId));
+    }
 
     const out = computeOutstanding({
       price: parcel.price,
-      penaltyClockStartedAt: parcel.penaltyClockStartedAt,
       amountPaid: parcel.amountPaid,
-      firstSuccessfulPaymentAt: firstPayment?.paidAt ?? null,
-      now: new Date(),
     });
 
     if (out.state === "settled") {
       return NextResponse.json({ ok: false, error: "Parcel already paid" }, { status: 400 });
-    }
-    if (out.state === "abandoned") {
-      return NextResponse.json(
-        { ok: false, error: "Parcel canceled due to abandonment" },
-        { status: 410 },
-      );
     }
 
     // Step 3: always rotate to a fresh charge.
@@ -199,6 +235,36 @@ export async function POST(request: Request) {
     console.info(
       `[payment.charges.create] paymentId=${inserted.id} parcelId=${parcel.id} amount=${parcel.price}`,
     );
+
+    if (methodDef.id === PROMPTPAY_METHOD_ID) {
+      try {
+        const base = publicBaseUrl;
+        const qrCodeImageUrl = base ? toPublicQrImageUrl(inserted.id, inserted.qrPayload, base) : null;
+        const qrOk = await canFetchPublicImage(qrCodeImageUrl);
+
+        console.info(
+          `[payment.charges.flex] paymentId=${inserted.id} qr=${qrOk} base=${base ?? "null"}`,
+        );
+
+        const flex = createPaymentQrFlexMessage({
+          trackingNumber: resolveParcelDisplayCode({
+            barcode: parcel.barcode,
+            trackingId: parcel.trackingId,
+          }),
+          amountBaht: inserted.amount,
+          expiresInMinutes: minutesUntil(inserted.expiresAt, now),
+          qrCodeImageUrl: qrOk ? qrCodeImageUrl : null,
+          payUrl: base ? new URL(`/pay/${encodeURIComponent(parcel.id)}`, base).toString() : null,
+        });
+        await pushLineMessage({
+          to: session.lineUserId,
+          message: flex,
+        });
+      } catch (lineErr) {
+        const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
+        console.warn("[line-flex] payment qr send failed (new):", msg);
+      }
+    }
 
     return NextResponse.json({
       ok: true,
