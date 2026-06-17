@@ -103,6 +103,7 @@ function SuccessInner() {
   const searchParams = useSearchParams();
   const parcelId = searchParams.get("parcelId") ?? "";
   const trackingIdParam = searchParams.get("trackingId") ?? "";
+  const fromPayment = searchParams.get("from") === "payment";
 
   const [parcel, setParcel] = useState<ParcelApi | null>(null);
   const [order, setOrder] = useState<OrderApi | null>(null);
@@ -283,8 +284,14 @@ function SuccessInner() {
           </svg>
         </Link>
         <div className="mx-auto w-full max-w-lg">
-          <h1 className="text-center text-2xl font-bold leading-tight">สร้างพัสดุสำเร็จ</h1>
-          <p className="mt-2 text-center text-sm text-white/80">สามารถดำเนินการชำระเงินต่อได้ทันที</p>
+          <h1 className="text-center text-2xl font-bold leading-tight">
+            {fromPayment ? "ชำระเงินสำเร็จ" : "สร้างพัสดุสำเร็จ"}
+          </h1>
+          <p className="mt-2 text-center text-sm text-white/80">
+            {fromPayment
+              ? "ระบบบันทึกการชำระเงินเรียบร้อยแล้ว"
+              : "สามารถดำเนินการชำระเงินต่อได้ทันที"}
+          </p>
         </div>
       </section>
 
@@ -474,17 +481,26 @@ function SuccessInner() {
 
       <div className="fixed inset-x-0 bottom-0 z-30 bg-slate-100 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 shadow-[0_-6px_20px_rgba(15,23,42,0.08)] print:hidden">
         <div className="mx-auto flex w-full max-w-lg gap-3">
+          {fromPayment && parcelId ? (
+            <Link
+              href={`/parcels/${encodeURIComponent(parcelId)}`}
+              className="flex-1 rounded-full bg-[#2726F5] py-3 text-center text-sm font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)]"
+            >
+              ติดตามพัสดุ
+            </Link>
+          ) : (
+            <Link
+              href="/send"
+              className="flex-1 rounded-full bg-[#2726F5] py-3 text-center text-sm font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)]"
+            >
+              จัดส่งเพิ่มเติม
+            </Link>
+          )}
           <Link
             href="/parcels"
             className="flex-1 rounded-full border-2 border-[#2726F5] bg-white py-3 text-center text-sm font-semibold text-[#2726F5]"
           >
             พัสดุของฉัน
-          </Link>
-          <Link
-            href="/send"
-            className="flex-1 rounded-full bg-[#2726F5] py-3 text-center text-sm font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)]"
-          >
-            จัดส่งเพิ่มเติม
           </Link>
         </div>
       </div>

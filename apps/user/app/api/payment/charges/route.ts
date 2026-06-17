@@ -1,6 +1,10 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, desc, eq, gt } from "drizzle-orm";
 import { getDb, parcels, payments } from "@quickload/shared/db";
-import { createBeamCharge, readBeamEnv } from "@quickload/shared/beam";
+import {
+  createBeamCharge,
+  readBeamEnv,
+  reconcilePendingPaymentFromBeamApi,
+} from "@quickload/shared/beam";
 import {
   DEFAULT_PAYMENT_METHOD_ID,
   getPaymentMethod,
@@ -8,6 +12,8 @@ import {
 } from "@quickload/shared/payment-methods";
 import { computeOutstanding } from "@quickload/shared/penalty";
 import { NextResponse } from "next/server";
+import { sendPaymentFailedFlexForPayment, sendPaymentSuccessFlexForPayment } from "@/lib/payment-line-notify";
+import { resolvePublicBaseUrl } from "@/lib/public-base-url";
 import { requireLineSession } from "@/lib/require-user";
 
 const QR_EXPIRY_MS = 10 * 60 * 1000;
@@ -16,6 +22,162 @@ type CreateChargeBody = {
   parcelId?: string;
   paymentMethod?: string;
 };
+
+type ParcelRow = typeof parcels.$inferSelect;
+type PaymentRow = typeof payments.$inferSelect;
+
+function buildChargeData(parcelRow: ParcelRow, paymentRow: PaymentRow, effectiveStatus: string) {
+  const out = computeOutstanding({
+    price: parcelRow.price ?? "0",
+    amountPaid: parcelRow.amountPaid,
+  });
+  return {
+    paymentId: paymentRow.id,
+    status: effectiveStatus,
+    amount: paymentRow.amount,
+    currency: paymentRow.currency,
+    paymentMethod: paymentRow.paymentMethod,
+    redirectUrl: paymentRow.redirectUrl,
+    actionRequired: paymentRow.redirectUrl
+      ? "REDIRECT"
+      : paymentRow.qrPayload
+        ? "ENCODED_IMAGE"
+        : "NONE",
+    qrPayload: paymentRow.qrPayload,
+    expiresAt: paymentRow.expiresAt?.toISOString() ?? null,
+    paidAt: paymentRow.paidAt?.toISOString() ?? null,
+    parcelId: parcelRow.id,
+    barcode: parcelRow.barcode,
+    trackingId: parcelRow.trackingId,
+    outstanding: {
+      state: out.state,
+      totalOwed: out.totalOwed,
+      outstanding: out.outstanding,
+    },
+  };
+}
+
+async function reconcilePaymentRow(paymentRow: PaymentRow): Promise<{
+  paymentRow: PaymentRow;
+  parcelRow: ParcelRow | null;
+}> {
+  const db = getDb();
+  let row = paymentRow;
+  if (row.status === "pending" && row.providerChargeId) {
+    const sync = await reconcilePendingPaymentFromBeamApi(row.providerChargeId);
+    if (sync.synced) {
+      try {
+        if (sync.outcome === "succeeded") {
+          await sendPaymentSuccessFlexForPayment(sync.paymentId, sync.parcelId);
+        } else {
+          await sendPaymentFailedFlexForPayment(sync.paymentId, sync.parcelId, sync.outcome);
+        }
+      } catch (lineErr) {
+        const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
+        console.warn("[payment.charges] line notify after beam reconcile:", msg);
+      }
+      const [p2] = await db.select().from(payments).where(eq(payments.id, row.id)).limit(1);
+      if (p2) row = p2;
+    }
+  }
+  const [parcelRow] = await db.select().from(parcels).where(eq(parcels.id, row.parcelId)).limit(1);
+  return { paymentRow: row, parcelRow: parcelRow ?? null };
+}
+
+function effectivePaymentStatus(paymentRow: PaymentRow): string {
+  if (
+    paymentRow.status === "pending" &&
+    paymentRow.expiresAt &&
+    paymentRow.expiresAt.getTime() < Date.now()
+  ) {
+    return "expired";
+  }
+  return paymentRow.status;
+}
+
+/**
+ * Resume an in-flight payment without creating a new charge.
+ * Used when returning from Beam bank apps — must reconcile before rotating to PromptPay.
+ */
+export async function GET(request: Request) {
+  try {
+    const session = await requireLineSession();
+    const parcelId = new URL(request.url).searchParams.get("parcelId")?.trim() ?? "";
+    if (!parcelId) {
+      return NextResponse.json({ ok: false, error: "parcelId required" }, { status: 400 });
+    }
+
+    const db = getDb();
+    const [parcel] = await db.select().from(parcels).where(eq(parcels.id, parcelId)).limit(1);
+    if (!parcel || parcel.userId !== session.userId) {
+      return NextResponse.json({ ok: false, error: "Parcel not found" }, { status: 404 });
+    }
+
+    const out = computeOutstanding({
+      price: parcel.price ?? "0",
+      amountPaid: parcel.amountPaid,
+    });
+    if (parcel.isPaid || out.state === "settled") {
+      return NextResponse.json({
+        ok: true,
+        data: {
+          alreadyPaid: true,
+          parcelId: parcel.id,
+          trackingId: parcel.trackingId,
+          barcode: parcel.barcode,
+        },
+      });
+    }
+
+    const [pending] = await db
+      .select()
+      .from(payments)
+      .where(and(eq(payments.parcelId, parcelId), eq(payments.status, "pending")))
+      .orderBy(desc(payments.createdAt))
+      .limit(1);
+
+    if (!pending) {
+      return NextResponse.json({ ok: true, data: { needsCharge: true } });
+    }
+
+    const reconciled = await reconcilePaymentRow(pending);
+    if (!reconciled.parcelRow) {
+      return NextResponse.json({ ok: false, error: "Parcel not found" }, { status: 404 });
+    }
+
+    let paymentRow = reconciled.paymentRow;
+    let parcelRow = reconciled.parcelRow;
+
+    if (paymentRow.status === "succeeded" || parcelRow.isPaid) {
+      return NextResponse.json({
+        ok: true,
+        data: buildChargeData(parcelRow, paymentRow, "succeeded"),
+      });
+    }
+
+    let effectiveStatus = effectivePaymentStatus(paymentRow);
+    if (effectiveStatus === "expired" && paymentRow.status === "pending") {
+      await db
+        .update(payments)
+        .set({ status: "expired", updatedAt: new Date() })
+        .where(eq(payments.id, paymentRow.id));
+      paymentRow = { ...paymentRow, status: "expired" };
+    }
+
+    if (effectiveStatus === "pending") {
+      return NextResponse.json({
+        ok: true,
+        data: buildChargeData(parcelRow, paymentRow, effectiveStatus),
+      });
+    }
+
+    return NextResponse.json({ ok: true, data: { needsCharge: true } });
+  } catch (e) {
+    if (e instanceof Response) return e;
+    const msg = e instanceof Error ? e.message : "Error";
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -81,7 +243,20 @@ export async function POST(request: Request) {
     const idempotencyKey = crypto.randomUUID();
     const env = readBeamEnv();
     const ourExpiryDate = new Date(now.getTime() + QR_EXPIRY_MS);
-    const returnUrl = new URL(`/pay/${parcel.id}`, request.url).toString();
+
+    const publicBaseUrl = resolvePublicBaseUrl(request);
+    if (!publicBaseUrl) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "ไม่พบ public URL สำหรับกลับจาก Beam กรุณาตั้ง NEXT_PUBLIC_APP_URL เป็น URL tunnel (เช่น trycloudflare.com)",
+        },
+        { status: 503 },
+      );
+    }
+    const returnUrl = new URL(`/pay/${encodeURIComponent(parcel.id)}`, publicBaseUrl).toString();
+
     let beamResult;
     try {
       beamResult = await createBeamCharge({

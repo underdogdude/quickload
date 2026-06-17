@@ -42,6 +42,32 @@ type ChargeData = {
 };
 
 const POLL_INTERVAL_MS = 2500;
+const PAY_SUCCESS_REDIRECT_MS = 1800;
+
+function CheckCircleIcon(props: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={props.className} aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
+
+function XCircleIcon(props: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={props.className} aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
+
+function buildPaymentSuccessUrl(charge: ChargeData): string {
+  const qp = new URLSearchParams({
+    parcelId: charge.parcelId,
+    trackingId: charge.trackingId ?? "",
+    from: "payment",
+  });
+  return `/send/success?${qp.toString()}`;
+}
 
 function methodLabelTh(id: string): string {
   return getPaymentMethod(id)?.labelTh ?? id;
@@ -68,7 +94,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canceledRef = useRef(false);
   const switchingRef = useRef(false);
-  const createChargeOnceRef = useRef(false);
+  const initOnceRef = useRef(false);
 
   const renderPromptPayQr = useCallback(async (payload: string) => {
     // Beam may return the QR as a pre-rendered base64 PNG data URL; use it as-is.
@@ -100,6 +126,18 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
     [],
   );
 
+  const applyChargeData = useCallback(
+    async (statusData: ChargeData) => {
+      setCharge(statusData);
+      if (statusData.paymentMethod === PROMPTPAY_METHOD_ID && statusData.qrPayload) {
+        await renderPromptPayQr(statusData.qrPayload);
+      } else {
+        setPromptPayQrDataUrl(null);
+      }
+    },
+    [renderPromptPayQr],
+  );
+
   const createCharge = useCallback(
     async (paymentMethod: string = DEFAULT_PAYMENT_METHOD_ID) => {
     setError(null);
@@ -122,24 +160,66 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
         setError("ไม่สามารถโหลดสถานะได้");
         return;
       }
-      setCharge(statusData);
-      if (statusData.paymentMethod === PROMPTPAY_METHOD_ID && statusData.qrPayload) {
-        await renderPromptPayQr(statusData.qrPayload);
-      }
+      await applyChargeData(statusData);
     } catch {
       setError("เครือข่ายผิดพลาด กรุณาลองใหม่");
     } finally {
       setLoading(false);
     }
   },
-    [loadChargeStatus, parcelId, renderPromptPayQr],
+    [applyChargeData, loadChargeStatus, parcelId],
   );
 
+  const initPayPage = useCallback(async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/payment/charges?parcelId=${encodeURIComponent(parcelId)}`,
+        { cache: "no-store" },
+      );
+      const json = (await res.json()) as
+        | {
+            ok: true;
+            data:
+              | { alreadyPaid: true; parcelId: string; trackingId: string | null; barcode: string | null }
+              | { needsCharge: true }
+              | ChargeData;
+          }
+        | { ok: false; error: string };
+      if (!res.ok || !("ok" in json) || !json.ok) {
+        setError(("error" in json && json.error) || "โหลดหน้าชำระเงินไม่สำเร็จ");
+        return;
+      }
+      const data = json.data;
+      if ("alreadyPaid" in data && data.alreadyPaid) {
+        const qp = new URLSearchParams({
+          parcelId: data.parcelId,
+          trackingId: data.trackingId ?? "",
+          from: "payment",
+        });
+        router.replace(`/send/success?${qp.toString()}`);
+        return;
+      }
+      if ("needsCharge" in data && data.needsCharge) {
+        await createCharge();
+        return;
+      }
+      if ("paymentId" in data) {
+        await applyChargeData(data);
+      }
+    } catch {
+      setError("เครือข่ายผิดพลาด กรุณาลองใหม่");
+    } finally {
+      setLoading(false);
+    }
+  }, [applyChargeData, createCharge, parcelId, router]);
+
   useEffect(() => {
-    if (createChargeOnceRef.current) return;
-    createChargeOnceRef.current = true;
-    createCharge();
-  }, [createCharge]);
+    if (initOnceRef.current) return;
+    initOnceRef.current = true;
+    void initPayPage();
+  }, [initPayPage]);
 
   // Poll.
   useEffect(() => {
@@ -157,13 +237,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
         if (res.ok) {
           const json = (await res.json()) as { ok: true; data: ChargeData };
           if (json.ok) {
-            setCharge(json.data);
-            if (
-              json.data.paymentMethod === PROMPTPAY_METHOD_ID &&
-              json.data.qrPayload
-            ) {
-              void renderPromptPayQr(json.data.qrPayload);
-            }
+            await applyChargeData(json.data);
             if (json.data.status === "succeeded") return;
           }
         }
@@ -176,18 +250,14 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
     return () => {
       if (pollTimer.current) clearTimeout(pollTimer.current);
     };
-  }, [charge, renderPromptPayQr]);
+  }, [charge, applyChargeData]);
 
-  // On success → redirect after brief flash.
+  // On success → brief confirmation then payment success summary page.
   useEffect(() => {
     if (charge?.status !== "succeeded") return;
     const t = setTimeout(() => {
-      const qp = new URLSearchParams({
-        parcelId: charge.parcelId,
-        trackingId: charge.trackingId ?? "",
-      });
-      router.replace(`/send/success?${qp.toString()}`);
-    }, 400);
+      router.replace(buildPaymentSuccessUrl(charge));
+    }, PAY_SUCCESS_REDIRECT_MS);
     return () => clearTimeout(t);
   }, [charge, router]);
 
@@ -244,7 +314,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
           setError("ไม่สามารถโหลดสถานะได้");
           return;
         }
-        setCharge(statusData);
+        await applyChargeData(statusData);
         const redirectUrl = statusData.redirectUrl ?? json.data.redirectUrl;
         if (redirectUrl) {
           openBankApp(redirectUrl);
@@ -258,7 +328,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
         setSwitching(null);
       }
     },
-    [charge, loadChargeStatus, openBankApp, parcelId, switching],
+    [applyChargeData, charge, loadChargeStatus, openBankApp, parcelId, switching],
   );
 
   const switchToPromptPay = useCallback(async () => {
@@ -292,6 +362,10 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
   const formattedAmount = charge?.amount != null ? formatTHB(Number(charge.amount)) : "-";
 
   const showMockButton = process.env.NEXT_PUBLIC_PAYMENT_MOCK === "1";
+  const activeBankMethod =
+    charge && !isPromptPayCharge(charge)
+      ? BANK_PAYMENT_METHODS.find((m) => m.id === charge.paymentMethod)
+      : null;
 
   return (
     <main className="min-h-screen bg-slate-100 pb-12">
@@ -347,84 +421,106 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 {charge.barcode || charge.trackingId ? (
                   <p className="text-xs text-slate-500">หมายเลขพัสดุ: {charge.barcode || charge.trackingId}</p>
                 ) : null}
-                <div className="w-full max-w-[320px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-                  <div className="flex items-center justify-center gap-2 bg-[#123e6f] px-3 py-2 text-white">
-                    <Image
-                      src="/Thai_QR_Logo.svg"
-                      alt="Thai QR Payment"
-                      width={126}
-                      height={28}
-                      className="h-7 w-auto"
-                      priority
-                    />
-                  </div>
-                  <div className="flex justify-center bg-white pt-3">
-                    <Image
-                      src="/PromptPay-logo.png"
-                      alt="PromptPay"
-                      width={220}
-                      height={80}
-                      className="h-8 w-auto"
-                    />
-                  </div>
-                  <div className="relative flex items-center justify-center bg-white px-4 pb-4">
-                    {promptPayQrDataUrl ? (
-                      <Image
-                        src={promptPayQrDataUrl}
-                        alt={`QR PromptPay สำหรับยอด ${formattedAmount} บาท`}
-                        width={256}
-                        height={256}
-                        unoptimized
-                        className="h-64 w-64"
-                      />
-                    ) : (
-                      <div className="h-64 w-64 animate-pulse bg-slate-100" />
-                    )}
-                    <span className="pointer-events-none absolute inline-flex h-7 w-7 items-center justify-center">
-                      <Image
-                        src="/promp-pay-logo-square.png"
-                        alt="PromptPay logo"
-                        width={40}
-                        height={40}
-                        className="h-auto w-auto"
-                      />
-                    </span>
-                  </div>
-                </div>
-                <p className="text-sm text-slate-600">
-                  เหลือเวลา <span className="font-semibold text-slate-900">{mm}:{ss}</span>
-                </p>
 
-                {!isPromptPayCharge(charge) && charge.redirectUrl ? (
-                  <div className="w-full max-w-xs rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-center">
-                    <p className="text-sm text-slate-700">
-                      กำลังชำระผ่าน {methodLabelTh(charge.paymentMethod)}
+                {isPromptPayCharge(charge) ? (
+                  <>
+                    <div className="w-full max-w-[320px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                      <div className="flex items-center justify-center gap-2 bg-[#123e6f] px-3 py-2 text-white">
+                        <Image
+                          src="/Thai_QR_Logo.svg"
+                          alt="Thai QR Payment"
+                          width={126}
+                          height={28}
+                          className="h-7 w-auto"
+                          priority
+                        />
+                      </div>
+                      <div className="flex justify-center bg-white pt-3">
+                        <Image
+                          src="/PromptPay-logo.png"
+                          alt="PromptPay"
+                          width={220}
+                          height={80}
+                          className="h-8 w-auto"
+                        />
+                      </div>
+                      <div className="relative flex items-center justify-center bg-white px-4 pb-4">
+                        {promptPayQrDataUrl ? (
+                          <Image
+                            src={promptPayQrDataUrl}
+                            alt={`QR PromptPay สำหรับยอด ${formattedAmount} บาท`}
+                            width={256}
+                            height={256}
+                            unoptimized
+                            className="h-64 w-64"
+                          />
+                        ) : (
+                          <div className="h-64 w-64 animate-pulse bg-slate-100" />
+                        )}
+                        <span className="pointer-events-none absolute inline-flex h-7 w-7 items-center justify-center">
+                          <Image
+                            src="/promp-pay-logo-square.png"
+                            alt="PromptPay logo"
+                            width={40}
+                            height={40}
+                            className="h-auto w-auto"
+                          />
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-sm text-slate-600">
+                      สแกน QR แล้วชำระในแอปธนาคาร · เหลือเวลา{" "}
+                      <span className="font-semibold text-slate-900">{mm}:{ss}</span>
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => openBankApp(charge.redirectUrl!)}
-                      className="mt-2 inline-flex w-full items-center justify-center rounded-md bg-[#2726F5] px-4 py-2.5 text-sm font-medium text-white"
-                    >
-                      เปิดแอป {methodLabelTh(charge.paymentMethod)} อีกครั้ง
-                    </button>
+                    {charge.qrPayload && !charge.qrPayload.startsWith("data:image/") ? (
+                      <p className="break-all text-center text-[10px] text-slate-400 select-all">
+                        {charge.qrPayload}
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="w-full max-w-sm rounded-xl border border-indigo-100 bg-indigo-50/80 px-5 py-5 text-center">
+                    {activeBankMethod ? (
+                      <Image
+                        src={activeBankMethod.logoSrc}
+                        alt=""
+                        width={72}
+                        height={72}
+                        className="mx-auto h-[4.5rem] w-[4.5rem] rounded-xl object-contain"
+                      />
+                    ) : null}
+                    <p className="mt-3 text-base font-semibold text-slate-900">
+                      ชำระผ่าน {methodLabelTh(charge.paymentMethod)}
+                    </p>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                      เปิดแอปธนาคารและทำรายการชำระเงินให้เสร็จ
+                    </p>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                      เมื่อชำระแล้ว กด <span className="font-medium">Return to merchant</span> หรือกลับมาหน้านี้
+                      ระบบจะอัปเดตสถานะอัตโนมัติ
+                    </p>
+                    {charge.redirectUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => openBankApp(charge.redirectUrl!)}
+                        className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[#2726F5] px-4 py-3 text-sm font-semibold text-white shadow-sm"
+                      >
+                        เปิดแอป {methodLabelTh(charge.paymentMethod)}
+                      </button>
+                    ) : null}
+                    <p className="mt-3 text-sm text-slate-600">
+                      เหลือเวลา <span className="font-semibold text-slate-900">{mm}:{ss}</span>
+                    </p>
                     <button
                       type="button"
                       onClick={() => void switchToPromptPay()}
                       disabled={loading || switching !== null}
-                      className="mt-2 text-xs font-medium text-[#2726F5] underline disabled:opacity-50"
+                      className="mt-3 text-sm font-medium text-[#2726F5] underline disabled:opacity-50"
                     >
-                      กลับไปชำระด้วยพร้อมเพย์
+                      เปลี่ยนไปชำระด้วยพร้อมเพย์
                     </button>
                   </div>
-                ) : null}
-
-                {isPromptPayCharge(charge) &&
-                charge.qrPayload &&
-                !charge.qrPayload.startsWith("data:image/") ? (
-                  <p className="break-all text-center text-[10px] text-slate-400 select-all">
-                    {charge.qrPayload}
-                  </p>
-                ) : null}
+                )}
 
                 {showMockButton ? (
                   <button
@@ -438,44 +534,109 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 ) : null}
               </div>
             ) : charge?.status === "succeeded" ? (
-              <div className="py-8 text-center">
-                <p className="text-xl font-semibold text-emerald-600">ชำระเงินสำเร็จ</p>
-                <p className="mt-1 text-sm text-slate-500">กำลังพาไปยังหน้าสรุป...</p>
+              <div className="flex flex-col items-center gap-3 py-10 text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+                  <CheckCircleIcon className="h-9 w-9 text-emerald-600" />
+                </div>
+                <p className="text-xl font-semibold text-emerald-700">ชำระเงินสำเร็จ</p>
+                <p className="text-sm text-slate-600">
+                  ยอดชำระ ฿ {formattedAmount} บาท
+                </p>
+                {charge.barcode || charge.trackingId ? (
+                  <p className="text-xs text-slate-500">
+                    หมายเลขพัสดุ: {charge.barcode || charge.trackingId}
+                  </p>
+                ) : null}
+                <p className="mt-1 text-sm text-slate-500">กำลังพาไปหน้าสรุป...</p>
               </div>
             ) : charge?.status === "expired" ? (
-              <div className="py-8 text-center">
-                <p className="text-lg font-semibold text-slate-800">QR หมดอายุแล้ว</p>
+              <div className="flex flex-col items-center gap-3 py-8 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
+                  <XCircleIcon className="h-8 w-8 text-amber-700" />
+                </div>
+                <p className="text-lg font-semibold text-slate-900">รหัสชำระเงินหมดอายุ</p>
+                <p className="max-w-xs text-sm leading-relaxed text-slate-600">
+                  ยังไม่มีการหักเงิน กรุณาสร้างรหัสชำระเงินใหม่เพื่อดำเนินการต่อ
+                </p>
                 <button
                   type="button"
                   onClick={() => createCharge()}
                   disabled={loading}
-                  className="mt-3 inline-flex items-center gap-2 rounded-full bg-[#2726F5] px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  className="mt-2 inline-flex items-center gap-2 rounded-full bg-[#2726F5] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
                 >
-                  {loading && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />}
-                  สร้าง QR ใหม่
+                  {loading && (
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  )}
+                  ลองชำระอีกครั้ง
+                </button>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/parcels/${encodeURIComponent(parcelId)}`)}
+                  className="text-sm font-medium text-[#2726F5] underline"
+                >
+                  ดูรายละเอียดพัสดุ
                 </button>
               </div>
             ) : charge?.status === "failed" ? (
-              <div className="py-8 text-center">
-                <p className="text-lg font-semibold text-rose-700">การชำระเงินล้มเหลว</p>
+              <div className="flex flex-col items-center gap-3 py-8 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-rose-100">
+                  <XCircleIcon className="h-8 w-8 text-rose-600" />
+                </div>
+                <p className="text-lg font-semibold text-rose-700">การชำระเงินไม่สำเร็จ</p>
+                <p className="max-w-xs text-sm leading-relaxed text-slate-600">
+                  ยังไม่มีการหักเงิน คุณสามารถลองชำระใหม่ด้วยพร้อมเพย์หรือแอปธนาคารอื่น
+                </p>
                 <button
                   type="button"
                   onClick={() => createCharge()}
                   disabled={loading}
-                  className="mt-3 inline-flex items-center gap-2 rounded-full bg-[#2726F5] px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  className="mt-2 inline-flex items-center gap-2 rounded-full bg-[#2726F5] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
                 >
-                  {loading && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />}
-                  สร้าง QR ใหม่
+                  {loading && (
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  )}
+                  ลองชำระอีกครั้ง
+                </button>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/parcels/${encodeURIComponent(parcelId)}`)}
+                  className="text-sm font-medium text-[#2726F5] underline"
+                >
+                  ดูรายละเอียดพัสดุ
                 </button>
               </div>
             ) : charge?.status === "canceled" ? (
-              <div className="py-8 text-center">
-                <p className="text-lg font-semibold text-slate-800">ยกเลิกการชำระเงินแล้ว</p>
+              <div className="flex flex-col items-center gap-3 py-8 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+                  <XCircleIcon className="h-8 w-8 text-slate-500" />
+                </div>
+                <p className="text-lg font-semibold text-slate-800">ยกเลิกการชำระเงิน</p>
+                <p className="max-w-xs text-sm leading-relaxed text-slate-600">
+                  หากต้องการชำระค่าฝากส่ง สามารถกลับมาชำระใหม่ได้
+                </p>
+                <button
+                  type="button"
+                  onClick={() => createCharge()}
+                  disabled={loading}
+                  className="mt-2 inline-flex items-center gap-2 rounded-full bg-[#2726F5] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {loading && (
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  )}
+                  ชำระอีกครั้ง
+                </button>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/parcels/${encodeURIComponent(parcelId)}`)}
+                  className="text-sm font-medium text-[#2726F5] underline"
+                >
+                  ดูรายละเอียดพัสดุ
+                </button>
               </div>
             ) : null}
           </div>
 
-          {charge?.status === "pending" ? (
+          {charge?.status === "pending" && isPromptPayCharge(charge) ? (
             <div className="rounded-lg bg-white p-4 shadow-sm">
               <p className="mb-3 text-sm font-medium text-slate-700">
                 หรือชำระผ่านแอปธนาคาร / วอลเล็ต
