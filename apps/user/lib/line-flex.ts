@@ -523,7 +523,8 @@ export function createPaymentSuccessFlexMessage(input: {
 type ParcelStatusUpdateFlexInput = {
   trackingNumber?: string | null;
   statusDescriptionTh: string;
-  station?: string | null;
+  /** Terminal logistics outcome — drives success (green) vs failure (red) styling. */
+  terminalStatus: "delivered" | "failed" | "canceled";
 };
 
 export function createParcelStatusUpdateFlexMessage(input: ParcelStatusUpdateFlexInput): {
@@ -533,14 +534,11 @@ export function createParcelStatusUpdateFlexMessage(input: ParcelStatusUpdateFle
 } {
   const trackingNumber = textOrDash(input.trackingNumber);
   const description = input.statusDescriptionTh?.trim() || "อัปเดตสถานะ";
-  const station = input.station?.trim() || null;
+  const statusColor = input.terminalStatus === "delivered" ? "#059669" : "#BE123C";
 
   const rows: Array<{ label: string; value: string }> = [
     { label: "หมายเลขพัสดุ", value: trackingNumber },
   ];
-  if (station) {
-    rows.push({ label: "สถานี", value: station });
-  }
 
   return {
     type: "flex",
@@ -557,15 +555,15 @@ export function createParcelStatusUpdateFlexMessage(input: ParcelStatusUpdateFle
           {
             type: "text",
             text: "อัปเดตสถานะพัสดุ",
-            weight: "bold",
-            size: "lg",
-            color: "#111827",
+            size: "sm",
+            color: "#6B7280",
           },
           {
             type: "text",
             text: description,
-            size: "sm",
-            color: "#374151",
+            size: "lg",
+            weight: "bold",
+            color: statusColor,
             wrap: true,
           },
           {

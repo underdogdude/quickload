@@ -3,9 +3,9 @@ import {
   createPaymentReminderDay7FlexMessage,
 } from "@/lib/line-flex";
 
-const AGENT_NAMES = ["นิดา", "พิม", "แอน", "มินตรา", "เบล", "มาย", "แพร", "ฟ้า"] as const;
+const AGENT_NAMES = ["นิดา", "ใบเตย", "แอน", "มินตรา", "เบล", "มาย", "แพร", "ฟ้า"] as const;
 
-export const PAYMENT_REMINDER_DAYS = [1, 3, 7] as const;
+export const PAYMENT_REMINDER_DAYS = [1, 3, 5, 7] as const;
 export type PaymentReminderDay = (typeof PAYMENT_REMINDER_DAYS)[number];
 
 export function reminderTypeForDay(day: PaymentReminderDay): string {
@@ -56,22 +56,78 @@ export function nextDueReminderDay(
   return null;
 }
 
+function formatReminderBaht(v: string | number): string {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return "-";
+  return new Intl.NumberFormat("th-TH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
+
 /** Day 3: plain text — feels like a real person typed it (reduces reactance vs. branded flex). */
 export function createPaymentReminderDay3TextMessage(input: {
   parcelId: string;
   displayCode: string;
-  daysRemaining?: number;
+  amountBaht: string | number;
 }): { type: "text"; text: string } {
   const name = pickReminderAgentName(input.parcelId);
   const code = input.displayCode.trim() || "-";
-  const remaining = input.daysRemaining ?? 7;
-  const deadlineLine =
-    remaining <= 0
-      ? "กรุณาชำระเงินโดยเร็วที่สุดนะคะ 🙏"
-      : `กรุณาชำระเงินภายใน ${remaining} วันนะคะ 🙏`;
+  const amount = formatReminderBaht(input.amountBaht);
+
   return {
     type: "text",
-    text: `สวัสดีคะ ติดต่อจาก QUICKLOAD ชื่อ ${name} นะคะ\nยังไม่ได้รับการชำระเงินใน order ${code}\n${deadlineLine}`,
+    text: [
+      `สวัสดีค่ะ เจ้าหน้าที่${name} ติดต่อจาก QUICKLOAD ค่ะ`,
+      "",
+      `ขออนุญาตติดตามยอดค้างชำระของเลขพัสดุ ${code} ค่ะ`,
+      "",
+      `ยอดค้างชำระ: ฿ ${amount}`,
+      "รายการนี้เลยกำหนดชำระมาแล้ว 3 วันค่ะ",
+      "",
+      "รบกวนช่วยชำระยอดค้าง เพื่อปิดรายการนี้ให้เรียบร้อยนะคะ",
+      "",
+      "สามารถดูบิลและรายละเอียดได้ที่เมนู",
+      "ชำระเงิน > เลือกยอดที่ต้องการชำระ",
+      "",
+      "ขออภัยหากคุณได้ชำระยอดนี้ก่อนหน้านี้แล้วค่ะ",
+      "",
+      "หากมีข้อสงสัย สามารถพิมพ์สอบถามได้ที่แชทนี้",
+      "หรือติดต่อ support@supersolutionsystem.com",
+      "",
+      "ขอบคุณค่ะ 🙏",
+    ].join("\n"),
+  };
+}
+
+/** Day 5: plain text follow-up — firmer tone before final day-7 flex. */
+export function createPaymentReminderDay5TextMessage(input: {
+  displayCode: string;
+  amountBaht: string | number;
+}): { type: "text"; text: string } {
+  const code = input.displayCode.trim() || "-";
+  const amount = formatReminderBaht(input.amountBaht);
+
+  return {
+    type: "text",
+    text: [
+      "สวัสดีค่ะ ติดต่ออีกครั้งจาก QUICKLOAD ค่ะ",
+      "",
+      `ขออนุญาตติดตามยอดค้างชำระของเลขพัสดุ ${code} อีกครั้งนะคะ`,
+      "",
+      `ยอดค้างชำระอยู่ที่ ฿ ${amount}`,
+      "",
+      "รบกวนชำระยอดค้างโดยเร็ว เพื่อปิดรายการนี้ให้เรียบร้อย หากยังไม่ได้รับการชำระภายในระยะเวลาที่กำหนด",
+      "รายการนี้อาจถูกส่งต่อเข้าสู่ขั้นตอนติดตามยอดค้างชำระอย่างเป็นทางการค่ะ",
+      "",
+      "สามารถดูบิลและรายละเอียดได้ที่เมนู",
+      "ชำระเงิน > เลือกยอดที่ต้องการชำระ",
+      "",
+      "หากมีข้อสงสัย สามารถพิมพ์สอบถามได้ที่แชทนี้",
+      "หรือติดต่อ support@supersolutionsystem.com",
+      "",
+      "ขอบคุณค่ะ 🙏",
+    ].join("\n"),
   };
 }
 
@@ -89,7 +145,13 @@ export function buildReminderMessage(
     return createPaymentReminderDay3TextMessage({
       parcelId: input.parcelId,
       displayCode: input.displayCode,
-      daysRemaining: input.daysRemaining,
+      amountBaht: input.amountBaht,
+    });
+  }
+  if (day === 5) {
+    return createPaymentReminderDay5TextMessage({
+      displayCode: input.displayCode,
+      amountBaht: input.amountBaht,
     });
   }
   if (day === 7) {

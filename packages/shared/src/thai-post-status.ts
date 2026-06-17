@@ -32,6 +32,24 @@ export type ParcelFlowStatus =
   | "failed"
   | "canceled";
 
+/** Logistics end states — only these trigger LINE parcel-status Flex notifications. */
+export const TERMINAL_PARCEL_STATUSES = ["delivered", "failed", "canceled"] as const;
+export type TerminalParcelStatus = (typeof TERMINAL_PARCEL_STATUSES)[number];
+
+export function isTerminalParcelStatus(status: string): status is TerminalParcelStatus {
+  return (TERMINAL_PARCEL_STATUSES as readonly string[]).includes(status);
+}
+
+export function terminalParcelStatusNotificationType(status: TerminalParcelStatus): string {
+  return `parcel_status_terminal_${status}`;
+}
+
+export function parseTerminalParcelStatusNotificationType(type: string): TerminalParcelStatus | null {
+  const match = /^parcel_status_terminal_(delivered|failed|canceled)$/.exec(type);
+  if (!match) return null;
+  return match[1] as TerminalParcelStatus;
+}
+
 type ThaiPostStatusMeta = {
   code: ThaiPostStatusCode;
   descriptionTh: string;

@@ -1,13 +1,18 @@
 import { createHmac, randomUUID } from "node:crypto";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
+  isTerminalParcelStatus,
   mapThaiPostStatus,
   parseThaiPostStatusCodeRaw,
+  parseTerminalParcelStatusNotificationType,
   resolveThaiPostStatusMetaCode,
+  TERMINAL_PARCEL_STATUSES,
+  terminalParcelStatusNotificationType,
   type ParcelFlowStatus,
+  type TerminalParcelStatus,
 } from "@quickload/shared/thai-post-status";
-import { getDb, orders, parcels, thaiPostWebhookEvents, users } from "@quickload/shared/db";
+import { getDb, notificationLog, orders, parcels, thaiPostWebhookEvents, users } from "@quickload/shared/db";
 import { thaiPostStatusDateToMs } from "@quickload/shared/thai-post-webhook-history";
 import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
 import { NextResponse } from "next/server";
@@ -106,6 +111,39 @@ function orderBatchByCarrierTimeline(batch: BatchItem[]): BatchItem[] {
     .map(({ w }) => w);
 }
 
+const TERMINAL_STATUS_NOTIFICATION_TYPES = TERMINAL_PARCEL_STATUSES.map(
+  terminalParcelStatusNotificationType,
+);
+
+type SentTerminalStatusMap = Map<string, Set<TerminalParcelStatus>>;
+
+function parcelIdFromNotificationPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const parcelId = (payload as { parcelId?: unknown }).parcelId;
+  return typeof parcelId === "string" && parcelId.trim() ? parcelId.trim() : null;
+}
+
+async function loadSentTerminalParcelStatusNotifications(): Promise<SentTerminalStatusMap> {
+  const db = getDb();
+  const map: SentTerminalStatusMap = new Map();
+  const rows = await db
+    .select({ type: notificationLog.type, payload: notificationLog.payload })
+    .from(notificationLog)
+    .where(
+      and(inArray(notificationLog.type, TERMINAL_STATUS_NOTIFICATION_TYPES), eq(notificationLog.status, "sent")),
+    );
+
+  for (const row of rows) {
+    const terminalStatus = parseTerminalParcelStatusNotificationType(row.type);
+    const parcelId = parcelIdFromNotificationPayload(row.payload);
+    if (!terminalStatus || !parcelId) continue;
+    const set = map.get(parcelId) ?? new Set<TerminalParcelStatus>();
+    set.add(terminalStatus);
+    map.set(parcelId, set);
+  }
+  return map;
+}
+
 function resolvePublicBaseUrl(request: Request): string | null {
   const envBase =
     process.env.NEXT_PUBLIC_APP_URL?.trim() ||
@@ -175,6 +213,7 @@ export async function POST(request: Request) {
 
   const db = getDb();
   const publicBaseUrl = resolvePublicBaseUrl(request);
+  const sentTerminalStatuses = await loadSentTerminalParcelStatusNotifications();
   let updated = 0;
   let ignored = 0;
   const pendingPaymentNotifications: Array<{
@@ -183,6 +222,9 @@ export async function POST(request: Request) {
   }> = [];
   const pendingStatusNotifications: Array<{
     lineUserId: string;
+    userId: string;
+    parcelId: string;
+    terminalStatus: TerminalParcelStatus;
     message: ReturnType<typeof createParcelStatusUpdateFlexMessage>;
   }> = [];
 
@@ -261,8 +303,7 @@ export async function POST(request: Request) {
       const initialStatus = parcel.status;
       let shouldNotifyPaymentDue = false;
       let notifyAmount: string | null = null;
-      // Tracks status changes that need a LINE notification. Keyed by descriptionTh to deduplicate
-      // identical descriptions sent in the same batch.
+      // Tracks status transitions for LINE terminal notifications (delivered / failed / canceled).
       const statusChanges: Array<{ descriptionTh: string; station: string | null; toStatus: string | null }> = [];
       const seenDescriptions = new Set<string>();
 
@@ -327,12 +368,6 @@ export async function POST(request: Request) {
             .update(parcels)
             .set(parcelPatch)
             .where(and(eq(parcels.id, parcel.id), eq(parcels.barcode, barcode)));
-        } else if (w.descriptionTh && !seenDescriptions.has(w.descriptionTh)) {
-          // The description doesn't map to any internal status and there's no finalcost,
-          // but we still want to notify the user (e.g. "โทรศัพท์ติดต่อผู้รับ ให้เก็บรอนำจ่าย").
-          // These are informational carrier events — no DB parcel update, just LINE notification.
-          statusChanges.push({ descriptionTh: w.descriptionTh, station: w.station, toStatus: null });
-          seenDescriptions.add(w.descriptionTh);
         }
       }
 
@@ -367,9 +402,12 @@ export async function POST(request: Request) {
       }
 
       // Fetch lineUserId once for all notifications in this parcel's batch.
+      const hasTerminalTransition = statusChanges.some(
+        (change) => change.toStatus && isTerminalParcelStatus(change.toStatus),
+      );
       const needsLineNotification =
         (shouldNotifyPaymentDue && notifyAmount != null && publicBaseUrl != null) ||
-        statusChanges.length > 0;
+        hasTerminalTransition;
       let lineUserId: string | null = null;
       if (parcel.userId && needsLineNotification) {
         const [user] = await tx
@@ -397,18 +435,30 @@ export async function POST(request: Request) {
         });
       }
 
-      if (lineUserId) {
-        for (const change of statusChanges) {
-          // Skip pending_payment when payment-due notification already covers it with richer info.
-          if (change.toStatus === "pending_payment" && shouldNotifyPaymentDue) continue;
-          pendingStatusNotifications.push({
-            lineUserId,
-            message: createParcelStatusUpdateFlexMessage({
-              trackingNumber: resolveParcelDisplayCode({ barcode, trackingId: parcel.trackingId }),
-              statusDescriptionTh: change.descriptionTh,
-              station: change.station,
-            }),
-          });
+      if (lineUserId && parcel.userId) {
+        const terminalChanges = statusChanges.filter(
+          (change) => change.toStatus && isTerminalParcelStatus(change.toStatus),
+        );
+        const terminalChange = terminalChanges.at(-1);
+        if (terminalChange?.toStatus && isTerminalParcelStatus(terminalChange.toStatus)) {
+          const terminalStatus = terminalChange.toStatus;
+          const alreadySent = sentTerminalStatuses.get(parcel.id)?.has(terminalStatus);
+          if (!alreadySent) {
+            pendingStatusNotifications.push({
+              lineUserId,
+              userId: parcel.userId,
+              parcelId: parcel.id,
+              terminalStatus,
+              message: createParcelStatusUpdateFlexMessage({
+                trackingNumber: resolveParcelDisplayCode({ barcode, trackingId: parcel.trackingId }),
+                statusDescriptionTh: terminalChange.descriptionTh,
+                terminalStatus,
+              }),
+            });
+            const sentForParcel = sentTerminalStatuses.get(parcel.id) ?? new Set<TerminalParcelStatus>();
+            sentForParcel.add(terminalStatus);
+            sentTerminalStatuses.set(parcel.id, sentForParcel);
+          }
         }
       }
 
@@ -492,11 +542,28 @@ export async function POST(request: Request) {
   }
 
   for (const n of pendingStatusNotifications) {
+    let sendStatus: "sent" | "failed" = "sent";
     try {
       await pushLineMessage({ to: n.lineUserId, message: n.message });
     } catch (e) {
+      sendStatus = "failed";
       const msg = e instanceof Error ? e.message : String(e);
       console.warn("[line-flex] status update send failed:", msg);
+    }
+    try {
+      await db.insert(notificationLog).values({
+        userId: n.userId,
+        lineUserId: n.lineUserId,
+        type: terminalParcelStatusNotificationType(n.terminalStatus),
+        payload: {
+          parcelId: n.parcelId,
+          terminalStatus: n.terminalStatus,
+        },
+        status: sendStatus,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("[line-flex] status update notification log failed:", msg);
     }
   }
 

@@ -57,7 +57,7 @@ function authorizeCron(request: Request): NextResponse | null {
 type SentReminderMap = Map<string, Set<PaymentReminderDay>>;
 
 function parseReminderDay(type: string): PaymentReminderDay | null {
-  const match = /^payment_reminder_day_(1|3|7)$/.exec(type);
+  const match = /^payment_reminder_day_(1|3|5|7)$/.exec(type);
   if (!match) return null;
   return Number(match[1]) as PaymentReminderDay;
 }
