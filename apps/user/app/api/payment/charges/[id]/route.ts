@@ -1,9 +1,15 @@
 import { eq } from "drizzle-orm";
 import { reconcilePendingPaymentFromBeamApi } from "@quickload/shared/beam";
+import { readBulkMasterMeta } from "@quickload/shared/bulk-payment";
+import { expireBulkPaymentGroup } from "@quickload/shared/bulk-payment-db";
 import { getDb, parcels, payments } from "@quickload/shared/db";
 import { computeOutstanding } from "@quickload/shared/penalty";
 import { NextResponse } from "next/server";
-import { sendPaymentFailedFlexForPayment, sendPaymentSuccessFlexForPayment } from "@/lib/payment-line-notify";
+import {
+  sendPaymentTerminalFlexIfSingle,
+  sendPaymentSuccessFlexForPayment,
+  sendBulkPaymentSuccessFlex,
+} from "@/lib/payment-line-notify";
 import { requireLineSession } from "@/lib/require-user";
 
 export async function GET(
@@ -37,9 +43,14 @@ export async function GET(
       if (sync.synced) {
         try {
           if (sync.outcome === "succeeded") {
-            await sendPaymentSuccessFlexForPayment(sync.paymentId, sync.parcelId);
+            const bulkMeta = readBulkMasterMeta(paymentRow.rawCreateResponse);
+            if (bulkMeta) {
+              await sendBulkPaymentSuccessFlex(sync.paymentId);
+            } else {
+              await sendPaymentSuccessFlexForPayment(sync.paymentId, sync.parcelId);
+            }
           } else {
-            await sendPaymentFailedFlexForPayment(sync.paymentId, sync.parcelId, sync.outcome);
+            await sendPaymentTerminalFlexIfSingle(sync.paymentId, sync.parcelId, sync.outcome);
           }
         } catch (lineErr) {
           const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
@@ -59,10 +70,15 @@ export async function GET(
       paymentRow.expiresAt &&
       paymentRow.expiresAt.getTime() < Date.now()
     ) {
-      await db
-        .update(payments)
-        .set({ status: "expired", updatedAt: new Date() })
-        .where(eq(payments.id, paymentRow.id));
+      const bulkMeta = readBulkMasterMeta(paymentRow.rawCreateResponse);
+      if (bulkMeta) {
+        await expireBulkPaymentGroup(db, paymentRow);
+      } else {
+        await db
+          .update(payments)
+          .set({ status: "expired", updatedAt: new Date() })
+          .where(eq(payments.id, paymentRow.id));
+      }
       effectiveStatus = "expired";
     }
 
@@ -71,12 +87,15 @@ export async function GET(
       amountPaid: parcelRow.amountPaid,
     });
 
+    const bulkMeta = readBulkMasterMeta(paymentRow.rawCreateResponse);
+    const displayAmount = bulkMeta?.totalCharged ?? paymentRow.amount;
+
     return NextResponse.json({
       ok: true,
       data: {
         paymentId: paymentRow.id,
         status: effectiveStatus,
-        amount: paymentRow.amount,
+        amount: displayAmount,
         currency: paymentRow.currency,
         paymentMethod: paymentRow.paymentMethod,
         redirectUrl: paymentRow.redirectUrl,
@@ -87,11 +106,19 @@ export async function GET(
         parcelId: parcelRow.id,
         barcode: parcelRow.barcode,
         trackingId: parcelRow.trackingId,
-        outstanding: {
-          state: out.state,
-          totalOwed: out.totalOwed,
-          outstanding: out.outstanding,
-        },
+        bulk: Boolean(bulkMeta),
+        itemCount: bulkMeta?.itemCount ?? undefined,
+        outstanding: bulkMeta
+          ? {
+              state: "unpaid" as const,
+              totalOwed: Number(displayAmount),
+              outstanding: Number(displayAmount),
+            }
+          : {
+              state: out.state,
+              totalOwed: out.totalOwed,
+              outstanding: out.outstanding,
+            },
       },
     });
   } catch (e) {

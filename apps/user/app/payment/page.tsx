@@ -90,6 +90,13 @@ function parcelStatusLabel(status: string): string {
   return status;
 }
 
+function buildPayAllHref(items: OutstandingItem[]): string {
+  if (items.length === 1) {
+    return `/pay/${encodeURIComponent(items[0].parcelId)}`;
+  }
+  return "/pay/all";
+}
+
 function parcelStatusBadgeClass(status: string): string {
   if (status === "awaiting_actual_weight") return "border-slate-200 bg-slate-50 text-slate-800";
   if (status === "pending_payment") return "border-amber-200 bg-amber-50 text-amber-900";
@@ -227,6 +234,7 @@ export default function PaymentPage() {
                     <div className="h-10 w-48 animate-pulse rounded-lg bg-slate-100" />
                     <div className="h-4 w-56 animate-pulse rounded bg-slate-100" />
                     <div className="h-8 w-40 animate-pulse rounded-full bg-slate-100" />
+                    <div className="mt-2 h-12 w-full animate-pulse rounded-xl bg-slate-100" />
                   </div>
                 ) : (
                   <>
@@ -237,26 +245,54 @@ export default function PaymentPage() {
                       อัพเดทล่าสุด {updatedAt ? formatUpdatedAt(updatedAt) : "—"} น.
                     </p>
                     {items.length > 0 ? (
-                      <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="14"
-                          height="14"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          className="shrink-0 text-rose-600"
-                          aria-hidden
+                      <>
+                        <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="14"
+                            height="14"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            className="shrink-0 text-rose-600"
+                            aria-hidden
+                          >
+                            <path
+                              d="M4 8h16v12H4V8Zm0 0 8-4 8 4M9 12h6"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          ค้างชำระ {items.length} รายการ
+                        </div>
+                        <Link
+                          href={buildPayAllHref(items)}
+                          className="mt-4 flex w-full items-center justify-center gap-2.5 rounded-xl bg-[#2726F5] px-4 py-3.5 text-[15px] font-semibold leading-snug text-white shadow-[0_8px_22px_rgba(39,38,245,0.30)] transition hover:bg-[#1f1ed4] active:scale-[0.99]"
                         >
-                          <path
-                            d="M4 8h16v12H4V8Zm0 0 8-4 8 4M9 12h6"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                        ค้างชำระ {items.length} รายการ
-                      </div>
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="18"
+                            height="18"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            className="shrink-0"
+                            aria-hidden
+                          >
+                            <path
+                              d="M3 7h18v10H3V7Zm0 4h18M7 11h.01M11 11h2"
+                              stroke="currentColor"
+                              strokeWidth="1.75"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          <span className="text-center">
+                            ชำระยอดค้างทั้งหมด{" "}
+                            <span className="tabular-nums">{formatTHB(totalOutstanding)}</span> บาท
+                          </span>
+                        </Link>
+                      </>
                     ) : (
                       <div className="mt-3 space-y-1">
                         <p className="text-sm text-slate-600">ไม่มียอดค้างชำระ</p>
@@ -270,7 +306,7 @@ export default function PaymentPage() {
               </article>
 
               {!outstandingLoading && items.length > 0 ? (
-                <div className="space-y-3">
+                <div id="outstanding-list" className="space-y-3">
                   <h2 className="px-0.5 text-sm font-semibold text-slate-800">รายการค้างชำระ</h2>
                   {items.map((it) => (
                     <article

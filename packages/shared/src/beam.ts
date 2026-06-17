@@ -264,8 +264,9 @@ function extractExpiresAt(obj: Record<string, unknown>): string | null {
   return null;
 }
 
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { getDb, payments, parcels } from "./db";
+import { readBulkMasterMeta } from "./bulk-payment";
 
 /**
  * Idempotent state transition called by BOTH the webhook handler and the dev-simulate
@@ -281,9 +282,43 @@ export async function markPaymentSucceeded({
 }: {
   providerChargeId: string;
   rawWebhookPayload: unknown;
-}): Promise<{ paymentId: string; parcelId: string; settled: boolean } | null> {
+}): Promise<{ paymentId: string; parcelId: string; settled: boolean; bulk?: boolean } | null> {
   const db = getDb();
   return await db.transaction(async (tx) => {
+    const [masterRow] = await tx
+      .select()
+      .from(payments)
+      .where(and(eq(payments.providerChargeId, providerChargeId), eq(payments.status, "pending")))
+      .limit(1);
+    if (!masterRow) return null;
+
+    const bulkMeta = readBulkMasterMeta(masterRow.rawCreateResponse);
+    if (bulkMeta) {
+      const paymentIds = [masterRow.id, ...bulkMeta.childPaymentIds];
+      const paidAt = new Date();
+      await tx
+        .update(payments)
+        .set({
+          status: "succeeded",
+          paidAt,
+          rawWebhookPayload: rawWebhookPayload as any,
+          updatedAt: paidAt,
+        })
+        .where(and(inArray(payments.id, paymentIds), eq(payments.status, "pending")));
+
+      await tx
+        .update(parcels)
+        .set({ isPaid: true, status: "paid", updatedAt: paidAt })
+        .where(inArray(parcels.id, bulkMeta.parcelIds));
+
+      return {
+        paymentId: masterRow.id,
+        parcelId: masterRow.parcelId,
+        settled: true,
+        bulk: true,
+      };
+    }
+
     const updated = await tx
       .update(payments)
       .set({
@@ -337,15 +372,37 @@ export async function markPaymentTerminalStatus({
   providerChargeId: string;
   nextStatus: "failed" | "expired" | "canceled";
   rawWebhookPayload: unknown;
-}): Promise<{ paymentId: string; parcelId: string } | null> {
+}): Promise<{ paymentId: string; parcelId: string; bulk?: boolean } | null> {
   const db = getDb();
   return await db.transaction(async (tx) => {
+    const [masterRow] = await tx
+      .select()
+      .from(payments)
+      .where(and(eq(payments.providerChargeId, providerChargeId), eq(payments.status, "pending")))
+      .limit(1);
+    if (!masterRow) return null;
+
+    const bulkMeta = readBulkMasterMeta(masterRow.rawCreateResponse);
+    const now = new Date();
+    if (bulkMeta) {
+      const paymentIds = [masterRow.id, ...bulkMeta.childPaymentIds];
+      await tx
+        .update(payments)
+        .set({
+          status: nextStatus,
+          rawWebhookPayload: rawWebhookPayload as any,
+          updatedAt: now,
+        })
+        .where(and(inArray(payments.id, paymentIds), eq(payments.status, "pending")));
+      return { paymentId: masterRow.id, parcelId: masterRow.parcelId, bulk: true };
+    }
+
     const updated = await tx
       .update(payments)
       .set({
         status: nextStatus,
         rawWebhookPayload: rawWebhookPayload as any,
-        updatedAt: new Date(),
+        updatedAt: now,
       })
       .where(
         and(eq(payments.providerChargeId, providerChargeId), eq(payments.status, "pending")),

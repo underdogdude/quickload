@@ -520,6 +520,116 @@ export function createPaymentSuccessFlexMessage(input: {
   };
 }
 
+export function createBulkPaymentSuccessFlexMessage(input: {
+  /** Thailand Post item barcode (13 chars, e.g. WB222126989TH) — not order/reference codes. */
+  barcodes: string[];
+  amountBaht: string | number;
+}): {
+  type: "flex";
+  altText: string;
+  contents: Record<string, unknown>;
+} {
+  const codes = input.barcodes.map((code) => textOrDash(code)).filter((code) => code !== "-");
+  const amount = formatBaht(input.amountBaht);
+  const altCodes = codes.length > 0 ? codes.join(", ") : "-";
+
+  const trackingRows =
+    codes.length > 0
+      ? codes.map((code, index) => ({
+          type: "box" as const,
+          layout: "baseline" as const,
+          ...(index === 0 ? { margin: "md" as const } : {}),
+          contents: [
+            {
+              type: "text" as const,
+              text: index === 0 ? "หมายเลขพัสดุ" : " ",
+              size: "xs" as const,
+              color: "#6B7280",
+              flex: 3,
+            },
+            {
+              type: "text" as const,
+              text: code,
+              size: "sm" as const,
+              color: "#111827",
+              weight: "bold" as const,
+              align: "end" as const,
+              flex: 5,
+              wrap: true,
+            },
+          ],
+        }))
+      : [
+          {
+            type: "box" as const,
+            layout: "baseline" as const,
+            margin: "md" as const,
+            contents: [
+              { type: "text" as const, text: "หมายเลขพัสดุ", size: "xs" as const, color: "#6B7280", flex: 3 },
+              {
+                type: "text" as const,
+                text: "-",
+                size: "sm" as const,
+                color: "#111827",
+                weight: "bold" as const,
+                align: "end" as const,
+                flex: 5,
+                wrap: true,
+              },
+            ],
+          },
+        ];
+
+  return {
+    type: "flex",
+    altText: `ชำระเงินสำเร็จ สำหรับพัสดุ ${altCodes}`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "text",
+            text: "ชำระเงินสำเร็จ",
+            weight: "bold",
+            size: "xl",
+            color: "#059669",
+          },
+          {
+            type: "text",
+            text: "ระบบได้รับการชำระเงินเรียบร้อยแล้ว",
+            size: "sm",
+            color: "#6B7280",
+            wrap: true,
+          },
+          { type: "separator", margin: "md" },
+          ...trackingRows,
+          {
+            type: "box",
+            layout: "baseline",
+            contents: [
+              { type: "text", text: "ยอดที่ชำระ", size: "xs", color: "#6B7280", flex: 3 },
+              {
+                type: "text",
+                text: `฿ ${amount}`,
+                size: "lg",
+                color: "#111827",
+                weight: "bold",
+                align: "end",
+                flex: 5,
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+}
+
 type ParcelStatusUpdateFlexInput = {
   trackingNumber?: string | null;
   statusDescriptionTh: string;

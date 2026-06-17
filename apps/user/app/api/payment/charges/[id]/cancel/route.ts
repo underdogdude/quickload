@@ -1,4 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+import { readBulkMasterMeta } from "@quickload/shared/bulk-payment";
+import { resolveBulkMasterPayment } from "@quickload/shared/bulk-payment-db";
 import { getDb, parcels, payments } from "@quickload/shared/db";
 import { NextResponse } from "next/server";
 import { requireLineSession } from "@/lib/require-user";
@@ -15,6 +17,7 @@ export async function POST(
     if (!payment) {
       return NextResponse.json({ ok: false, error: "Payment not found" }, { status: 404 });
     }
+    const masterPayment = await resolveBulkMasterPayment(db, payment);
     const [parcel] = await db
       .select()
       .from(parcels)
@@ -24,14 +27,26 @@ export async function POST(
       return NextResponse.json({ ok: false, error: "Payment not found" }, { status: 404 });
     }
 
-    // Cancel the open QR; if the parcel has no successful payments yet,
-    // cancel the parcel as well so the order is dead. If amount_paid > 0,
-    // we only kill the QR — the user must still pay the remaining balance.
+    const bulkMeta = readBulkMasterMeta(masterPayment.rawCreateResponse);
     const result = await db.transaction(async (tx) => {
+      const now = new Date();
+      if (bulkMeta) {
+        await tx
+          .update(payments)
+          .set({ status: "canceled", updatedAt: now })
+          .where(
+            and(
+              inArray(payments.id, [masterPayment.id, ...bulkMeta.childPaymentIds]),
+              eq(payments.status, "pending"),
+            ),
+          );
+        return { parcelCanceled: false };
+      }
+
       await tx
         .update(payments)
         .set({ status: "canceled", updatedAt: new Date() })
-        .where(and(eq(payments.id, paymentId), eq(payments.status, "pending")));
+        .where(and(eq(payments.id, payment.id), eq(payments.status, "pending")));
 
       const parcelCancelable = Number(parcel.amountPaid ?? "0") <= 0;
       if (parcelCancelable) {

@@ -1,44 +1,40 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BANK_PAYMENT_METHODS,
   DEFAULT_PAYMENT_METHOD_ID,
   getPaymentMethod,
+  isBankPaymentMethod,
   PROMPTPAY_METHOD_ID,
   type PaymentMethodId,
 } from "@quickload/shared/payment-methods";
 
 type ChargeStatus = "pending" | "succeeded" | "failed" | "expired" | "canceled";
 
-type OutstandingState = "settled" | "unpaid";
-
-type Outstanding = {
-  state: OutstandingState;
-  totalOwed: number;
+type BulkItem = {
+  parcelId: string;
+  displayCode: string;
+  routeLabel: string;
   outstanding: number;
 };
 
-type ActionRequired = "NONE" | "REDIRECT" | "ENCODED_IMAGE";
-
-type ChargeData = {
+type BulkChargeData = {
   paymentId: string;
   status: ChargeStatus;
   amount: string;
   currency: string;
-  paymentMethod: PaymentMethodId | string;
+  paymentMethod: string;
   qrPayload: string | null;
   redirectUrl: string | null;
-  actionRequired: ActionRequired;
+  actionRequired: "NONE" | "REDIRECT" | "ENCODED_IMAGE";
   expiresAt: string | null;
-  paidAt: string | null;
-  parcelId: string;
-  barcode: string | null;
-  trackingId: string | null;
-  outstanding: Outstanding;
+  bulk: true;
+  itemCount: number;
+  items: BulkItem[];
 };
 
 const POLL_INTERVAL_MS = 2500;
@@ -60,46 +56,37 @@ function XCircleIcon(props: { className?: string }) {
   );
 }
 
-function buildPaymentSuccessUrl(charge: ChargeData): string {
-  const qp = new URLSearchParams({
-    parcelId: charge.parcelId,
-    trackingId: charge.trackingId ?? "",
-    from: "payment",
-  });
-  return `/send/success?${qp.toString()}`;
+function formatTHB(n: number): string {
+  return new Intl.NumberFormat("th-TH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
 }
 
 function methodLabelTh(id: string): string {
   return getPaymentMethod(id)?.labelTh ?? id;
 }
 
-function isPromptPayCharge(charge: ChargeData | null): boolean {
+function isPromptPayCharge(charge: BulkChargeData | null): boolean {
   return charge?.paymentMethod === PROMPTPAY_METHOD_ID;
 }
 
-export default function PayPage({ params }: { params: { parcelId: string } }) {
-  const { parcelId } = params;
+export default function PayAllPage() {
   const router = useRouter();
-
-  const [charge, setCharge] = useState<ChargeData | null>(null);
+  const [charge, setCharge] = useState<BulkChargeData | null>(null);
   const [promptPayQrDataUrl, setPromptPayQrDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [simulating, setSimulating] = useState(false);
-  const [canceling, setCanceling] = useState(false);
   const [switching, setSwitching] = useState<PaymentMethodId | null>(null);
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const canceledRef = useRef(false);
   const switchingRef = useRef(false);
   const initOnceRef = useRef(false);
 
   const renderPromptPayQr = useCallback(async (payload: string) => {
-    // Beam may return the QR as a pre-rendered base64 PNG data URL; use it as-is.
-    // Otherwise treat the payload as an EMVCo PromptPay string and render to a
-    // data URL ourselves.
     if (payload.startsWith("data:image/")) {
       setPromptPayQrDataUrl(payload);
       return;
@@ -112,25 +99,11 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
     }
   }, []);
 
-  const loadChargeStatus = useCallback(
-    async (paymentId: string): Promise<ChargeData | null> => {
-      const statusRes = await fetch(`/api/payment/charges/${paymentId}`);
-      const statusJson = (await statusRes.json()) as
-        | { ok: true; data: ChargeData }
-        | { ok: false; error: string };
-      if (!statusRes.ok || !("ok" in statusJson) || !statusJson.ok) {
-        return null;
-      }
-      return statusJson.data;
-    },
-    [],
-  );
-
   const applyChargeData = useCallback(
-    async (statusData: ChargeData) => {
-      setCharge(statusData);
-      if (statusData.paymentMethod === PROMPTPAY_METHOD_ID && statusData.qrPayload) {
-        await renderPromptPayQr(statusData.qrPayload);
+    async (data: BulkChargeData) => {
+      setCharge(data);
+      if (data.paymentMethod === PROMPTPAY_METHOD_ID && data.qrPayload) {
+        await renderPromptPayQr(data.qrPayload);
       } else {
         setPromptPayQrDataUrl(null);
       }
@@ -138,79 +111,110 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
     [renderPromptPayQr],
   );
 
-  const createCharge = useCallback(
-    async (paymentMethod: string = DEFAULT_PAYMENT_METHOD_ID) => {
-    setError(null);
-    setLoading(true);
-    try {
-      const res = await fetch("/api/payment/charges", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parcelId, paymentMethod }),
-      });
-      const json = (await res.json()) as
-        | { ok: true; data: Omit<ChargeData, "parcelId" | "barcode" | "trackingId" | "paidAt" | "outstanding"> }
+  const loadChargeStatus = useCallback(
+    async (paymentId: string, prev: BulkChargeData | null): Promise<BulkChargeData | null> => {
+      const statusRes = await fetch(`/api/payment/charges/${paymentId}`);
+      const statusJson = (await statusRes.json()) as
+        | {
+            ok: true;
+            data: {
+              paymentId: string;
+              status: ChargeStatus;
+              amount: string;
+              currency: string;
+              paymentMethod: string;
+              qrPayload: string | null;
+              redirectUrl: string | null;
+              actionRequired: "NONE" | "REDIRECT" | "ENCODED_IMAGE";
+              expiresAt: string | null;
+              bulk?: boolean;
+              itemCount?: number;
+            };
+          }
         | { ok: false; error: string };
-      if (!res.ok || !("ok" in json) || !json.ok) {
-        setError(("error" in json && json.error) || "ไม่สามารถสร้าง QR ได้");
-        return;
-      }
-      const statusData = await loadChargeStatus(json.data.paymentId);
-      if (!statusData) {
-        setError("ไม่สามารถโหลดสถานะได้");
-        return;
-      }
-      await applyChargeData(statusData);
-    } catch {
-      setError("เครือข่ายผิดพลาด กรุณาลองใหม่");
-    } finally {
-      setLoading(false);
-    }
-  },
-    [applyChargeData, loadChargeStatus, parcelId],
+      if (!statusRes.ok || !statusJson.ok) return null;
+
+      const d = statusJson.data;
+      return {
+        paymentId: d.paymentId,
+        status: d.status,
+        amount: d.amount,
+        currency: d.currency,
+        paymentMethod: d.paymentMethod,
+        qrPayload: d.qrPayload,
+        redirectUrl: d.redirectUrl,
+        actionRequired: d.actionRequired,
+        expiresAt: d.expiresAt,
+        bulk: true,
+        itemCount: d.itemCount ?? prev?.itemCount ?? 0,
+        items: prev?.items ?? [],
+      };
+    },
+    [],
   );
 
-  const initPayPage = useCallback(async () => {
+  const createBulkCharge = useCallback(
+    async (paymentMethod: string = DEFAULT_PAYMENT_METHOD_ID) => {
+      setError(null);
+      setLoading(true);
+      try {
+        const res = await fetch("/api/payment/charges/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paymentMethod }),
+        });
+        const json = (await res.json()) as { ok: true; data: BulkChargeData } | { ok: false; error: string };
+        if (!res.ok || !json.ok) {
+          setError(("error" in json && json.error) || "ไม่สามารถสร้าง QR ได้");
+          return null;
+        }
+        await applyChargeData(json.data);
+        return json.data;
+      } catch {
+        setError("เครือข่ายผิดพลาด กรุณาลองใหม่");
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [applyChargeData],
+  );
+
+  const initPage = useCallback(async () => {
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch(
-        `/api/payment/charges?parcelId=${encodeURIComponent(parcelId)}`,
-        { cache: "no-store" },
-      );
+      const res = await fetch("/api/payment/charges/bulk", { cache: "no-store" });
       const json = (await res.json()) as
         | {
             ok: true;
             data:
-              | { alreadyPaid: true; parcelId: string; trackingId: string | null; barcode: string | null }
-              | { bulkPayAll: true; paymentId: string }
-              | { needsCharge: true }
-              | ChargeData;
+              | { alreadyPaid: true }
+              | { singleParcel: true; parcelId: string }
+              | { needsCharge: true; items?: BulkItem[] }
+              | BulkChargeData;
           }
         | { ok: false; error: string };
-      if (!res.ok || !("ok" in json) || !json.ok) {
+
+      if (!res.ok || !json.ok) {
         setError(("error" in json && json.error) || "โหลดหน้าชำระเงินไม่สำเร็จ");
         return;
       }
+
       const data = json.data;
       if ("alreadyPaid" in data && data.alreadyPaid) {
-        const qp = new URLSearchParams({
-          parcelId: data.parcelId,
-          trackingId: data.trackingId ?? "",
-          from: "payment",
-        });
-        router.replace(`/send/success?${qp.toString()}`);
+        router.replace("/payment");
         return;
       }
-      if ("bulkPayAll" in data && data.bulkPayAll) {
-        router.replace("/pay/all");
+      if ("singleParcel" in data && data.singleParcel) {
+        router.replace(`/pay/${encodeURIComponent(data.parcelId)}`);
         return;
       }
       if ("needsCharge" in data && data.needsCharge) {
-        await createCharge();
+        await createBulkCharge();
         return;
       }
-      if ("paymentId" in data && "status" in data) {
+      if ("paymentId" in data) {
         await applyChargeData(data);
       }
     } catch {
@@ -218,18 +222,16 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
     } finally {
       setLoading(false);
     }
-  }, [applyChargeData, createCharge, parcelId, router]);
+  }, [applyChargeData, createBulkCharge, router]);
 
   useEffect(() => {
     if (initOnceRef.current) return;
     initOnceRef.current = true;
-    void initPayPage();
-  }, [initPayPage]);
+    void initPage();
+  }, [initPage]);
 
-  // Poll.
   useEffect(() => {
     if (!charge || charge.status !== "pending") return;
-    if (canceledRef.current) return;
     if (switchingRef.current) return;
     const tick = async () => {
       if (switchingRef.current) return;
@@ -238,16 +240,13 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
         return;
       }
       try {
-        const res = await fetch(`/api/payment/charges/${charge.paymentId}`);
-        if (res.ok) {
-          const json = (await res.json()) as { ok: true; data: ChargeData };
-          if (json.ok) {
-            await applyChargeData(json.data);
-            if (json.data.status === "succeeded") return;
-          }
+        const next = await loadChargeStatus(charge.paymentId, charge);
+        if (next) {
+          await applyChargeData(next);
+          if (next.status === "succeeded") return;
         }
       } catch {
-        // Swallow transient errors; keep polling.
+        // keep polling
       }
       pollTimer.current = setTimeout(tick, POLL_INTERVAL_MS);
     };
@@ -255,18 +254,14 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
     return () => {
       if (pollTimer.current) clearTimeout(pollTimer.current);
     };
-  }, [charge, applyChargeData]);
+  }, [charge, applyChargeData, loadChargeStatus]);
 
-  // On success → brief confirmation then payment success summary page.
   useEffect(() => {
     if (charge?.status !== "succeeded") return;
-    const t = setTimeout(() => {
-      router.replace(buildPaymentSuccessUrl(charge));
-    }, PAY_SUCCESS_REDIRECT_MS);
+    const t = setTimeout(() => router.replace("/payment"), PAY_SUCCESS_REDIRECT_MS);
     return () => clearTimeout(t);
-  }, [charge, router]);
+  }, [charge?.status, router]);
 
-  // Countdown tick.
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
@@ -277,22 +272,6 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
     window.location.assign(redirectUrl);
   }, []);
 
-  const handleCancel = async () => {
-    if (!charge || canceling) return;
-    setCanceling(true);
-    canceledRef.current = true;
-    let parcelCanceled = false;
-    try {
-      const res = await fetch(`/api/payment/charges/${charge.paymentId}/cancel`, { method: "POST" });
-      const json = (await res.json().catch(() => ({}))) as { parcelCanceled?: boolean };
-      parcelCanceled = Boolean(json?.parcelCanceled);
-    } catch {
-      // ignore — fall through to the safer redirect below
-    } finally {
-      router.replace(parcelCanceled ? "/parcels" : "/send/review");
-    }
-  };
-
   const switchMethod = useCallback(
     async (nextMethod: PaymentMethodId) => {
       if (!charge || switching) return;
@@ -300,55 +279,33 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
       switchingRef.current = true;
       setError(null);
       try {
-        const res = await fetch("/api/payment/charges", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ parcelId, paymentMethod: nextMethod }),
-        });
-        const json = (await res.json()) as
-          | { ok: true; data: { paymentId: string; redirectUrl: string | null } }
-          | { ok: false; error: string };
-        if (!res.ok || !("ok" in json) || !json.ok) {
-          setError(
-            ("error" in json && json.error) || "ไม่สามารถเปิดแอปธนาคารได้",
-          );
-          return;
-        }
-        const statusData = await loadChargeStatus(json.data.paymentId);
-        if (!statusData) {
-          setError("ไม่สามารถโหลดสถานะได้");
-          return;
-        }
-        await applyChargeData(statusData);
-        const redirectUrl = statusData.redirectUrl ?? json.data.redirectUrl;
+        const created = await createBulkCharge(nextMethod);
+        if (!created) return;
+        const redirectUrl = created.redirectUrl;
         if (redirectUrl) {
           openBankApp(redirectUrl);
         } else {
           setError("ไม่พบลิงก์เปิดแอปธนาคาร กรุณาลองอีกครั้ง");
         }
-      } catch {
-        setError("เครือข่ายผิดพลาด กรุณาลองใหม่");
       } finally {
         switchingRef.current = false;
         setSwitching(null);
       }
     },
-    [applyChargeData, charge, loadChargeStatus, openBankApp, parcelId, switching],
+    [charge, createBulkCharge, openBankApp, switching],
   );
 
   const switchToPromptPay = useCallback(async () => {
     if (!charge || switching || isPromptPayCharge(charge)) return;
     setError(null);
-    await createCharge(PROMPTPAY_METHOD_ID);
-  }, [charge, createCharge, switching]);
+    await createBulkCharge(PROMPTPAY_METHOD_ID);
+  }, [charge, createBulkCharge, switching]);
 
   const handleSimulate = async () => {
     if (!charge || simulating) return;
     setSimulating(true);
     try {
       await fetch(`/api/payment/dev-simulate/${charge.paymentId}`, { method: "POST" });
-    } catch {
-      // ignore — poll will catch state change anyway
     } finally {
       setSimulating(false);
     }
@@ -359,17 +316,14 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
     const ms = new Date(charge.expiresAt).getTime() - now;
     return Math.max(0, Math.floor(ms / 1000));
   })();
-  const mm = remainingSeconds != null ? String(Math.floor(remainingSeconds / 60)).padStart(2, "0") : "--";
+  const mm =
+    remainingSeconds != null ? String(Math.floor(remainingSeconds / 60)).padStart(2, "0") : "--";
   const ss = remainingSeconds != null ? String(remainingSeconds % 60).padStart(2, "0") : "--";
-
-  const formatTHB = (n: number): string =>
-    new Intl.NumberFormat("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
   const formattedAmount = charge?.amount != null ? formatTHB(Number(charge.amount)) : "-";
-
   const showMockButton = process.env.NEXT_PUBLIC_PAYMENT_MOCK === "1";
   const activeBankMethod =
-    charge && !isPromptPayCharge(charge)
-      ? BANK_PAYMENT_METHODS.find((m) => m.id === charge.paymentMethod)
+    charge && isBankPaymentMethod(charge.paymentMethod)
+      ? BANK_PAYMENT_METHODS.find((m) => m.id === charge.paymentMethod) ?? null
       : null;
 
   return (
@@ -378,15 +332,19 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
         <div className="mx-auto w-full max-w-lg">
           <button
             type="button"
-            onClick={() => setShowLeaveDialog(true)}
+            onClick={() => {
+              if (charge?.status === "pending") setShowLeaveDialog(true);
+              else router.push("/payment");
+            }}
             className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white/95"
-            aria-label="กลับไปหน้าสรุปคำสั่งซื้อ"
           >
             <span aria-hidden>←</span>
             <span>กลับ</span>
           </button>
-          <h1 className="text-3xl font-bold leading-none">ชำระเงิน</h1>
-          <p className="mt-1 text-sm text-white/80">สแกน QR พร้อมเพย์ หรือเลือกแอปธนาคารด้านล่าง</p>
+          <h1 className="text-3xl font-bold leading-none">ชำระยอดค้างทั้งหมด</h1>
+          <p className="mt-1 text-sm text-white/80">
+            สแกน QR เดียว ชำระครบทุกรายการ{charge ? ` · ${charge.itemCount} รายการ` : ""}
+          </p>
         </div>
       </section>
 
@@ -397,7 +355,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
               <p>{error}</p>
               <button
                 type="button"
-                onClick={() => createCharge()}
+                onClick={() => void createBulkCharge()}
                 className="mt-2 inline-flex items-center rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-700"
               >
                 สร้าง QR ใหม่
@@ -413,19 +371,11 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
               </div>
             ) : charge?.status === "pending" ? (
               <div className="flex flex-col items-center gap-3">
-                <p className="text-sm font-medium text-slate-500">ยอดที่ต้องชำระ</p>
+                <p className="text-sm font-medium text-slate-500">ยอดรวมที่ต้องชำระ</p>
                 <p className="text-4xl font-semibold leading-none text-[#2726F5]">
-                  ฿ {formatTHB(charge.outstanding.outstanding)}
+                  ฿ {formattedAmount}
                 </p>
-                {charge.outstanding.totalOwed > charge.outstanding.outstanding ? (
-                  <p className="text-xs text-slate-500">
-                    ชำระแล้ว ฿ {formatTHB(charge.outstanding.totalOwed - charge.outstanding.outstanding)} ·
-                    ยอดเต็ม ฿ {formatTHB(charge.outstanding.totalOwed)}
-                  </p>
-                ) : null}
-                {charge.barcode || charge.trackingId ? (
-                  <p className="text-xs text-slate-500">หมายเลขพัสดุ: {charge.barcode || charge.trackingId}</p>
-                ) : null}
+                <p className="text-xs text-slate-500">รวม {charge.itemCount} รายการค้างชำระ</p>
 
                 {isPromptPayCharge(charge) ? (
                   <>
@@ -453,7 +403,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                         {promptPayQrDataUrl ? (
                           <Image
                             src={promptPayQrDataUrl}
-                            alt={`QR PromptPay สำหรับยอด ${formattedAmount} บาท`}
+                            alt={`QR PromptPay สำหรับยอดรวม ${formattedAmount} บาท`}
                             width={256}
                             height={256}
                             unoptimized
@@ -530,7 +480,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 {showMockButton ? (
                   <button
                     type="button"
-                    onClick={handleSimulate}
+                    onClick={() => void handleSimulate()}
                     disabled={simulating}
                     className="mt-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800 disabled:opacity-50"
                   >
@@ -545,14 +495,9 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 </div>
                 <p className="text-xl font-semibold text-emerald-700">ชำระเงินสำเร็จ</p>
                 <p className="text-sm text-slate-600">
-                  ยอดชำระ ฿ {formattedAmount} บาท
+                  ชำระครบ {charge.itemCount} รายการ รวม ฿ {formattedAmount} บาท
                 </p>
-                {charge.barcode || charge.trackingId ? (
-                  <p className="text-xs text-slate-500">
-                    หมายเลขพัสดุ: {charge.barcode || charge.trackingId}
-                  </p>
-                ) : null}
-                <p className="mt-1 text-sm text-slate-500">กำลังพาไปหน้าสรุป...</p>
+                <p className="mt-1 text-sm text-slate-500">กำลังพากลับหน้าชำระเงิน...</p>
               </div>
             ) : charge?.status === "expired" ? (
               <div className="flex flex-col items-center gap-3 py-8 text-center">
@@ -565,7 +510,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 </p>
                 <button
                   type="button"
-                  onClick={() => createCharge()}
+                  onClick={() => void createBulkCharge()}
                   disabled={loading}
                   className="mt-2 inline-flex items-center gap-2 rounded-full bg-[#2726F5] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
                 >
@@ -576,10 +521,10 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => router.push(`/parcels/${encodeURIComponent(parcelId)}`)}
+                  onClick={() => router.push("/payment")}
                   className="text-sm font-medium text-[#2726F5] underline"
                 >
-                  ดูรายละเอียดพัสดุ
+                  กลับหน้าค้างชำระ
                 </button>
               </div>
             ) : charge?.status === "failed" ? (
@@ -593,7 +538,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 </p>
                 <button
                   type="button"
-                  onClick={() => createCharge()}
+                  onClick={() => void createBulkCharge()}
                   disabled={loading}
                   className="mt-2 inline-flex items-center gap-2 rounded-full bg-[#2726F5] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
                 >
@@ -604,10 +549,10 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => router.push(`/parcels/${encodeURIComponent(parcelId)}`)}
+                  onClick={() => router.push("/payment")}
                   className="text-sm font-medium text-[#2726F5] underline"
                 >
-                  ดูรายละเอียดพัสดุ
+                  กลับหน้าค้างชำระ
                 </button>
               </div>
             ) : charge?.status === "canceled" ? (
@@ -621,7 +566,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 </p>
                 <button
                   type="button"
-                  onClick={() => createCharge()}
+                  onClick={() => void createBulkCharge()}
                   disabled={loading}
                   className="mt-2 inline-flex items-center gap-2 rounded-full bg-[#2726F5] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
                 >
@@ -632,10 +577,10 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => router.push(`/parcels/${encodeURIComponent(parcelId)}`)}
+                  onClick={() => router.push("/payment")}
                   className="text-sm font-medium text-[#2726F5] underline"
                 >
-                  ดูรายละเอียดพัสดุ
+                  กลับหน้าค้างชำระ
                 </button>
               </div>
             ) : null}
@@ -643,9 +588,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
 
           {charge?.status === "pending" && isPromptPayCharge(charge) ? (
             <div className="rounded-lg bg-white p-4 shadow-sm">
-              <p className="mb-3 text-sm font-medium text-slate-700">
-                หรือชำระผ่านแอปธนาคาร / วอลเล็ต
-              </p>
+              <p className="mb-3 text-sm font-medium text-slate-700">หรือชำระผ่านแอปธนาคาร / วอลเล็ต</p>
               <div className="grid grid-cols-2 gap-2">
                 {BANK_PAYMENT_METHODS.map((m) => {
                   const selected = charge.paymentMethod === m.id;
@@ -653,7 +596,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                     <button
                       key={m.id}
                       type="button"
-                      onClick={() => switchMethod(m.id)}
+                      onClick={() => void switchMethod(m.id)}
                       disabled={switching !== null}
                       aria-pressed={selected}
                       aria-label={m.labelTh}
@@ -673,9 +616,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                       {switching === m.id ? (
                         <span className="mt-2 text-[11px] text-[#2726F5]">กำลังเปิดแอป...</span>
                       ) : selected ? (
-                        <span className="mt-2 text-[11px] font-medium text-[#2726F5]">
-                          กำลังใช้งาน
-                        </span>
+                        <span className="mt-2 text-[11px] font-medium text-[#2726F5]">กำลังใช้งาน</span>
                       ) : (
                         <span className="mt-2 text-center text-xs font-medium text-slate-700">
                           {m.labelTh}
@@ -685,6 +626,28 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                   );
                 })}
               </div>
+            </div>
+          ) : null}
+
+          {charge?.items && charge.items.length > 0 ? (
+            <div className="space-y-2">
+              <h2 className="px-0.5 text-sm font-semibold text-slate-800">รายการในยอดรวมนี้</h2>
+              {charge.items.map((item) => (
+                <div
+                  key={item.parcelId}
+                  className="rounded-lg bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200/80"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-900">{item.displayCode}</p>
+                      <p className="truncate text-xs text-slate-500">{item.routeLabel}</p>
+                    </div>
+                    <p className="shrink-0 text-sm font-semibold text-[#2726F5]">
+                      ฿ {formatTHB(item.outstanding)}
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : null}
         </div>
@@ -697,9 +660,9 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
-            aria-labelledby="leave-payment-title"
+            aria-labelledby="leave-bulk-payment-title"
           >
-            <h2 id="leave-payment-title" className="text-base font-semibold text-slate-900">
+            <h2 id="leave-bulk-payment-title" className="text-base font-semibold text-slate-900">
               กำลังดำเนินการชำระเงิน
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-slate-600">
@@ -715,10 +678,10 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
               </button>
               <button
                 type="button"
-                onClick={() => router.push("/parcels")}
+                onClick={() => router.push("/payment")}
                 className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white"
               >
-                ออก
+                ออกจากหน้านี้
               </button>
             </div>
           </div>

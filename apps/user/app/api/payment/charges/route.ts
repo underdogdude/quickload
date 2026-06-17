@@ -1,4 +1,9 @@
 import { and, desc, eq, gt } from "drizzle-orm";
+import { readBulkMasterMeta } from "@quickload/shared/bulk-payment";
+import {
+  expireBulkPaymentGroup,
+  findPendingBulkMasterForParcel,
+} from "@quickload/shared/bulk-payment-db";
 import { getDb, parcels, payments } from "@quickload/shared/db";
 import {
   createBeamCharge,
@@ -12,7 +17,7 @@ import {
 } from "@quickload/shared/payment-methods";
 import { computeOutstanding } from "@quickload/shared/penalty";
 import { NextResponse } from "next/server";
-import { sendPaymentFailedFlexForPayment, sendPaymentSuccessFlexForPayment } from "@/lib/payment-line-notify";
+import { sendPaymentTerminalFlexIfSingle, sendPaymentSuccessFlexForPayment, sendBulkPaymentSuccessFlex } from "@/lib/payment-line-notify";
 import { resolvePublicBaseUrl } from "@/lib/public-base-url";
 import { requireLineSession } from "@/lib/require-user";
 
@@ -68,9 +73,14 @@ async function reconcilePaymentRow(paymentRow: PaymentRow): Promise<{
     if (sync.synced) {
       try {
         if (sync.outcome === "succeeded") {
-          await sendPaymentSuccessFlexForPayment(sync.paymentId, sync.parcelId);
+          const bulkMeta = readBulkMasterMeta(paymentRow.rawCreateResponse);
+          if (bulkMeta) {
+            await sendBulkPaymentSuccessFlex(sync.paymentId);
+          } else {
+            await sendPaymentSuccessFlexForPayment(sync.paymentId, sync.parcelId);
+          }
         } else {
-          await sendPaymentFailedFlexForPayment(sync.paymentId, sync.parcelId, sync.outcome);
+          await sendPaymentTerminalFlexIfSingle(sync.paymentId, sync.parcelId, sync.outcome);
         }
       } catch (lineErr) {
         const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
@@ -126,6 +136,14 @@ export async function GET(request: Request) {
           trackingId: parcel.trackingId,
           barcode: parcel.barcode,
         },
+      });
+    }
+
+    const bulkMaster = await findPendingBulkMasterForParcel(db, parcelId);
+    if (bulkMaster) {
+      return NextResponse.json({
+        ok: true,
+        data: { bulkPayAll: true as const, paymentId: bulkMaster.id },
       });
     }
 
@@ -233,6 +251,11 @@ export async function POST(request: Request) {
     // Step 3: always rotate to a fresh charge.
     // Reusing old pending rows can surface stale QR that Beam already finalized.
     const now = new Date();
+    const bulkMaster = await findPendingBulkMasterForParcel(db, parcelId);
+    if (bulkMaster) {
+      await expireBulkPaymentGroup(db, bulkMaster);
+    }
+
     // Step 4: expire any existing pending rows for this parcel.
     await db
       .update(payments)

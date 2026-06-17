@@ -6,7 +6,7 @@ import {
   verifyBeamWebhookSignature,
 } from "@quickload/shared/beam";
 import { NextResponse } from "next/server";
-import { sendPaymentFailedFlexForPayment, sendPaymentSuccessFlexForPayment } from "@/lib/payment-line-notify";
+import { sendPaymentTerminalFlexIfSingle, sendBulkPaymentSuccessFlex, sendPaymentSuccessFlexForPayment } from "@/lib/payment-line-notify";
 
 // Next.js App Router: disable caching and body parsing for raw signature verification.
 export const dynamic = "force-dynamic";
@@ -67,7 +67,9 @@ export async function POST(request: Request) {
           `[payment.beam-webhook] failed (body) paymentId=${result.paymentId} parcelId=${result.parcelId}`,
         );
         try {
-          await sendPaymentFailedFlexForPayment(result.paymentId, result.parcelId, "failed");
+          await sendPaymentTerminalFlexIfSingle(result.paymentId, result.parcelId, "failed", {
+            bulk: result.bulk,
+          });
         } catch (lineErr) {
           const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
           console.warn("[line-flex] payment failed send failed:", msg);
@@ -85,7 +87,9 @@ export async function POST(request: Request) {
       });
       if (result) {
         try {
-          await sendPaymentFailedFlexForPayment(result.paymentId, result.parcelId, "expired");
+          await sendPaymentTerminalFlexIfSingle(result.paymentId, result.parcelId, "expired", {
+            bulk: result.bulk,
+          });
         } catch (lineErr) {
           const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
           console.warn("[line-flex] payment expired send failed:", msg);
@@ -101,7 +105,9 @@ export async function POST(request: Request) {
       });
       if (result) {
         try {
-          await sendPaymentFailedFlexForPayment(result.paymentId, result.parcelId, "canceled");
+          await sendPaymentTerminalFlexIfSingle(result.paymentId, result.parcelId, "canceled", {
+            bulk: result.bulk,
+          });
         } catch (lineErr) {
           const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
           console.warn("[line-flex] payment canceled send failed:", msg);
@@ -125,7 +131,11 @@ export async function POST(request: Request) {
           `[payment.beam-webhook] paid paymentId=${result.paymentId} parcelId=${result.parcelId}`,
         );
         try {
-          await sendPaymentSuccessFlexForPayment(result.paymentId, result.parcelId);
+          if (result.bulk) {
+            await sendBulkPaymentSuccessFlex(result.paymentId);
+          } else {
+            await sendPaymentSuccessFlexForPayment(result.paymentId, result.parcelId);
+          }
         } catch (lineErr) {
           const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
           console.warn("[line-flex] payment success send failed:", msg);
@@ -152,7 +162,9 @@ export async function POST(request: Request) {
         `[payment.beam-webhook] ${terminalStatus} paymentId=${result.paymentId} parcelId=${result.parcelId}`,
       );
       try {
-        await sendPaymentFailedFlexForPayment(result.paymentId, result.parcelId, terminalStatus);
+        await sendPaymentTerminalFlexIfSingle(result.paymentId, result.parcelId, terminalStatus, {
+          bulk: result.bulk,
+        });
       } catch (lineErr) {
         const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
         console.warn("[line-flex] payment failed send failed:", msg);
@@ -172,7 +184,9 @@ export async function POST(request: Request) {
     });
     if (result) {
       try {
-        await sendPaymentFailedFlexForPayment(result.paymentId, result.parcelId, "failed");
+        await sendPaymentTerminalFlexIfSingle(result.paymentId, result.parcelId, "failed", {
+          bulk: result.bulk,
+        });
       } catch (lineErr) {
         const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
         console.warn("[line-flex] payment failed send failed:", msg);
@@ -188,7 +202,9 @@ export async function POST(request: Request) {
     });
     if (result) {
       try {
-        await sendPaymentFailedFlexForPayment(result.paymentId, result.parcelId, "expired");
+        await sendPaymentTerminalFlexIfSingle(result.paymentId, result.parcelId, "expired", {
+          bulk: result.bulk,
+        });
       } catch (lineErr) {
         const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
         console.warn("[line-flex] payment expired send failed:", msg);
@@ -208,7 +224,9 @@ export async function POST(request: Request) {
     });
     if (result) {
       try {
-        await sendPaymentFailedFlexForPayment(result.paymentId, result.parcelId, "canceled");
+        await sendPaymentTerminalFlexIfSingle(result.paymentId, result.parcelId, "canceled", {
+          bulk: result.bulk,
+        });
       } catch (lineErr) {
         const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
         console.warn("[line-flex] payment canceled send failed:", msg);
