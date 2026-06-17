@@ -782,7 +782,7 @@ export function createPaymentReminderDay1FlexMessage(input: PaymentReminderFlexI
   };
 }
 
-/** Day 7 — clear deadline, respectful tone (loss aversion without aggression). */
+/** Day 7 — final notice before formal debt collection escalation. */
 export function createPaymentReminderDay7FlexMessage(input: PaymentReminderFlexInput): {
   type: "flex";
   altText: string;
@@ -793,7 +793,7 @@ export function createPaymentReminderDay7FlexMessage(input: PaymentReminderFlexI
 
   return {
     type: "flex",
-    altText: `วันสุดท้ายชำระค่าส่ง ${trackingNumber}`,
+    altText: `แจ้งเตือนครั้งสุดท้าย พัสดุ ${trackingNumber}`,
     contents: {
       type: "bubble",
       size: "mega",
@@ -805,17 +805,36 @@ export function createPaymentReminderDay7FlexMessage(input: PaymentReminderFlexI
         contents: [
           {
             type: "text",
-            text: "วันสุดท้ายของกำหนดชำระ",
+            text: "🚨 แจ้งเตือนครั้งสุดท้าย",
             weight: "bold",
             size: "xl",
-            color: "#111827",
+            color: "#BE123C",
           },
           {
             type: "text",
-            text: "ครบ 7 วันแล้วค่ะ ยังไม่ได้รับชำระสำหรับพัสดุนี้ กดชำระได้เลยด้านล่างนะคะ",
             size: "sm",
             color: "#6B7280",
             wrap: true,
+            contents: [
+              {
+                type: "span",
+                text: "พัสดุนี้ค้างชำระครบ 7 วัน\n",
+              },
+              {
+                type: "span",
+                text: "กรุณาชำระภายใน ",
+              },
+              {
+                type: "span",
+                text: "24 ชั่วโมง",
+                weight: "bold",
+                color: "#6B7280",
+              },
+              {
+                type: "span",
+                text: " ก่อนรายการจะถูกส่งต่อเข้าสู่ขั้นตอนทวงถามหนี้ตามกฎหมาย",
+              },
+            ],
           },
           { type: "separator", margin: "md" },
           {
