@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/react";
 import "./globals.css";
 import { getCurrentUser } from "@/lib/current-user";
 import { BottomNav, BottomNavSpacer } from "./bottom-nav";
@@ -46,6 +47,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         ) : (
           <div>{children}</div>
         )}
+        <Analytics />
       </body>
     </html>
   );
