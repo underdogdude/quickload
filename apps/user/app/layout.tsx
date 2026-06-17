@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
+import { GoogleAnalytics } from "@/lib/google-analytics";
 import { getCurrentUser } from "@/lib/current-user";
 import { BottomNav, BottomNavSpacer } from "./bottom-nav";
 import { LoggedInShell } from "./logged-in-shell";
@@ -47,7 +49,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         ) : (
           <div>{children}</div>
         )}
+        <GoogleAnalytics />
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
