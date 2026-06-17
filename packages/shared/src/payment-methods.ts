@@ -28,16 +28,25 @@ export type PaymentMethodDef = {
   labelTh: string;
 };
 
+export type BankPaymentMethodDef = PaymentMethodDef & {
+  id: BankPaymentMethodId;
+  /** Public URL path to the bank/wallet logo (apps/user/public). */
+  logoSrc: string;
+};
+
 export const DEFAULT_PAYMENT_METHOD_ID = PROMPTPAY_METHOD_ID;
 
 /** Bank / wallet tiles — PromptPay is always the QR above, not a tile here. */
-export const BANK_PAYMENT_METHODS: ReadonlyArray<
-  PaymentMethodDef & { id: BankPaymentMethodId }
-> = [
-  { id: "kplus", beamType: "KPLUS", labelTh: "K PLUS" },
-  { id: "make", beamType: "MAKE", labelTh: "MAKE by KBank" },
-  { id: "scb_easy", beamType: "SCB_EASY", labelTh: "SCB Easy" },
-  { id: "truemoney", beamType: "TRUE_MONEY", labelTh: "TrueMoney Wallet" },
+export const BANK_PAYMENT_METHODS: ReadonlyArray<BankPaymentMethodDef> = [
+  { id: "kplus", beamType: "KPLUS", labelTh: "K PLUS", logoSrc: "/kbank-logo.png" },
+  { id: "make", beamType: "MAKE", labelTh: "MAKE by KBank", logoSrc: "/make-logo.png" },
+  { id: "scb_easy", beamType: "SCB_EASY", labelTh: "SCB Easy", logoSrc: "/scb-logo.png" },
+  {
+    id: "truemoney",
+    beamType: "TRUE_MONEY",
+    labelTh: "TrueMoney Wallet",
+    logoSrc: "/truemoney-logo.png",
+  },
 ];
 
 /** @deprecated Use BANK_PAYMENT_METHODS for UI tiles. */

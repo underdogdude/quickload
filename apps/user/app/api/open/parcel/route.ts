@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { getDb, users } from "@quickload/shared/db";
 import { verifyFlexToken } from "@/lib/flex-token";
+import { resolvePublicBaseUrl } from "@/lib/public-base-url";
 import type { LineAppSession } from "@/lib/session";
 import { getSessionOptions } from "@/lib/session";
 
@@ -21,7 +22,7 @@ import { getSessionOptions } from "@/lib/session";
  */
 export async function GET(request: Request): Promise<Response> {
   try {
-    const { searchParams, origin } = new URL(request.url);
+    const { searchParams } = new URL(request.url);
     const token = searchParams.get("token")?.trim() ?? "";
 
     if (!token) {
@@ -65,8 +66,16 @@ export async function GET(request: Request): Promise<Response> {
     );
     await session.save();
 
-    const dest = new URL(`/parcels/${encodeURIComponent(payload.parcelId)}`, origin);
-    return NextResponse.redirect(dest, 302);
+    const baseUrl = resolvePublicBaseUrl(request);
+    if (!baseUrl) {
+      return NextResponse.json(
+        { ok: false, error: "ไม่สามารถสร้างลิงก์ได้ กรุณาติดต่อทีมงาน" },
+        { status: 500 },
+      );
+    }
+
+    const dest = new URL(`/parcels/${encodeURIComponent(payload.parcelId)}`, baseUrl);
+    return NextResponse.redirect(dest.toString(), 302);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Server error";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });

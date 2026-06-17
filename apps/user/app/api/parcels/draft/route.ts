@@ -11,38 +11,7 @@ import { pushLineMessage } from "@/lib/line-messaging";
 import { parsePositiveCm, validateParcelDimensionsCm } from "@/lib/parcel-dimensions";
 import { requireLineSession } from "@/lib/require-user";
 import { createFlexToken } from "@/lib/flex-token";
-
-function resolvePublicBaseUrl(request: Request): string | null {
-  const envBase =
-    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-    process.env.APP_BASE_URL?.trim() ||
-    process.env.PUBLIC_BASE_URL?.trim() ||
-    "";
-  if (envBase) {
-    try {
-      const host = new URL(envBase).host;
-      if (/^(0\.0\.0\.0|localhost)(:\d+)?$/i.test(host)) return null;
-    } catch {
-      return null;
-    }
-    return envBase.replace(/\/+$/, "");
-  }
-
-  const forwardedProto = request.headers.get("x-forwarded-proto")?.trim();
-  const forwardedHost = request.headers.get("x-forwarded-host")?.trim();
-  if (forwardedProto && forwardedHost && !/^(0\.0\.0\.0|localhost)(:\d+)?$/i.test(forwardedHost)) {
-    return `${forwardedProto}://${forwardedHost}`.replace(/\/+$/, "");
-  }
-
-  try {
-    const origin = new URL(request.url).origin;
-    const host = new URL(origin).host;
-    if (/^(0\.0\.0\.0|localhost)(:\d+)?$/i.test(host)) return null;
-    return origin.replace(/\/+$/, "");
-  } catch {
-    return null;
-  }
-}
+import { resolvePublicBaseUrl } from "@/lib/public-base-url";
 
 type CreateBody = {
   senderId?: string;

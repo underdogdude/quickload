@@ -490,25 +490,31 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                       onClick={() => switchMethod(m.id)}
                       disabled={switching !== null}
                       aria-pressed={selected}
-                      className={`flex flex-col items-start rounded-md border px-3 py-2.5 text-left transition disabled:opacity-50 ${
+                      aria-label={m.labelTh}
+                      className={`flex flex-col items-center justify-center rounded-md border px-3 py-3 transition disabled:opacity-50 ${
                         selected
                           ? "border-[#2726F5] bg-indigo-50 ring-1 ring-[#2726F5]/20"
                           : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100"
                       }`}
                     >
-                      <span
-                        className={`text-sm font-medium ${selected ? "text-[#2726F5]" : "text-slate-800"}`}
-                      >
-                        {m.labelTh}
-                      </span>
-                      <span className="mt-0.5 text-[11px] text-slate-500">เปิดแอปเพื่อชำระ</span>
+                      <Image
+                        src={m.logoSrc}
+                        alt=""
+                        width={56}
+                        height={56}
+                        className="h-14 w-14 rounded-lg object-contain"
+                      />
                       {switching === m.id ? (
-                        <span className="mt-1 text-[11px] text-[#2726F5]">กำลังเปิดแอป...</span>
+                        <span className="mt-2 text-[11px] text-[#2726F5]">กำลังเปิดแอป...</span>
                       ) : selected ? (
-                        <span className="mt-1 text-[11px] font-medium text-[#2726F5]">
+                        <span className="mt-2 text-[11px] font-medium text-[#2726F5]">
                           กำลังใช้งาน
                         </span>
-                      ) : null}
+                      ) : (
+                        <span className="mt-2 text-center text-xs font-medium text-slate-700">
+                          {m.labelTh}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
