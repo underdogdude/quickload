@@ -1,7 +1,7 @@
 // Generic SQL migration runner: `node apply-sql.mjs <relative-or-absolute-sql-path>`.
 // Uses the `postgres` npm dep already shipped with @quickload/shared — no psql required.
-// DATABASE_URL is read from apps/user/.env.local, apps/user/.env, packages/shared/.env,
-// or the process env (in that order).
+// DATABASE_URL: process env first (explicit override), then apps/user/.env.local,
+// apps/user/.env, packages/shared/.env.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -11,6 +11,9 @@ import postgres from "postgres";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function findDatabaseUrl() {
+  // Explicit env var wins so `DATABASE_URL=... pnpm db:apply:*` targets prod/staging.
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+
   const candidates = [
     path.join(__dirname, "../../../apps/user/.env.local"),
     path.join(__dirname, "../../../apps/user/.env"),
@@ -31,7 +34,7 @@ function findDatabaseUrl() {
       }
     }
   }
-  return process.env.DATABASE_URL ?? null;
+  return null;
 }
 
 const arg = process.argv[2];
