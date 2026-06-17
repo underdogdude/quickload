@@ -11,6 +11,7 @@ import { createOrderSuccessFlexMessage } from "@/lib/line-flex";
 import { pushLineMessage } from "@/lib/line-messaging";
 import { parsePositiveCm, validateParcelDimensionsCm } from "@/lib/parcel-dimensions";
 import { requireLineSession } from "@/lib/require-user";
+import { getSendAccessBlockForUser, sendAccessBlockedResponse } from "@/lib/send-access-block";
 import { createFlexToken } from "@/lib/flex-token";
 import { resolvePublicBaseUrl } from "@/lib/public-base-url";
 
@@ -39,6 +40,10 @@ function toPositiveNumber(value?: string) {
 export async function POST(request: Request) {
   try {
     const session = await requireLineSession();
+
+    const sendBlock = await getSendAccessBlockForUser(session.userId);
+    if (sendBlock.blocked) return sendAccessBlockedResponse();
+
     const body = (await request.json()) as CreateBody;
 
     const senderId = body.senderId?.trim();

@@ -24,7 +24,8 @@
     "./parcel-price-breakdown": "./src/parcel-price-breakdown.ts",
     "./parcel-billable-price": "./src/parcel-billable-price.ts",
     "./parcel-display-status": "./src/parcel-display-status.ts",
-    "./pricing-tier-lookup": "./src/pricing-tier-lookup.ts"
+    "./pricing-tier-lookup": "./src/pricing-tier-lookup.ts",
+    "./send-access-block": "./src/send-access-block.ts"
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",

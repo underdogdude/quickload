@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { getCurrentUser } from "@/lib/current-user";
 import { BottomNav, BottomNavSpacer } from "./bottom-nav";
+import { LoggedInShell } from "./logged-in-shell";
 import { NavigationFeedback } from "./navigation-feedback";
 import { RoutePrefetcher } from "./route-prefetcher";
 import { UserHeader } from "./user-header";
@@ -33,14 +34,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen bg-slate-50">
         <NavigationFeedback />
         {user.loggedIn ? (
-          <UserHeader displayName={user.displayName} pictureUrl={user.pictureUrl} />
-        ) : null}
-        <div>
-          {children}
-          {user.loggedIn ? <BottomNavSpacer /> : null}
-        </div>
-        {user.loggedIn ? <BottomNav /> : null}
-        {user.loggedIn ? <RoutePrefetcher /> : null}
+          <LoggedInShell>
+            <UserHeader displayName={user.displayName} pictureUrl={user.pictureUrl} />
+            <div>
+              {children}
+              <BottomNavSpacer />
+            </div>
+            <BottomNav />
+            <RoutePrefetcher />
+          </LoggedInShell>
+        ) : (
+          <div>{children}</div>
+        )}
       </body>
     </html>
   );

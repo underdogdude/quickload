@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import successIllustration from "../../../public/success.png";
-import { parcelBarcodeDataUrl, parcelQrDataUrl } from "@/lib/parcel-scan-media";
+import { SendLink } from "@/lib/send-access-ui";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 
@@ -38,8 +38,6 @@ type OrderApi = {
   cusProv: string | null;
   cusZipcode: string | null;
 };
-type ScanTab = "qr" | "barcode";
-
 function parseParcelSize(size: string | null): { dimensions: string; parcelType: string } {
   if (!size?.trim()) return { dimensions: "-", parcelType: "-" };
   const sep = " · ";
@@ -110,11 +108,6 @@ function SuccessInner() {
   const [loading, setLoading] = useState(Boolean(parcelId));
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [scanTab, setScanTab] = useState<ScanTab>("qr");
-  const [scanQrUrl, setScanQrUrl] = useState<string | null>(null);
-  const [scanBarcodeUrl, setScanBarcodeUrl] = useState<string | null>(null);
-  const [scanCodesLoading, setScanCodesLoading] = useState(false);
-  const [scanCodesError, setScanCodesError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!parcelId) {
@@ -167,51 +160,6 @@ function SuccessInner() {
         ? parcelTrackingId
         : "";
 
-  /** Thailand Post item id on the label (13 chars, e.g. WB222126989TH) — must match what scanners expect. */
-  const scanPayload = useMemo(() => {
-    const b = barcode.trim();
-    if (b) return b;
-    const t = parcelTrackingId.trim();
-    if (t) return t;
-    return referenceCode.trim();
-  }, [barcode, parcelTrackingId, referenceCode]);
-
-  useEffect(() => {
-    if (!scanPayload || loading) {
-      setScanQrUrl(null);
-      setScanBarcodeUrl(null);
-      setScanCodesLoading(false);
-      setScanCodesError(null);
-      return;
-    }
-    let cancelled = false;
-    setScanCodesLoading(true);
-    setScanCodesError(null);
-    (async () => {
-      try {
-        const [qr, bcDataUrl] = await Promise.all([
-          parcelQrDataUrl(scanPayload),
-          Promise.resolve().then(() => parcelBarcodeDataUrl(scanPayload)),
-        ]);
-        if (!cancelled) {
-          setScanQrUrl(qr);
-          setScanBarcodeUrl(bcDataUrl);
-        }
-      } catch {
-        if (!cancelled) {
-          setScanQrUrl(null);
-          setScanBarcodeUrl(null);
-          setScanCodesError("สร้าง QR / บาร์โค้ดไม่สำเร็จ");
-        }
-      } finally {
-        if (!cancelled) setScanCodesLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [scanPayload, loading]);
-
   async function copyTracking() {
     try {
       const toCopy = barcode || referenceCode || parcelTrackingId;
@@ -254,23 +202,6 @@ function SuccessInner() {
     ? [order.cusAdd, order.cusSub, order.cusAmp, order.cusProv, order.cusZipcode].filter(Boolean).join(", ")
     : "";
 
-  const labelPdfUrl = parcelId ? `/api/parcels/${encodeURIComponent(parcelId)}/label.pdf` : "";
-
-  function onDownloadLabelPdf() {
-    if (!labelPdfUrl) return;
-    const a = document.createElement("a");
-    a.href = labelPdfUrl;
-    a.download = `parcel-label-${(barcode || referenceCode || parcelTrackingId || "label").replace(/[^\w-]+/g, "_")}.pdf`;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    a.click();
-  }
-
-  function onOpenLabelPrintTab() {
-    if (!labelPdfUrl) return;
-    window.open(labelPdfUrl, "_blank", "noopener,noreferrer");
-  }
-
   return (
     <main className="min-h-screen bg-slate-100 pb-40 print:pb-0">
       <section className="relative bg-[#2726F5] px-5 pb-24 pt-8 text-white print:hidden">
@@ -312,13 +243,16 @@ function SuccessInner() {
             <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>
           ) : null}
 
-          {/* Tracking + PromptPay QR */}
           <div className="rounded-2xl bg-white p-5 shadow-md ring-1 ring-slate-200/80 print:shadow-none pt-20">
             {loading ? (
               <div className="space-y-4">
                 <div className="mx-auto h-4 w-24 animate-pulse rounded bg-slate-200" />
                 <div className="mx-auto h-8 w-48 max-w-full animate-pulse rounded bg-slate-200" />
-                <div className="mx-auto h-56 w-56 animate-pulse rounded-lg bg-slate-100" />
+                <div className="mt-6 space-y-3">
+                  <div className="h-12 animate-pulse rounded bg-slate-100" />
+                  <div className="h-12 animate-pulse rounded bg-slate-100" />
+                  <div className="h-12 animate-pulse rounded bg-slate-100" />
+                </div>
               </div>
             ) : (
               <>
@@ -343,139 +277,39 @@ function SuccessInner() {
 
                 <hr className="my-5 border-slate-100" />
 
-                <div className="flex flex-col items-center">
-                  <div className="mb-3 grid w-full max-w-[14rem] grid-cols-2 rounded-full bg-slate-100 p-1 text-[11px] font-medium">
-                    <button
-                      type="button"
-                      onClick={() => setScanTab("qr")}
-                      className={`rounded-full px-3 py-1.5 transition-colors ${
-                        scanTab === "qr" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
-                      }`}
-                      aria-pressed={scanTab === "qr"}
-                    >
-                      QR CODE
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setScanTab("barcode")}
-                      className={`rounded-full px-3 py-1.5 transition-colors ${
-                        scanTab === "barcode" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
-                      }`}
-                      aria-pressed={scanTab === "barcode"}
-                    >
-                      BARCODE
-                    </button>
-                  </div>
-                  <div className="flex min-h-[14rem] w-full max-w-[16rem] flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-center text-xs text-slate-500">
-                    {!scanPayload ? (
-                      <span>ยังไม่มีหมายเลขติดตามสำหรับสร้างรหัสสแกน</span>
-                    ) : scanCodesLoading ? (
-                      <span className="text-slate-400">กำลังสร้างรหัส…</span>
-                    ) : scanCodesError ? (
-                      <span className="text-rose-600">{scanCodesError}</span>
-                    ) : scanTab === "qr" && scanQrUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- data URL from qrcode
-                      <img src={scanQrUrl} alt="" className="h-[220px] w-[220px] max-w-full object-contain" />
-                    ) : scanTab === "barcode" && scanBarcodeUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- data URL from jsbarcode
-                      <img src={scanBarcodeUrl} alt="" className="max-h-32 w-full max-w-full object-contain" />
-                    ) : (
-                      <span>ไม่สามารถแสดงรหัสได้</span>
-                    )}
-                  </div>
-                  {scanPayload ? (
-                    <p className="mt-2 text-center font-mono text-[10px] text-slate-500 break-all">
-                      สแกนแล้วได้: {scanPayload}
-                    </p>
+                <div className="px-1">
+                  <h2 className="border-b border-slate-100 py-3 text-base font-bold text-slate-900 text-center">สรุปข้อมูลพัสดุ</h2>
+                  <SummaryRow label="ผู้ส่ง">
+                    <div>
+                      {shipperLine1 ? <span className="block">{shipperLine1}</span> : <span className="font-normal text-slate-400">-</span>}
+                      {shipperLine2 ? <span className="mt-1 block text-xs font-normal text-slate-600">{shipperLine2}</span> : null}
+                    </div>
+                  </SummaryRow>
+                  <SummaryRow label="ผู้รับ">
+                    <div>
+                      {recipientLine1 ? (
+                        <span className="block">{recipientLine1}</span>
+                      ) : parcel?.destination ? (
+                        <span className="block">{parcel.destination}</span>
+                      ) : (
+                        <span className="font-normal text-slate-400">-</span>
+                      )}
+                      {recipientLine2 ? <span className="mt-1 block text-xs font-normal text-slate-600">{recipientLine2}</span> : null}
+                    </div>
+                  </SummaryRow>
+                  <SummaryRow label="น้ำหนัก">{formatWeightGrams(parcel, order)}</SummaryRow>
+                  <SummaryRow label="ขนาด">{sizeDisplay}</SummaryRow>
+                  <SummaryRow label="ประเภท">{typeDisplay}</SummaryRow>
+                  {referenceCode ? (
+                    <div className="flex flex-col gap-0.5 border-t border-slate-50 py-3 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
+                      <p className="text-[11px] text-slate-400">Reference code</p>
+                      <p className="break-all font-mono text-[11px] text-slate-400 sm:text-right">{referenceCode}</p>
+                    </div>
                   ) : null}
-                  <p className="mt-3 text-center text-[11px] leading-relaxed text-slate-400">
-                    ใช้ QR CODE หรือ BARCODE นี้สำหรับให้เจ้าหน้าที่สแกนเพื่อพิมพ์ใบปะหน้า ที่ไปรษณีย์ไทยได้ทุกสาขา
-                  </p>
                 </div>
               </>
             )}
           </div>
-
-          {/* Parcel summary */}
-          {!loading ? (
-            <div className="rounded-2xl bg-white px-4 py-2 shadow-sm ring-1 ring-slate-200/80 print:shadow-none">
-              <h2 className="border-b border-slate-100 py-3 text-base font-bold text-slate-900">สรุปข้อมูลพัสดุ</h2>
-              <SummaryRow label="ผู้ส่ง">
-                <div>
-                  {shipperLine1 ? <span className="block">{shipperLine1}</span> : <span className="font-normal text-slate-400">-</span>}
-                  {shipperLine2 ? <span className="mt-1 block text-xs font-normal text-slate-600">{shipperLine2}</span> : null}
-                </div>
-              </SummaryRow>
-              <SummaryRow label="ผู้รับ">
-                <div>
-                  {recipientLine1 ? (
-                    <span className="block">{recipientLine1}</span>
-                  ) : parcel?.destination ? (
-                    <span className="block">{parcel.destination}</span>
-                  ) : (
-                    <span className="font-normal text-slate-400">-</span>
-                  )}
-                  {recipientLine2 ? <span className="mt-1 block text-xs font-normal text-slate-600">{recipientLine2}</span> : null}
-                </div>
-              </SummaryRow>
-              <SummaryRow label="น้ำหนัก">{formatWeightGrams(parcel, order)}</SummaryRow>
-              <SummaryRow label="ขนาด">{sizeDisplay}</SummaryRow>
-              <SummaryRow label="ประเภท">{typeDisplay}</SummaryRow>
-              {referenceCode ? (
-                <div className="flex flex-col gap-0.5 border-t border-slate-50 py-3 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
-                  <p className="text-[11px] text-slate-400">Reference code</p>
-                  <p className="break-all font-mono text-[11px] text-slate-400 sm:text-right">{referenceCode}</p>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {/* Label actions */}
-          {!loading ? (
-            <div className="space-y-3 print:hidden">
-              <div className="flex items-center gap-3 my-8">
-                <span className="h-px flex-1 bg-slate-300" />
-                <span className="text-sm font-normal text-slate-500">ใบปะหน้า</span>
-                <span className="h-px flex-1 bg-slate-300" />
-              </div>
-              <div className="flex justify-center gap-10">
-              <button
-                type="button"
-                onClick={onDownloadLabelPdf}
-                disabled={!labelPdfUrl}
-                className="flex flex-col items-center gap-2 text-slate-700"
-              >
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#E8E4FF] text-[#5B4FCF] shadow-sm">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-7 w-7" aria-hidden>
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                    />
-                  </svg>
-                </span>
-                <span className="text-xs font-medium">ดาวน์โหลดใบปะหน้า</span>
-              </button>
-              <button
-                type="button"
-                onClick={onOpenLabelPrintTab}
-                disabled={!labelPdfUrl}
-                className="flex flex-col items-center gap-2 text-slate-700"
-              >
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#E8E4FF] text-[#5B4FCF] shadow-sm">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-7 w-7" aria-hidden>
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"
-                    />
-                  </svg>
-                </span>
-                <span className="text-xs font-medium">พิมพ์ใบปะหน้า</span>
-              </button>
-              </div>
-            </div>
-          ) : null}
         </div>
       </section>
 
@@ -489,12 +323,9 @@ function SuccessInner() {
               ติดตามพัสดุ
             </Link>
           ) : (
-            <Link
-              href="/send"
-              className="flex-1 rounded-full bg-[#2726F5] py-3 text-center text-sm font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)]"
-            >
+            <SendLink className="flex-1 rounded-full bg-[#2726F5] py-3 text-center text-sm font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)]">
               จัดส่งเพิ่มเติม
-            </Link>
+            </SendLink>
           )}
           <Link
             href="/parcels"

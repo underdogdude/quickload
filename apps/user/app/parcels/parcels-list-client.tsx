@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { resolveParcelDisplayStatus } from "@quickload/shared/parcel-display-status";
+import { SendLink } from "@/lib/send-access-ui";
 import { ListParcelThaiPostProgressHorizontal } from "@/lib/parcel-shipment-progress";
 import { parcelBarcodeDataUrl, parcelQrDataUrl } from "@/lib/parcel-scan-media";
 import { useEffect, useMemo, useState } from "react";
@@ -738,12 +739,9 @@ export function ParcelsListClient({
             <>
               <p className="text-sm font-medium text-slate-700">ยังไม่มีพัสดุ</p>
               <p className="mt-1 text-xs text-slate-500">เริ่มสร้างรายการส่งพัสดุใหม่ได้ที่หน้าส่งพัสดุ</p>
-              <Link
-                href="/send"
-                className="mt-3 inline-flex rounded-full bg-[#2726F5] px-4 py-2 text-xs font-medium text-white"
-              >
+              <SendLink className="mt-3 inline-flex rounded-full bg-[#2726F5] px-4 py-2 text-xs font-medium text-white">
                 ไปหน้าส่งพัสดุ
-              </Link>
+              </SendLink>
             </>
           )}
         </div>

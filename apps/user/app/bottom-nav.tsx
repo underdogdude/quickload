@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SendLink } from "@/lib/send-access-ui";
 
 const items = [
   { href: "/", label: "หน้าแรก", icon: "home" },
@@ -64,7 +65,7 @@ export function BottomNav() {
           const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
           if (item.center) {
             return (
-              <Link key={item.href} href={item.href} prefetch className="flex flex-col items-center -mt-7">
+              <SendLink key={item.href} href={item.href} className="flex flex-col items-center -mt-7">
                 <span className="inline-flex h-[62px] w-[62px] items-center justify-center rounded-full bg-gradient-to-br from-[#2726F5] to-[#00B7FF] p-[3px] shadow-lg">
                   <span className={`inline-flex h-full w-full items-center justify-center rounded-full text-4xl leading-none text-[#1f2024] bg-white`}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" className="bi bi-plus-lg" viewBox="0 0 16 16">
@@ -72,7 +73,7 @@ export function BottomNav() {
                     </svg>
                   </span>
                 </span>
-              </Link>
+              </SendLink>
             );
           }
 

@@ -451,8 +451,8 @@ export default function PayAllPage() {
                       เปิดแอปธนาคารและทำรายการชำระเงินให้เสร็จ
                     </p>
                     <p className="mt-2 text-xs leading-relaxed text-slate-500">
-                      เมื่อชำระแล้ว กด <span className="font-medium">Return to merchant</span> หรือกลับมาหน้านี้
-                      ระบบจะอัปเดตสถานะอัตโนมัติ
+                      เมื่อชำระเสร็จในแอปธนาคารแล้ว กรุณารอสักครู่ ระบบจะอัปเดตสถานะอัตโนมัติ{" "}
+                      <span className="font-medium text-slate-600">ไม่ต้องชำระซ้ำ</span>
                     </p>
                     {charge.redirectUrl ? (
                       <button

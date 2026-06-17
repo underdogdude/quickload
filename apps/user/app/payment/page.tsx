@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { SendLink } from "@/lib/send-access-ui";
 
 type OutstandingItem = {
   parcelId: string;
@@ -402,12 +403,9 @@ export default function PaymentPage() {
                 >
                   ดูรายการพัสดุ
                 </Link>
-                <Link
-                  href="/send"
-                  className="inline-flex items-center justify-center rounded-lg bg-[#2726F5] px-4 py-2.5 text-sm font-medium text-white"
-                >
+                <SendLink className="inline-flex items-center justify-center rounded-lg bg-[#2726F5] px-4 py-2.5 text-sm font-medium text-white">
                   สร้างรายการใหม่
-                </Link>
+                </SendLink>
               </div>
             </>
           ) : (
@@ -494,12 +492,9 @@ export default function PaymentPage() {
                 >
                   ดูรายการพัสดุ
                 </Link>
-                <Link
-                  href="/send"
-                  className="inline-flex items-center justify-center rounded-lg bg-[#2726F5] px-4 py-2.5 text-sm font-medium text-white"
-                >
+                <SendLink className="inline-flex items-center justify-center rounded-lg bg-[#2726F5] px-4 py-2.5 text-sm font-medium text-white">
                   สร้างรายการใหม่
-                </Link>
+                </SendLink>
               </div>
             </>
           )}

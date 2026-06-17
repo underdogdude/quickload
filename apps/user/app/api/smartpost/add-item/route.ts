@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb, recipientAddresses, senderAddresses } from "@quickload/shared/db";
 import { NextResponse } from "next/server";
 import { requireLineSession } from "@/lib/require-user";
+import { getSendAccessBlockForUser, sendAccessBlockedResponse } from "@/lib/send-access-block";
 
 type AddItemBody = {
   senderId?: string;
@@ -36,6 +37,10 @@ function normalizeSmartpostResponse(raw: unknown): SmartpostLikeResponse {
 export async function POST(request: Request) {
   try {
     const session = await requireLineSession();
+
+    const sendBlock = await getSendAccessBlockForUser(session.userId);
+    if (sendBlock.blocked) return sendAccessBlockedResponse();
+
     const body = (await request.json()) as AddItemBody;
 
     const senderId = body.senderId?.trim();

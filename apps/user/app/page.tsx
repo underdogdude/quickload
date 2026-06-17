@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/current-user";
 import { BannerCarousel } from "./banner-carousel";
+import { SendParcelPromoCard } from "./send-parcel-promo-card";
 
 const quickMenus = [
   { href: "/parcels", label: "พัสดุของฉัน", iconSrc: "/parcel.png" },
@@ -58,26 +59,7 @@ export default async function HomePage() {
 
       <section className="-mt-12 px-6 pb-10">
         <div className="mx-auto w-full max-w-lg space-y-5">
-          <Link
-            href="/send"
-            prefetch
-            className="flex items-center justify-between rounded-lg bg-white px-5 py-5 shadow-sm ring-1 ring-slate-200 transition hover:border-[#2726F5]"
-          >
-            <div>
-              <h3 className="text-xl font-medium">ส่งพัสดุ</h3>
-              <p className="mt-1 text-xs text-slate-500">เริ่มลงทะเบียนพัสดุใหม่</p>
-            </div>
-            {/* eslint-disable-next-line @next/next/no-img-element -- avoid next/image optimizer to keep ngrok stable */}
-            <img
-              src="/truck.png"
-              alt="ส่งพัสดุ"
-              width={120}
-              height={120}
-              loading="eager"
-              fetchPriority="high"
-              className="object-contain"
-            />
-          </Link>
+          <SendParcelPromoCard />
 
           <div className="grid grid-cols-2 gap-4">
             {firstRowMenus.map((menu) => (

@@ -238,6 +238,18 @@ export default function ParcelDetailPage() {
     return arr.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   }, [json?.thaiPostEvents]);
   const trackingNo = order?.barcode?.trim() || parcel?.barcode?.trim() || parcel?.trackingId || "-";
+  const labelPdfUrl = parcel ? `/api/parcels/${encodeURIComponent(parcel.id)}/label.pdf` : "";
+
+  function onDownloadLabelPdf() {
+    if (!labelPdfUrl) return;
+    const a = document.createElement("a");
+    a.href = labelPdfUrl;
+    a.download = `parcel-label-${trackingNo.replace(/[^\w-]+/g, "_")}.pdf`;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.click();
+  }
+
   const senderAddress = compactAddress([
     order?.shipperAddress,
     order?.shipperSubdistrict,
@@ -312,18 +324,32 @@ export default function ParcelDetailPage() {
                       ชำระเงิน {formatBaht(toNumberOrZero(parcel.price) - toNumberOrZero(parcel.amountPaid))} บาท
                     </Link>
                   ) : null}
-                  <Link
-                    href={`/api/parcels/${parcel.id}/label.pdf`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex w-full items-center justify-center gap-1 rounded-md border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="bi bi-printer" viewBox="0 0 16 16">
-                      <path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1"/>
-                      <path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2zm7 2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1"/>
-                    </svg>
-                    พิมพ์ใบปะหน้า
-                  </Link>
+                  <div className="flex gap-2">
+                    <Link
+                      href={`/api/parcels/${parcel.id}/label.pdf`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-700"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="bi bi-printer shrink-0" viewBox="0 0 16 16">
+                        <path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1"/>
+                        <path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2zm7 2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1"/>
+                      </svg>
+                      พิมพ์ใบปะหน้า
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={onDownloadLabelPdf}
+                      disabled={!labelPdfUrl}
+                      className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-700 disabled:pointer-events-none disabled:opacity-40"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="bi bi-download shrink-0" viewBox="0 0 16 16" aria-hidden>
+                        <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
+                        <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/>
+                      </svg>
+                      ดาวน์โหลดใบปะหน้า
+                    </button>
+                  </div>
                 </div>
               </article>
 
