@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, orders, parcels, recipientAddresses, senderAddresses } from "@quickload/shared/db";
+import { sanitizeParcelNote } from "@quickload/shared/parcel-note";
 import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
 import { NextResponse } from "next/server";
 import {
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
     const parcelType = body.parcelType?.trim() ?? "";
     const shippingMode = body.shippingMode === "pickup" ? "pickup" : "branch";
     const autoPrint = Boolean(body.autoPrint);
-    const note = body.note?.trim() ?? "";
+    const note = sanitizeParcelNote(body.note);
 
     const weightGram = toPositiveNumber(body.weightGram);
     const widthCm = parsePositiveCm(body.widthCm);
@@ -123,10 +124,12 @@ export async function POST(request: Request) {
         destination,
         weightKg,
         size,
+        parcelType,
+        note,
         // Payment starts only after Thailand Post webhook sends final price (actual weight at branch).
         status: "awaiting_actual_weight",
         price: null,
-        source: `send:${shippingMode}:${autoPrint ? "autoprint" : "manual"}${note ? ":note" : ""}`,
+        source: `send:${shippingMode}:${autoPrint ? "autoprint" : "manual"}`,
       })
       .returning();
 

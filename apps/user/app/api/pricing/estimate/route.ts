@@ -1,6 +1,6 @@
-import { asc, gte } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { getDb, pricingTiers } from "@quickload/shared/db";
+import { lookupSellPriceThbForWeight, MAX_PRICING_WEIGHT_GRAMS } from "@quickload/shared/pricing-tier-lookup";
+import { getDb } from "@quickload/shared/db";
 
 function toNumber(value: string | null, fallback = 0) {
   const num = Number(value);
@@ -17,17 +17,10 @@ export async function GET(request: Request) {
     }
 
     const db = getDb();
-    const rows = await db
-      .select()
-      .from(pricingTiers)
-      .where(gte(pricingTiers.weightUpToGrams, productWeight))
-      .orderBy(asc(pricingTiers.weightUpToGrams))
-      .limit(1);
-
-    const tier = rows[0];
+    const tier = await lookupSellPriceThbForWeight(db, productWeight);
     if (!tier) {
       return NextResponse.json(
-        { ok: false, error: `น้ำหนักเกินขีดจำกัด (สูงสุด 30,000 กรัม)` },
+        { ok: false, error: `น้ำหนักเกินขีดจำกัด (สูงสุด ${MAX_PRICING_WEIGHT_GRAMS.toLocaleString("th-TH")} กรัม)` },
         { status: 422 },
       );
     }

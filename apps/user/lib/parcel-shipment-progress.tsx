@@ -4,13 +4,21 @@ import {
   THAI_POST_STATUS_META,
   type ThaiPostStatusCode,
 } from "@quickload/shared/thai-post-status";
+import { resolveParcelDisplayStatus } from "@quickload/shared/parcel-display-status";
 import { thaiPostStatusDateToMs } from "@quickload/shared/thai-post-webhook-history";
 
-export function effectiveLogisticsStatus(parcel: { status: string; isPaid: boolean }): string {
-  if (parcel.isPaid && (parcel.status === "pending_payment" || parcel.status === "awaiting_actual_weight")) {
-    return "paid";
-  }
-  return parcel.status;
+export function effectiveLogisticsStatus(
+  parcel: {
+    status: string;
+    isPaid: boolean;
+    thaiPostEvents?: Array<{
+      statusCode: string;
+      statusDateRaw?: string | null;
+      createdAt: string;
+    }>;
+  },
+): string {
+  return resolveParcelDisplayStatus(parcel);
 }
 
 /** Single “representative” ปณ. code (1–20) for list UI when webhook history is not loaded. */

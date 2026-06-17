@@ -44,7 +44,10 @@ export const parcels = pgTable("parcels", {
   weightKg: numeric("weight_kg", { precision: 12, scale: 3 }),
   size: text("size"),
   parcelType: text("parcel_type"),
+  /** Optional user remark from /send; max 50 chars (see parcels_note_length_chk). */
+  note: text("note"),
   status: text("status").notNull().default("registered"),
+  /** Customer billable total (Sell tier + remote + insurance); set by thai-post-webhook from actual weight. */
   price: numeric("price", { precision: 14, scale: 2 }),
   isPaid: boolean("is_paid").notNull().default(false),
   source: text("source").notNull().default("self"),
@@ -52,7 +55,7 @@ export const parcels = pgTable("parcels", {
   penaltyClockStartedAt: timestamp("penalty_clock_started_at", { withTimezone: true }),
   /** Maintained by DB trigger as SUM(payments.amount WHERE status='succeeded'). */
   amountPaid: numeric("amount_paid", { precision: 14, scale: 2 }).notNull().default("0"),
-  /** Set when Thailand Post webhook applies final postage price (billable amount). */
+  /** Set when billable price is computed from actual weight (Sell tier + surcharges). */
   thaiPostPriceConfirmedAt: timestamp("thai_post_price_confirmed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }),

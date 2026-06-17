@@ -15,6 +15,13 @@ import {
 import { getDb, notificationLog, orders, parcels, thaiPostWebhookEvents, users } from "@quickload/shared/db";
 import { thaiPostStatusDateToMs } from "@quickload/shared/thai-post-webhook-history";
 import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
+import {
+  computeBillableTotalFromTier,
+  formatBillablePriceThb,
+  parseWebhookWeightGrams,
+  weightKgFromGrams,
+} from "@quickload/shared/parcel-billable-price";
+import { lookupSellPriceThbForWeight } from "@quickload/shared/pricing-tier-lookup";
 import { NextResponse } from "next/server";
 import { createParcelStatusUpdateFlexMessage, createPaymentDueFlexMessage } from "@/lib/line-flex";
 import { pushLineMessage } from "@/lib/line-messaging";
@@ -89,6 +96,7 @@ type BatchItem = {
   descriptionParcelStatus: ParcelFlowStatus | null;
   descriptionTh: string;
   finalCost: string | null;
+  weightGrams: number | null;
   statusDateRaw: string | null;
   station: string | null;
 };
@@ -117,6 +125,8 @@ const TERMINAL_STATUS_NOTIFICATION_TYPES = TERMINAL_PARCEL_STATUSES.map(
 
 type SentTerminalStatusMap = Map<string, Set<TerminalParcelStatus>>;
 
+const PAYMENT_DUE_NOTIFICATION_TYPE = "payment_due";
+
 function parcelIdFromNotificationPayload(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
   const parcelId = (payload as { parcelId?: unknown }).parcelId;
@@ -142,6 +152,44 @@ async function loadSentTerminalParcelStatusNotifications(): Promise<SentTerminal
     map.set(parcelId, set);
   }
   return map;
+}
+
+async function loadSentPaymentDueParcelIds(): Promise<Set<string>> {
+  const db = getDb();
+  const sent = new Set<string>();
+  const rows = await db
+    .select({ payload: notificationLog.payload })
+    .from(notificationLog)
+    .where(
+      and(
+        eq(notificationLog.type, PAYMENT_DUE_NOTIFICATION_TYPE),
+        inArray(notificationLog.status, ["sent", "pending"]),
+      ),
+    );
+
+  for (const row of rows) {
+    const parcelId = parcelIdFromNotificationPayload(row.payload);
+    if (parcelId) sent.add(parcelId);
+  }
+  return sent;
+}
+
+async function hasPaymentDueNotification(
+  executor: Pick<ReturnType<typeof getDb>, "select">,
+  parcelId: string,
+): Promise<boolean> {
+  const rows = await executor
+    .select({ id: notificationLog.id })
+    .from(notificationLog)
+    .where(
+      and(
+        eq(notificationLog.type, PAYMENT_DUE_NOTIFICATION_TYPE),
+        inArray(notificationLog.status, ["sent", "pending"]),
+        sql`${notificationLog.payload}->>'parcelId' = ${parcelId}`,
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
 }
 
 function resolvePublicBaseUrl(request: Request): string | null {
@@ -214,10 +262,13 @@ export async function POST(request: Request) {
   const db = getDb();
   const publicBaseUrl = resolvePublicBaseUrl(request);
   const sentTerminalStatuses = await loadSentTerminalParcelStatusNotifications();
+  const sentPaymentDueParcelIds = await loadSentPaymentDueParcelIds();
   let updated = 0;
   let ignored = 0;
   const pendingPaymentNotifications: Array<{
     lineUserId: string;
+    userId: string;
+    parcelId: string;
     message: ReturnType<typeof createPaymentDueFlexMessage>;
   }> = [];
   const pendingStatusNotifications: Array<{
@@ -239,8 +290,9 @@ export async function POST(request: Request) {
 
     const barcode = event.barcode?.trim();
     const statusCodeRaw = parseThaiPostStatusCodeRaw(event.status);
+    const parsedWeightGrams = parseWebhookWeightGrams(resolved);
     console.info(
-      `[thai-post-webhook] barcode=${barcode ?? "null"} status=${JSON.stringify(event.status)} statusCodeRaw=${statusCodeRaw ?? "null"} finalcost=${JSON.stringify((resolved as Record<string,unknown>).finalcost ?? (resolved as Record<string,unknown>).finalCost ?? null)}`,
+      `[thai-post-webhook] barcode=${barcode ?? "null"} status=${JSON.stringify(event.status)} statusCodeRaw=${statusCodeRaw ?? "null"} weight=${parsedWeightGrams ?? "null"} finalcost=${JSON.stringify((resolved as Record<string, unknown>).finalcost ?? (resolved as Record<string, unknown>).finalCost ?? null)}`,
     );
     if (!barcode || !statusCodeRaw) {
       console.warn(`[thai-post-webhook] ignored: barcode=${barcode ?? "null"} statusCodeRaw=${statusCodeRaw ?? "null"}`);
@@ -258,6 +310,7 @@ export async function POST(request: Request) {
     const descriptionTh = descriptionRaw || mapped?.descriptionTh || "อัปเดตสถานะ";
 
     const finalCost = parseFinalCost(resolved);
+    const weightGrams = parsedWeightGrams;
     const statusDateRaw = event.statusDate?.trim() || null;
     const station = event.station?.trim() || null;
 
@@ -270,6 +323,7 @@ export async function POST(request: Request) {
       descriptionParcelStatus,
       descriptionTh,
       finalCost,
+      weightGrams,
       statusDateRaw,
       station,
     };
@@ -288,19 +342,31 @@ export async function POST(request: Request) {
           status: parcels.status,
           userId: parcels.userId,
           trackingId: parcels.trackingId,
+          isPaid: parcels.isPaid,
           thaiPostPriceConfirmedAt: parcels.thaiPostPriceConfirmedAt,
           price: parcels.price,
         })
         .from(parcels)
         .where(eq(parcels.barcode, barcode))
-        .limit(1);
+        .limit(1)
+        .for("update");
       const parcel = parcelRows[0];
       if (!parcel) {
         ignored += ordered.length;
         return;
       }
 
-      const initialStatus = parcel.status;
+      const orderRows = await tx
+        .select({
+          cusZipcode: orders.cusZipcode,
+          productPrice: orders.productPrice,
+          insuranceRatePrice: orders.insuranceRatePrice,
+        })
+        .from(orders)
+        .where(eq(orders.parcelId, parcel.id))
+        .limit(1);
+      const order = orderRows[0];
+
       let shouldNotifyPaymentDue = false;
       let notifyAmount: string | null = null;
       // Tracks status transitions for LINE terminal notifications (delivered / failed / canceled).
@@ -314,17 +380,18 @@ export async function POST(request: Request) {
         // description yields nothing.
         const effectiveParcelStatus = w.descriptionParcelStatus ?? w.mapped?.parcelStatus;
 
-        if (effectiveParcelStatus || w.finalCost) {
+        if (effectiveParcelStatus || w.finalCost || (w.weightGrams != null && w.weightGrams > 0)) {
           // Never downgrade a paid parcel back to pending_payment.
           const nextStatus = effectiveParcelStatus
-            ? parcel.status === "paid" && effectiveParcelStatus === "pending_payment"
-              ? "paid"
+            ? parcel.isPaid && effectiveParcelStatus === "pending_payment"
+              ? parcel.status
               : effectiveParcelStatus
             : null;
 
           const parcelPatch: {
             status?: string;
             price?: string;
+            weightKg?: string;
             thaiPostPriceConfirmedAt?: Date;
             updatedAt: Date;
           } = { updatedAt: new Date() };
@@ -339,35 +406,52 @@ export async function POST(request: Request) {
             parcel.status = nextStatus;
           }
 
-          if (w.finalCost) {
-            if (!shouldNotifyPaymentDue && notifyAmount == null && parcel.thaiPostPriceConfirmedAt == null) {
-              shouldNotifyPaymentDue = true;
-              notifyAmount = w.finalCost;
+          // Billable price = Sell tier(actual weight) + remote + insurance — never raw finalcost.
+          if (!parcel.isPaid && w.weightGrams != null && w.weightGrams > 0) {
+            const tier = await lookupSellPriceThbForWeight(tx, w.weightGrams);
+            if (tier) {
+              const billable = computeBillableTotalFromTier(tier.priceThb, {
+                cusZipcode: order?.cusZipcode,
+                productPrice: order?.productPrice,
+                insuranceRatePrice: order?.insuranceRatePrice,
+              });
+              const priceStr = formatBillablePriceThb(billable.totalBaht);
+              const firstConfirm = parcel.thaiPostPriceConfirmedAt == null;
+              if (firstConfirm && !shouldNotifyPaymentDue) {
+                shouldNotifyPaymentDue = true;
+                notifyAmount = priceStr;
+              }
+              parcelPatch.price = priceStr;
+              parcelPatch.weightKg = weightKgFromGrams(w.weightGrams);
+              parcelPatch.thaiPostPriceConfirmedAt = new Date();
+              parcel.thaiPostPriceConfirmedAt = new Date();
+              parcel.price = priceStr;
+              console.info(
+                `[thai-post-webhook] billable parcelId=${parcel.id} weightG=${w.weightGrams} tier=${tier.weightUpToGrams}g shipping=${billable.shippingTierBaht} remote=${billable.remoteAreaBaht} insurance=${billable.insuranceBaht} total=${priceStr} carrierFinalcost=${w.finalCost ?? "null"}`,
+              );
+            } else {
+              console.warn(
+                `[thai-post-webhook] weight tier lookup failed parcelId=${parcel.id} weightG=${w.weightGrams}`,
+              );
             }
-            parcelPatch.price = w.finalCost;
-            parcelPatch.thaiPostPriceConfirmedAt = new Date();
-            // Keep in-memory consistent so subsequent loop iterations see the updated value.
-            parcel.thaiPostPriceConfirmedAt = new Date();
           } else if (
-            nextStatus === "pending_payment" &&
+            w.finalCost &&
+            !parcel.isPaid &&
             parcel.thaiPostPriceConfirmedAt == null &&
-            parcel.price != null &&
-            Number(parcel.price) > 0
+            (w.weightGrams == null || w.weightGrams <= 0)
           ) {
-            // Smartpost status webhooks omit finalcost — confirm the price using the parcel's
-            // existing estimated price so the user can proceed to payment.
-            if (!shouldNotifyPaymentDue && notifyAmount == null) {
-              shouldNotifyPaymentDue = true;
-              notifyAmount = parcel.price;
-            }
-            parcelPatch.thaiPostPriceConfirmedAt = new Date();
-            parcel.thaiPostPriceConfirmedAt = new Date();
+            console.warn(
+              `[thai-post-webhook] finalcost without weight — carrier cost stored on order only parcelId=${parcel.id} finalcost=${w.finalCost}`,
+            );
           }
 
-          await tx
-            .update(parcels)
-            .set(parcelPatch)
-            .where(and(eq(parcels.id, parcel.id), eq(parcels.barcode, barcode)));
+          const hasParcelFieldChanges = Object.keys(parcelPatch).some((key) => key !== "updatedAt");
+          if (hasParcelFieldChanges) {
+            await tx
+              .update(parcels)
+              .set(parcelPatch)
+              .where(and(eq(parcels.id, parcel.id), eq(parcels.barcode, barcode)));
+          }
         }
       }
 
@@ -384,21 +468,6 @@ export async function POST(request: Request) {
           shouldNotifyPaymentDue = true;
           notifyAmount = parcel.price;
         }
-      }
-
-      // If the parcel was awaiting payment and the carrier moved it on (e.g. pending_payment →
-      // in_transit) but the user still hasn't paid, re-send the payment-due reminder.
-      if (
-        initialStatus === "pending_payment" &&
-        parcel.status !== "pending_payment" &&
-        parcel.status !== "paid" &&
-        !shouldNotifyPaymentDue &&
-        notifyAmount == null &&
-        parcel.price != null &&
-        Number(parcel.price) > 0
-      ) {
-        shouldNotifyPaymentDue = true;
-        notifyAmount = parcel.price;
       }
 
       // Fetch lineUserId once for all notifications in this parcel's batch.
@@ -422,10 +491,29 @@ export async function POST(request: Request) {
         `[thai-post-webhook] parcelId=${parcel.id} shouldNotify=${shouldNotifyPaymentDue} amount=${notifyAmount} hasUserId=${!!parcel.userId} hasBaseUrl=${!!publicBaseUrl} thaiPostPriceConfirmedAt=${parcel.thaiPostPriceConfirmedAt?.toISOString() ?? "null"} statusChanges=${statusChanges.length}`,
       );
 
-      if (shouldNotifyPaymentDue && notifyAmount && lineUserId && publicBaseUrl) {
+      if (
+        shouldNotifyPaymentDue &&
+        notifyAmount &&
+        lineUserId &&
+        publicBaseUrl &&
+        parcel.userId &&
+        !parcel.isPaid &&
+        !sentPaymentDueParcelIds.has(parcel.id) &&
+        !(await hasPaymentDueNotification(tx, parcel.id))
+      ) {
         const payUrl = new URL(`/pay/${encodeURIComponent(parcel.id)}`, publicBaseUrl).toString();
+        await tx.insert(notificationLog).values({
+          userId: parcel.userId,
+          lineUserId,
+          type: PAYMENT_DUE_NOTIFICATION_TYPE,
+          payload: { parcelId: parcel.id },
+          status: "pending",
+        });
+        sentPaymentDueParcelIds.add(parcel.id);
         pendingPaymentNotifications.push({
           lineUserId,
+          userId: parcel.userId,
+          parcelId: parcel.id,
           message: createPaymentDueFlexMessage({
             parcelId: parcel.id,
             trackingNumber: resolveParcelDisplayCode({ barcode, trackingId: parcel.trackingId }),
@@ -433,6 +521,10 @@ export async function POST(request: Request) {
             payUrl,
           }),
         });
+      } else if (shouldNotifyPaymentDue && (sentPaymentDueParcelIds.has(parcel.id) || (await hasPaymentDueNotification(tx, parcel.id)))) {
+        console.info(
+          `[thai-post-webhook] skip duplicate payment_due parcelId=${parcel.id} (already sent or queued)`,
+        );
       }
 
       if (lineUserId && parcel.userId) {
@@ -516,15 +608,25 @@ export async function POST(request: Request) {
         });
 
       let lastFinalCost: string | undefined;
+      let lastWeightGrams: number | undefined;
       for (const w of ordered) {
         if (w.finalCost) lastFinalCost = w.finalCost;
+        if (w.weightGrams != null && w.weightGrams > 0) lastWeightGrams = w.weightGrams;
       }
-      const orderPatch: { orderStatus: string; updatedAt: Date; finalcost?: string } = {
+      const orderPatch: {
+        orderStatus: string;
+        updatedAt: Date;
+        finalcost?: string;
+        productWeight?: string;
+      } = {
         orderStatus: `${last.statusCodeRaw}:${last.descriptionTh}`,
         updatedAt: new Date(),
       };
       if (lastFinalCost) {
         orderPatch.finalcost = lastFinalCost;
+      }
+      if (lastWeightGrams != null) {
+        orderPatch.productWeight = String(lastWeightGrams);
       }
       await tx.update(orders).set(orderPatch).where(eq(orders.parcelId, parcel.id));
 
@@ -533,11 +635,38 @@ export async function POST(request: Request) {
   }
 
   for (const n of pendingPaymentNotifications) {
+    let sendStatus: "sent" | "failed" = "sent";
     try {
       await pushLineMessage({ to: n.lineUserId, message: n.message });
     } catch (e) {
+      sendStatus = "failed";
       const msg = e instanceof Error ? e.message : String(e);
       console.warn("[line-flex] payment due send failed:", msg);
+    }
+    try {
+      const updated = await db
+        .update(notificationLog)
+        .set({ status: sendStatus })
+        .where(
+          and(
+            eq(notificationLog.type, PAYMENT_DUE_NOTIFICATION_TYPE),
+            eq(notificationLog.status, "pending"),
+            sql`${notificationLog.payload}->>'parcelId' = ${n.parcelId}`,
+          ),
+        )
+        .returning({ id: notificationLog.id });
+      if (updated.length === 0) {
+        await db.insert(notificationLog).values({
+          userId: n.userId,
+          lineUserId: n.lineUserId,
+          type: PAYMENT_DUE_NOTIFICATION_TYPE,
+          payload: { parcelId: n.parcelId },
+          status: sendStatus,
+        });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("[line-flex] payment due notification log failed:", msg);
     }
   }
 

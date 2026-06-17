@@ -592,7 +592,7 @@ async function main() {
         await tx`
           update parcels
           set is_paid = true,
-              status = case when status in ('pending_payment', 'registered') then 'paid' else status end,
+              status = case when status in ('pending_payment', 'awaiting_actual_weight', 'paid') then 'registered' else status end,
               updated_at = ${paidAt}
           where id = ${row.parcelId}::uuid
         `;

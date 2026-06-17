@@ -1,9 +1,11 @@
 "use client";
 
+import { resolveParcelDisplayStatus } from "@quickload/shared/parcel-display-status";
 import {
   effectiveLogisticsStatus,
   ListParcelThaiPostProgressHorizontal,
 } from "@/lib/parcel-shipment-progress";
+import { computeParcelPriceBreakdown } from "@quickload/shared/parcel-price-breakdown";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -18,6 +20,7 @@ type ParcelData = {
   isPaid: boolean;
   weightKg: string | null;
   size: string | null;
+  note: string | null;
   price: string | null;
   amountPaid?: string | null;
   thaiPostPriceConfirmedAt?: string | null;
@@ -44,6 +47,8 @@ type OrderData = {
   cusZipcode: string | null;
   productWeight: string | null;
   productInbox: string | null;
+  productPrice: string | null;
+  insuranceRatePrice: string | null;
   items: string | null;
 } | null;
 
@@ -71,7 +76,6 @@ function getStatusLabel(status: string) {
   if (status === "draft") return "แบบร่าง";
   if (status === "awaiting_actual_weight") return "รอลงทะเบียน/น้ำหนักจริง";
   if (status === "pending_payment") return "รอชำระเงิน";
-  if (status === "paid") return "ชำระแล้ว";
   if (status === "registered") return "ลงทะเบียนแล้ว";
   if (status === "at_destination_post") return "ถึงปลายทาง/รอรับที่ไปรษณีย์";
   if (status === "in_transit") return "อยู่ระหว่างขนส่ง";
@@ -82,11 +86,11 @@ function getStatusLabel(status: string) {
   return status;
 }
 
-function resolveDisplayStatus(parcel: ParcelData): string {
-  if (!parcel.isPaid) return parcel.status;
-  const s = parcel.status;
-  if (s === "pending_payment" || s === "awaiting_actual_weight" || s === "paid") return "registered";
-  return s;
+function resolveDisplayStatus(
+  parcel: ParcelData,
+  thaiPostEvents?: Array<{ statusCode: string; statusDateRaw?: string | null; createdAt: string }>,
+): string {
+  return resolveParcelDisplayStatus({ ...parcel, thaiPostEvents });
 }
 
 function getStatusBadgeClass(status: string) {
@@ -135,7 +139,16 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-slate-100 py-2.5 last:border-b-0">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="text-right text-sm font-medium text-slate-800">{value || "-"}</p>
+      <p className="max-w-[65%] text-right text-sm font-medium text-slate-800">{value || "-"}</p>
+    </div>
+  );
+}
+
+function PriceRow({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <p className="text-slate-600">{label}</p>
+      <p className={`font-medium ${muted ? "text-slate-500" : "text-slate-800"}`}>{value}</p>
     </div>
   );
 }
@@ -147,6 +160,7 @@ export default function ParcelDetailPage() {
   const [json, setJson] = useState<ParcelDetailResponse["data"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [estimatedBasePrice, setEstimatedBasePrice] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -173,6 +187,52 @@ export default function ParcelDetailPage() {
 
   const parcel = json?.parcel;
   const order = json?.order;
+
+  useEffect(() => {
+    if (!parcel || !order?.cusZipcode) return;
+    if (parcel.thaiPostPriceConfirmedAt) {
+      setEstimatedBasePrice(null);
+      return;
+    }
+
+    const weightGram = Number(order.productWeight ?? 0);
+    if (!Number.isFinite(weightGram) || weightGram <= 0) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams({
+          productWeight: String(weightGram),
+          cusZipcode: order.cusZipcode!.trim(),
+          productPrice: order.productPrice?.trim() || "0",
+          insurancePrice: order.insuranceRatePrice?.trim() || "0",
+        });
+        const res = await fetch(`/api/pricing/estimate?${params.toString()}`);
+        const body = (await res.json()) as { ok?: boolean; data?: { estimatedTotal?: number } };
+        if (cancelled || !res.ok || !body.ok || !Number.isFinite(body.data?.estimatedTotal)) return;
+        setEstimatedBasePrice(Number(body.data?.estimatedTotal));
+      } catch {
+        // Keep breakdown without estimate when pricing API is unavailable.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [order?.cusZipcode, order?.insuranceRatePrice, order?.productPrice, order?.productWeight, parcel]);
+
+  const priceBreakdown = useMemo(() => {
+    if (!parcel) return null;
+    return computeParcelPriceBreakdown({
+      parcelPrice: parcel.price,
+      thaiPostPriceConfirmedAt: parcel.thaiPostPriceConfirmedAt,
+      status: parcel.status,
+      cusZipcode: order?.cusZipcode,
+      productPrice: order?.productPrice,
+      insuranceRatePrice: order?.insuranceRatePrice,
+      estimatedBasePrice,
+    });
+  }, [estimatedBasePrice, order?.cusZipcode, order?.insuranceRatePrice, order?.productPrice, parcel]);
   const thaiPostEventsChronological = useMemo(() => {
     const arr = Array.isArray(json?.thaiPostEvents) ? [...json.thaiPostEvents] : [];
     return arr.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -187,7 +247,7 @@ export default function ParcelDetailPage() {
   ]);
   const recipientAddress = compactAddress([order?.cusAdd, order?.cusSub, order?.cusAmp, order?.cusProv, order?.cusZipcode]);
 
-  const displayStatus = parcel ? resolveDisplayStatus(parcel) : null;
+  const displayStatus = parcel ? resolveDisplayStatus(parcel, thaiPostEventsChronological) : null;
   const paymentHint =
     parcel == null
       ? null
@@ -272,7 +332,10 @@ export default function ParcelDetailPage() {
                 <p className="mt-1 text-xs leading-relaxed text-slate-500">รวมภาพรวมการขนส่งและประวัติสถานะจากไปรษณีย์ไทยในบล็อกเดียว</p>
                 <ListParcelThaiPostProgressHorizontal
                   parcel={{
-                    status: effectiveLogisticsStatus(parcel),
+                    status: effectiveLogisticsStatus({
+                      ...parcel,
+                      thaiPostEvents: thaiPostEventsChronological,
+                    }),
                     isPaid: parcel.isPaid,
                     thaiPostEvents: thaiPostEventsChronological,
                   }}
@@ -307,10 +370,63 @@ export default function ParcelDetailPage() {
                   <InfoRow label="น้ำหนัก" value={order?.productWeight ? `${order.productWeight} g` : parcel.weightKg ? `${parcel.weightKg} kg` : "-"} />
                   <InfoRow label="ประเภทพัสดุ" value={parcel.parcelType || order?.productInbox || order?.items || "-"} />
                   <InfoRow label="ขนาด" value={parcel.size || "-"} />
-                  <InfoRow label="ราคา" value={parcel.price || "-"} />
+                  <InfoRow label="หมายเหตุ" value={parcel.note?.trim() || "—"} />
                   <InfoRow label="สร้างเมื่อ" value={formatDateTime(parcel.createdAt)} />
                   <InfoRow label="อัปเดตล่าสุด" value={formatDateTime(parcel.updatedAt)} />
                 </div>
+              </article>
+
+              <article className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+                <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div>
+                    <h2 className="text-sm font-semibold text-slate-900">ราคา</h2>
+                    <p className="mt-0.5 text-xs text-slate-500">รายละเอียดค่าขนส่ง ประกัน และพื้นที่ห่างไกล</p>
+                  </div>
+                  {priceBreakdown?.showPendingBadge ? (
+                    <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800">
+                      รอน้ำหนัก/ราคาจริง
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-3 space-y-2">
+                  <PriceRow
+                    label={priceBreakdown?.shippingIsEstimate ? "ราคาขนส่ง (ประมาณ)" : "ราคาขนส่ง"}
+                    value={
+                      priceBreakdown?.shippingFee != null
+                        ? `${formatBaht(priceBreakdown.shippingFee)} บาท`
+                        : "รอการยืนยัน"
+                    }
+                    muted={priceBreakdown?.shippingFee == null}
+                  />
+                  <PriceRow
+                    label="ค่าประกันเพิ่ม"
+                    value={`${formatBaht(priceBreakdown?.insuranceFee ?? 0)} บาท`}
+                    muted={(priceBreakdown?.insuranceFee ?? 0) === 0}
+                  />
+                  <PriceRow
+                    label="ค่าบริการพื้นที่ห่างไกล"
+                    value={`${formatBaht(priceBreakdown?.remoteAreaFee ?? 0)} บาท`}
+                    muted={(priceBreakdown?.remoteAreaFee ?? 0) === 0}
+                  />
+                </div>
+                <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+                  <p className="text-sm text-slate-600">
+                    {priceBreakdown?.isPriceConfirmed ? "ราคารวม" : "ราคารวมโดยประมาณ"}
+                  </p>
+                  <p className="text-lg font-semibold text-slate-900">
+                    {priceBreakdown?.total != null ? `${formatBaht(priceBreakdown.total)} บาท` : "—"}
+                  </p>
+                </div>
+                {priceBreakdown?.showPendingBadge ? (
+                  <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                    *ราคาจริงจะแสดงเมื่อชั่งน้ำหนักที่สาขาไปรษณีย์และได้รับการยืนยันจากไปรษณีย์ไทย
+                  </p>
+                ) : null}
+                {priceBreakdown?.isPriceConfirmed && parcel.thaiPostPriceConfirmedAt ? (
+                  <p className="mt-2 text-xs text-slate-500">
+                    ยืนยันราคาเมื่อ {formatDateTime(parcel.thaiPostPriceConfirmedAt)}
+                  </p>
+                ) : null}
               </article>
             </>
           ) : null}

@@ -1,11 +1,12 @@
 import {
   createPaymentReminderDay1FlexMessage,
+  createPaymentReminderDay2FlexMessage,
   createPaymentReminderDay7FlexMessage,
 } from "@/lib/line-flex";
 
 const AGENT_NAMES = ["นิดา", "ใบเตย", "แอน", "มินตรา", "เบล", "มาย", "แพร", "ฟ้า"] as const;
 
-export const PAYMENT_REMINDER_DAYS = [1, 3, 5, 7] as const;
+export const PAYMENT_REMINDER_DAYS = [1, 2, 3, 4, 5, 6, 7] as const;
 export type PaymentReminderDay = (typeof PAYMENT_REMINDER_DAYS)[number];
 
 export function reminderTypeForDay(day: PaymentReminderDay): string {
@@ -65,25 +66,29 @@ function formatReminderBaht(v: string | number): string {
   }).format(n);
 }
 
-/** Day 3: plain text — feels like a real person typed it (reduces reactance vs. branded flex). */
-export function createPaymentReminderDay3TextMessage(input: {
-  parcelId: string;
+/** Plain text follow-up — day 3 uses agent name; day 4 does not. */
+function createPaymentReminderOverdueTextMessage(input: {
+  parcelId?: string;
   displayCode: string;
   amountBaht: string | number;
+  overdueDays: number;
+  includeAgentName: boolean;
 }): { type: "text"; text: string } {
-  const name = pickReminderAgentName(input.parcelId);
   const code = input.displayCode.trim() || "-";
   const amount = formatReminderBaht(input.amountBaht);
+  const greetingLine = input.includeAgentName
+    ? `สวัสดีค่ะ เจ้าหน้าที่${pickReminderAgentName(input.parcelId ?? "")} ติดต่อจาก QUICKLOAD ค่ะ`
+    : "สวัสดีค่ะ ติดต่ออีกครั้งจาก QUICKLOAD ค่ะ";
 
   return {
     type: "text",
     text: [
-      `สวัสดีค่ะ เจ้าหน้าที่${name} ติดต่อจาก QUICKLOAD ค่ะ`,
+      greetingLine,
       "",
       `ขออนุญาตติดตามยอดค้างชำระของเลขพัสดุ ${code} ค่ะ`,
       "",
       `ยอดค้างชำระ: ฿ ${amount}`,
-      "รายการนี้เลยกำหนดชำระมาแล้ว 3 วันค่ะ",
+      `รายการนี้เลยกำหนดชำระมาแล้ว ${input.overdueDays} วันค่ะ`,
       "",
       "รบกวนช่วยชำระยอดค้าง เพื่อปิดรายการนี้ให้เรียบร้อยนะคะ",
       "",
@@ -98,6 +103,32 @@ export function createPaymentReminderDay3TextMessage(input: {
       "ขอบคุณค่ะ 🙏",
     ].join("\n"),
   };
+}
+
+/** Day 3: plain text — feels like a real person typed it (reduces reactance vs. branded flex). */
+export function createPaymentReminderDay3TextMessage(input: {
+  parcelId: string;
+  displayCode: string;
+  amountBaht: string | number;
+}): { type: "text"; text: string } {
+  return createPaymentReminderOverdueTextMessage({
+    ...input,
+    overdueDays: 3,
+    includeAgentName: true,
+  });
+}
+
+/** Day 4: same body as day 3; greeting matches day 5 opener (no agent name). */
+export function createPaymentReminderDay4TextMessage(input: {
+  displayCode: string;
+  amountBaht: string | number;
+}): { type: "text"; text: string } {
+  return createPaymentReminderOverdueTextMessage({
+    displayCode: input.displayCode,
+    amountBaht: input.amountBaht,
+    overdueDays: 4,
+    includeAgentName: false,
+  });
 }
 
 /** Day 5: plain text follow-up — firmer tone before final day-7 flex. */
@@ -131,6 +162,25 @@ export function createPaymentReminderDay5TextMessage(input: {
   };
 }
 
+/** Day 6: short firm text — last warning before day-7 final flex. */
+export function createPaymentReminderDay6TextMessage(input: {
+  displayCode: string;
+  amountBaht: string | number;
+}): { type: "text"; text: string } {
+  const code = input.displayCode.trim() || "-";
+  const amount = formatReminderBaht(input.amountBaht);
+
+  return {
+    type: "text",
+    text: [
+      `หมายเลขพัสดุ ${code} ค้างชำระ ฿ ${amount} เป็นเวลา 6 วัน`,
+      "กรุณาชำระภายใน 24 ชม. มิฉะนะนี้จะดำเนินการติดตามหนี้ตามขั้นตอน",
+      "",
+      "ชำระได้ที่เมนู: ชำระเงิน > เลือกยอดที่ต้องการชำระ",
+    ].join("\n"),
+  };
+}
+
 export function buildReminderMessage(
   day: PaymentReminderDay,
   input: {
@@ -140,7 +190,17 @@ export function buildReminderMessage(
     payUrl: string;
     daysRemaining?: number;
   },
-): { type: "text"; text: string } | ReturnType<typeof createPaymentReminderDay1FlexMessage> {
+):
+  | { type: "text"; text: string }
+  | ReturnType<typeof createPaymentReminderDay1FlexMessage>
+  | ReturnType<typeof createPaymentReminderDay2FlexMessage> {
+  if (day === 2) {
+    return createPaymentReminderDay2FlexMessage({
+      trackingNumber: input.displayCode,
+      amountBaht: input.amountBaht,
+      payUrl: input.payUrl,
+    });
+  }
   if (day === 3) {
     return createPaymentReminderDay3TextMessage({
       parcelId: input.parcelId,
@@ -148,8 +208,20 @@ export function buildReminderMessage(
       amountBaht: input.amountBaht,
     });
   }
+  if (day === 4) {
+    return createPaymentReminderDay4TextMessage({
+      displayCode: input.displayCode,
+      amountBaht: input.amountBaht,
+    });
+  }
   if (day === 5) {
     return createPaymentReminderDay5TextMessage({
+      displayCode: input.displayCode,
+      amountBaht: input.amountBaht,
+    });
+  }
+  if (day === 6) {
+    return createPaymentReminderDay6TextMessage({
       displayCode: input.displayCode,
       amountBaht: input.amountBaht,
     });

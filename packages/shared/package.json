@@ -19,7 +19,12 @@
     "./penalty": "./src/penalty.ts",
     "./thai-post-status": "./src/thai-post-status.ts",
     "./thai-post-webhook-history": "./src/thai-post-webhook-history.ts",
-    "./parcel-display-code": "./src/parcel-display-code.ts"
+    "./parcel-display-code": "./src/parcel-display-code.ts",
+    "./parcel-note": "./src/parcel-note.ts",
+    "./parcel-price-breakdown": "./src/parcel-price-breakdown.ts",
+    "./parcel-billable-price": "./src/parcel-billable-price.ts",
+    "./parcel-display-status": "./src/parcel-display-status.ts",
+    "./pricing-tier-lookup": "./src/pricing-tier-lookup.ts"
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",
@@ -44,7 +49,9 @@
     "db:seed:thaipost-demo": "node ./scripts/seed-thaipost-status-demo.mjs",
     "db:seed:thaipost-demo:list-users": "node ./scripts/seed-thaipost-status-demo.mjs --list-users",
     "db:apply:one-pending-idx": "node ./scripts/apply-sql.mjs ./sql/20260426_payments_one_pending_per_parcel.sql",
-    "db:apply:redirect-url": "node ./scripts/apply-sql.mjs ./sql/20260614_payments_redirect_url.sql"
+    "db:apply:redirect-url": "node ./scripts/apply-sql.mjs ./sql/20260614_payments_redirect_url.sql",
+    "db:apply:parcels-note": "node ./scripts/apply-sql.mjs ./sql/20260617_parcels_note.sql",
+    "db:apply:parcels-note-50": "node ./scripts/apply-sql.mjs ./sql/20260617_parcels_note_length_50.sql"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",

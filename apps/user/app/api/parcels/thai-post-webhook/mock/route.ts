@@ -21,6 +21,7 @@ type MockBody = {
   statusDate?: string;
   station?: string;
   finalcost?: string;
+  weight?: string | number;
 };
 
 /** Thailand Post style: DD/MM/YYYY HH:mm:ss */
@@ -89,6 +90,12 @@ export async function POST(request: Request) {
     }
 
     const fc = body.finalcost?.trim();
+    const weightRaw = body.weight;
+    const weight =
+      weightRaw != null && String(weightRaw).trim() !== "" ? Number(weightRaw) : null;
+    if (weight != null && (!Number.isFinite(weight) || weight <= 0)) {
+      return NextResponse.json({ ok: false, error: "weight must be a positive number (grams)" }, { status: 400 });
+    }
     const statusStr = body.status?.trim() || fallbackNext;
     const byCode = relay.statusDescriptions && typeof relay.statusDescriptions === "object" ? relay.statusDescriptions : {};
     const statusDescription =
@@ -115,6 +122,7 @@ export async function POST(request: Request) {
         statusDescription,
         statusDate: body.statusDate?.trim() || formatThaiPostStatusDate(new Date()),
         station,
+        ...(weight != null ? { weight: Math.round(weight) } : {}),
         ...(fc
           ? {
               finalcost: fc,

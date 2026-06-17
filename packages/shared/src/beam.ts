@@ -264,14 +264,16 @@ function extractExpiresAt(obj: Record<string, unknown>): string | null {
   return null;
 }
 
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { getDb, payments, parcels } from "./db";
 import { readBulkMasterMeta } from "./bulk-payment";
+import { parcelStatusAfterPaymentSucceeded } from "./parcel-display-status";
 
 /**
  * Idempotent state transition called by BOTH the webhook handler and the dev-simulate
  * endpoint. One DB transaction flips `payments.status` to 'succeeded' (only if currently
- * 'pending') and sets the parent parcel to `is_paid=true, status='paid'`.
+ * 'pending') and sets the parent parcel to `is_paid=true`, advancing `status` to
+ * `registered` only when still awaiting weight / payment (never overwrites carrier progress).
  *
  * Returns the paymentId that was updated, or null if nothing changed (e.g. already
  * succeeded, unknown chargeId). Callers should still return HTTP 200 on null.
@@ -308,7 +310,11 @@ export async function markPaymentSucceeded({
 
       await tx
         .update(parcels)
-        .set({ isPaid: true, status: "paid", updatedAt: paidAt })
+        .set({
+          isPaid: true,
+          status: sql`case when status in ('pending_payment', 'awaiting_actual_weight', 'paid') then 'registered' else status end`,
+          updatedAt: paidAt,
+        })
         .where(inArray(parcels.id, bulkMeta.parcelIds));
 
       return {
@@ -339,6 +345,7 @@ export async function markPaymentSucceeded({
       .select({
         price: parcels.price,
         amountPaid: parcels.amountPaid,
+        status: parcels.status,
       })
       .from(parcels)
       .where(eq(parcels.id, row.parcelId))
@@ -353,11 +360,13 @@ export async function markPaymentSucceeded({
       amountPaid: parcel.amountPaid,
     });
 
-    // Product decision: once Beam confirms this charge as succeeded,
-    // parcel should move to paid immediately for UX consistency.
     await tx
       .update(parcels)
-      .set({ isPaid: true, status: "paid", updatedAt: new Date() })
+      .set({
+        isPaid: true,
+        status: parcelStatusAfterPaymentSucceeded(parcel.status),
+        updatedAt: new Date(),
+      })
       .where(eq(parcels.id, row.parcelId));
 
     return { paymentId: row.id, parcelId: row.parcelId, settled: out.outstanding === 0 };

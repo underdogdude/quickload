@@ -802,8 +802,10 @@ export function createPaymentFailedFlexMessage(input: {
   };
 }
 
-/** Day 1 — gentle nudge: assumes good intent, no shame language. */
-export function createPaymentReminderDay1FlexMessage(input: PaymentReminderFlexInput): {
+function createPaymentReminderFlexMessage(
+  input: PaymentReminderFlexInput,
+  bodyText: string,
+): {
   type: "flex";
   altText: string;
   contents: Record<string, unknown>;
@@ -832,7 +834,7 @@ export function createPaymentReminderDay1FlexMessage(input: PaymentReminderFlexI
           },
           {
             type: "text",
-            text: "พัสดุของคุณพร้อมชำระแล้วค่ะ หากชำระไปแล้วขออภัยที่รบกวนนะคะ 🙏",
+            text: bodyText,
             size: "sm",
             color: "#6B7280",
             wrap: true,
@@ -890,6 +892,36 @@ export function createPaymentReminderDay1FlexMessage(input: PaymentReminderFlexI
       },
     },
   };
+}
+
+/** Day 1 — gentle nudge: assumes good intent, no shame language. */
+export function createPaymentReminderDay1FlexMessage(input: PaymentReminderFlexInput): {
+  type: "flex";
+  altText: string;
+  contents: Record<string, unknown>;
+} {
+  return createPaymentReminderFlexMessage(
+    input,
+    "พัสดุของคุณพร้อมชำระแล้ว หากชำระไปแล้วขออภัยที่รบกวน 🙏",
+  );
+}
+
+/** Day 2 — same layout as day 1; follow-up tone for outstanding balance. */
+export function createPaymentReminderDay2FlexMessage(input: PaymentReminderFlexInput): {
+  type: "flex";
+  altText: string;
+  contents: Record<string, unknown>;
+} {
+  return createPaymentReminderFlexMessage(
+    input,
+    [
+      "ขออนุญาตแจ้งเตือนอีกครั้ง พัสดุของคุณยังมียอดค้างชำระอยู่",
+      "",
+      "รบกวนตรวจสอบและชำระยอดค้างเมื่อสะดวก เพื่อให้รายการนี้เรียบร้อย",
+      "",
+      "หากชำระแล้ว ขออภัยที่รบกวน 🙏",
+    ].join("\n"),
+  );
 }
 
 /** Day 7 — final notice before formal debt collection escalation. */

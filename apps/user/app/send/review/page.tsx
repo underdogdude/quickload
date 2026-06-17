@@ -226,7 +226,7 @@ function ReviewInner() {
         if (!cancelled && res.ok && json.ok && Number.isFinite(json.data?.estimatedTotal)) {
           const total = Number(json.data?.estimatedTotal);
           setBaseEstimatedPrice(total);
-          setEstimatedPrice(total + zipcodeSurcharge);
+          setEstimatedPrice(total + zipcodeSurcharge + insuranceFee);
         }
       } catch {
         // Keep fallback value when pricing API is unavailable.
@@ -235,7 +235,7 @@ function ReviewInner() {
     return () => {
       cancelled = true;
     };
-  }, [extraInsurance, insuredValue, recipient?.zipcode, weightGram, zipcodeSurcharge]);
+  }, [extraInsurance, insuredValue, insuranceFee, recipient?.zipcode, weightGram, zipcodeSurcharge]);
 
   async function onConfirmCreateOrder() {
     if (!sender || !recipient || submitting || redirecting) return;
@@ -383,6 +383,12 @@ function ReviewInner() {
                       <div className="flex items-center justify-between">
                         <p className="text-slate-600">ค่าบริการพื้นที่ห่างไกล</p>
                         <p className="font-medium text-slate-800">{zipcodeSurcharge.toLocaleString("th-TH")} บาท</p>
+                      </div>
+                    ) : null}
+                    {insuranceFee > 0 ? (
+                      <div className="flex items-center justify-between">
+                        <p className="text-slate-600">ค่าประกันเพิ่ม</p>
+                        <p className="font-medium text-slate-800">{insuranceFee.toLocaleString("th-TH")} บาท</p>
                       </div>
                     ) : null}
                   </div>

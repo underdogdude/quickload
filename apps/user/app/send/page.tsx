@@ -6,6 +6,7 @@ import {
   validateParcelSideCm,
   validateWeightGram,
 } from "@/lib/parcel-dimensions";
+import { MAX_PARCEL_NOTE_LENGTH, sanitizeParcelNote } from "@quickload/shared/parcel-note";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
@@ -23,6 +24,10 @@ const PARCEL_TYPE_OPTIONS = [
   "อื่นๆ",
 ] as const;
 type ParcelTypeOption = (typeof PARCEL_TYPE_OPTIONS)[number];
+
+function clampNote(value: string): string {
+  return sanitizeParcelNote(value) ?? "";
+}
 
 function parcelTypeFromQuery(get: (key: string) => string | null): ParcelTypeOption {
   const raw = get("parcelType");
@@ -244,7 +249,7 @@ function SendParcelInner() {
   const [widthCm, setWidthCm] = useState(() => searchParams.get("widthCm") || "");
   const [lengthCm, setLengthCm] = useState(() => searchParams.get("lengthCm") || "");
   const [heightCm, setHeightCm] = useState(() => searchParams.get("heightCm") || "");
-  const [note, setNote] = useState(() => searchParams.get("note") || "");
+  const [note, setNote] = useState(() => clampNote(searchParams.get("note") || ""));
   const [formError, setFormError] = useState<string | null>(() => searchParams.get("parcelError") || null);
   const [parcelTypeOpen, setParcelTypeOpen] = useState(false);
   const [parcelType, setParcelType] = useState<ParcelTypeOption>(() => parcelTypeFromQuery((k) => searchParams.get(k)));
@@ -670,9 +675,13 @@ function SendParcelInner() {
                 rows={2}
                 placeholder="หมายเหตุ"
                 value={note}
-                onChange={(e) => setNote(e.target.value)}
+                maxLength={MAX_PARCEL_NOTE_LENGTH}
+                onChange={(e) => setNote(clampNote(e.target.value))}
                 className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm outline-none placeholder:text-slate-400"
               />
+              <p className="mt-1 text-right text-xs text-slate-400">
+                {note.length}/{MAX_PARCEL_NOTE_LENGTH}
+              </p>
             </div>
           </div>
 

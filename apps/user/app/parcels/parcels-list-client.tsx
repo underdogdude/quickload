@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { resolveParcelDisplayStatus } from "@quickload/shared/parcel-display-status";
 import { ListParcelThaiPostProgressHorizontal } from "@/lib/parcel-shipment-progress";
 import { parcelBarcodeDataUrl, parcelQrDataUrl } from "@/lib/parcel-scan-media";
 import { useEffect, useMemo, useState } from "react";
@@ -34,22 +35,16 @@ type ParcelRow = {
 };
 
 /**
- * List UI must match payment reality: if money settled, never show "รอชำระเงิน" because
- * `status` was not flipped to `paid` (e.g. legacy row or partial DB update).
- * After payment, carrier status (e.g. in_transit) still wins over relabelling as paid.
+ * List badge / filter status: when paid, prefer carrier progress (DB or webhook),
+ * never regress to “ลงทะเบียนแล้ว” if the parcel is already in transit.
  */
 function resolveListParcelStatus(p: ParcelRow): string {
-  if (!p.isPaid) return p.status;
-  const s = p.status;
-  // Product decision: paid parcels should render as "registered" in list state.
-  if (s === "pending_payment" || s === "awaiting_actual_weight" || s === "paid") return "registered";
-  return s;
+  return resolveParcelDisplayStatus(p);
 }
 
 function getStatusLabel(status: string) {
   if (status === "awaiting_actual_weight") return "รอลงทะเบียน/น้ำหนักจริง";
   if (status === "pending_payment") return "รอการชำระเงิน";
-  if (status === "paid") return "ลงทะเบียนแล้ว";
   if (status === "registered") return "ลงทะเบียนแล้ว";
   if (status === "at_destination_post") return "ถึงปลายทาง/รอรับที่ไปรษณีย์";
   if (status === "in_transit") return "อยู่ระหว่างขนส่ง";
@@ -63,7 +58,6 @@ function getStatusLabel(status: string) {
 function getStatusClass(status: string) {
   if (status === "awaiting_actual_weight") return "bg-slate-200 text-slate-700";
   if (status === "pending_payment") return "bg-yellow-400 text-yellow-400";
-  if (status === "paid") return "bg-indigo-100 text-indigo-700";
   if (status === "registered") return "bg-indigo-100 text-indigo-700";
   if (status === "at_destination_post") return "bg-blue-100 text-blue-700";
   if (status === "in_transit") return "bg-sky-100 text-sky-800";
@@ -103,7 +97,6 @@ function shouldShowPayButton(
 function getTimelineStatusClass(status: string) {
   if (status === "awaiting_actual_weight") return "border-slate-300 bg-slate-100 text-slate-700";
   if (status === "pending_payment") return "border-yellow-200  bg-yellow-50 text-yellow-700";
-  if (status === "paid") return "border-indigo-200 bg-indigo-50 text-indigo-700";
   if (status === "registered") return "border-indigo-200 bg-indigo-50 text-indigo-700";
   if (status === "at_destination_post") return "border-blue-200 bg-blue-50 text-blue-700";
   if (status === "in_transit") return "border-sky-200 bg-sky-50 text-sky-700";
@@ -117,7 +110,6 @@ function getTimelineStatusClass(status: string) {
 function getStatusIconCircleClass(status: string) {
   if (status === "awaiting_actual_weight") return "bg-slate-100 text-slate-700";
   if (status === "pending_payment") return "bg-yellow-50 text-yellow-700";
-  if (status === "paid") return "bg-indigo-50 text-indigo-700";
   if (status === "registered") return "bg-indigo-50 text-indigo-700";
   if (status === "at_destination_post") return "bg-blue-50 text-blue-700";
   if (status === "in_transit") return "bg-sky-50 text-sky-700";
