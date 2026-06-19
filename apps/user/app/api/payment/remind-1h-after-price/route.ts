@@ -1,18 +1,15 @@
-import { and, desc, eq, inArray, isNotNull, notInArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, lte, notInArray } from "drizzle-orm";
 import { getDb, notificationLog, orders, parcels, users } from "@quickload/shared/db";
 import { computeOutstanding } from "@quickload/shared/penalty";
 import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
 import { NextResponse } from "next/server";
 import { pushLineMessage } from "@/lib/line-messaging";
 import {
-  buildReminderMessage,
-  daysRemainingInPaymentWindow,
-  daysSinceConfirmed,
-  nextDueReminderDay,
-  PAYMENT_REMINDER_DAYS,
-  PAYMENT_WINDOW_DAYS,
-  reminderTypeForDay,
-  type PaymentReminderDay,
+  createPaymentReminder1hAfterPriceTextMessage,
+  formatPaymentDueDateThBeShort,
+  isPaymentReminder1hAfterPriceDue,
+  PAYMENT_REMINDER_1H_AFTER_PRICE_MS,
+  PAYMENT_REMINDER_1H_AFTER_PRICE_TYPE,
 } from "@/lib/payment-reminders";
 
 export const dynamic = "force-dynamic";
@@ -25,24 +22,10 @@ const EXCLUDED_STATUSES = [
   "paid",
 ] as const;
 
-const REMINDER_LOG_TYPES = PAYMENT_REMINDER_DAYS.map((d) => reminderTypeForDay(d));
-
-function resolvePublicBaseUrl(): string | null {
-  const envBase =
-    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-    process.env.APP_BASE_URL?.trim() ||
-    process.env.PUBLIC_BASE_URL?.trim() ||
-    "";
-  if (envBase) return envBase.replace(/\/+$/, "");
-  const vercel = process.env.VERCEL_URL?.trim();
-  if (vercel) return `https://${vercel}`.replace(/\/+$/, "");
-  return null;
-}
-
 function authorizeCron(request: Request): NextResponse | null {
   const expected = process.env.CRON_SECRET;
   if (!expected) {
-    console.error("[remind-unpaid] CRON_SECRET is not set");
+    console.error("[remind-1h-after-price] CRON_SECRET is not set");
     return NextResponse.json({ ok: false, error: "Not configured" }, { status: 503 });
   }
   const headerSecret = request.headers.get("x-cron-secret")?.trim() ?? "";
@@ -55,49 +38,36 @@ function authorizeCron(request: Request): NextResponse | null {
   return null;
 }
 
-type SentReminderMap = Map<string, Set<PaymentReminderDay>>;
-
-function parseReminderDay(type: string): PaymentReminderDay | null {
-  const match = /^payment_reminder_day_(1|2|3|4|5|6|7)$/.exec(type);
-  if (!match) return null;
-  return Number(match[1]) as PaymentReminderDay;
-}
-
-async function loadSentReminders(parcelIds: string[]): Promise<SentReminderMap> {
-  const map: SentReminderMap = new Map();
-  if (parcelIds.length === 0) return map;
+async function loadSentParcelIds(parcelIds: string[]): Promise<Set<string>> {
+  const sent = new Set<string>();
+  if (parcelIds.length === 0) return sent;
 
   const parcelIdSet = new Set(parcelIds);
   const db = getDb();
   const rows = await db
-    .select({ type: notificationLog.type, payload: notificationLog.payload })
+    .select({ payload: notificationLog.payload })
     .from(notificationLog)
     .where(
-      and(inArray(notificationLog.type, REMINDER_LOG_TYPES), eq(notificationLog.status, "sent")),
+      and(
+        eq(notificationLog.type, PAYMENT_REMINDER_1H_AFTER_PRICE_TYPE),
+        eq(notificationLog.status, "sent"),
+      ),
     );
 
   for (const row of rows) {
-    const day = parseReminderDay(row.type);
     const parcelId =
       row.payload && typeof row.payload === "object" && "parcelId" in row.payload
         ? String((row.payload as { parcelId?: unknown }).parcelId ?? "")
         : "";
-    if (!day || !parcelId || !parcelIdSet.has(parcelId)) continue;
-    const set = map.get(parcelId) ?? new Set<PaymentReminderDay>();
-    set.add(day);
-    map.set(parcelId, set);
+    if (parcelId && parcelIdSet.has(parcelId)) sent.add(parcelId);
   }
-  return map;
+  return sent;
 }
 
-async function runRemindUnpaid() {
+async function runRemind1hAfterPrice() {
   const db = getDb();
-  const publicBaseUrl = resolvePublicBaseUrl();
-  if (!publicBaseUrl) {
-    return NextResponse.json({ ok: false, error: "Missing public base URL" }, { status: 503 });
-  }
-
   const now = new Date();
+  const oneHourAgo = new Date(now.getTime() - PAYMENT_REMINDER_1H_AFTER_PRICE_MS);
   const candidates = await db
     .select({
       parcelId: parcels.id,
@@ -115,6 +85,7 @@ async function runRemindUnpaid() {
       and(
         eq(parcels.isPaid, false),
         isNotNull(parcels.thaiPostPriceConfirmedAt),
+        lte(parcels.thaiPostPriceConfirmedAt, oneHourAgo),
         isNotNull(parcels.price),
         isNotNull(users.lineUserId),
         notInArray(parcels.status, [...EXCLUDED_STATUSES]),
@@ -141,15 +112,25 @@ async function runRemindUnpaid() {
     }
   }
 
-  const sentReminders = await loadSentReminders(parcelIds);
+  const alreadySent = await loadSentParcelIds(parcelIds);
 
-  const sent: Array<{ parcelId: string; day: PaymentReminderDay; displayCode: string }> = [];
+  const sent: Array<{ parcelId: string; displayCode: string }> = [];
   const skipped: Array<{ parcelId: string; reason: string }> = [];
-  const failed: Array<{ parcelId: string; day: PaymentReminderDay; error: string }> = [];
+  const failed: Array<{ parcelId: string; error: string }> = [];
 
   for (const row of candidates) {
     if (!row.thaiPostPriceConfirmedAt || !row.price || !row.lineUserId) {
       skipped.push({ parcelId: row.parcelId, reason: "missing_required_fields" });
+      continue;
+    }
+
+    if (alreadySent.has(row.parcelId)) {
+      skipped.push({ parcelId: row.parcelId, reason: "already_sent" });
+      continue;
+    }
+
+    if (!isPaymentReminder1hAfterPriceDue(row.thaiPostPriceConfirmedAt, now)) {
+      skipped.push({ parcelId: row.parcelId, reason: "not_due_yet" });
       continue;
     }
 
@@ -168,32 +149,18 @@ async function runRemindUnpaid() {
       continue;
     }
 
-    const daysSince = daysSinceConfirmed(row.thaiPostPriceConfirmedAt, now);
-    const alreadySent = sentReminders.get(row.parcelId) ?? new Set<PaymentReminderDay>();
-    const day = nextDueReminderDay(daysSince, (d) => alreadySent.has(d));
-    if (!day) {
-      skipped.push({
-        parcelId: row.parcelId,
-        reason: daysSince < 1 ? "not_due_yet" : "all_reminders_sent",
-      });
-      continue;
-    }
-
     const order = orderMap.get(row.parcelId);
     const displayCode = resolveParcelDisplayCode({
       barcode: row.barcode,
       smartpostTrackingcode: order?.smartpostTrackingcode,
       trackingId: row.trackingId,
     });
-    const payUrl = new URL(`/pay/${encodeURIComponent(row.parcelId)}`, publicBaseUrl).toString();
-    const daysRemaining = daysRemainingInPaymentWindow(row.thaiPostPriceConfirmedAt, PAYMENT_WINDOW_DAYS, now);
-    const message = buildReminderMessage(day, {
-      parcelId: row.parcelId,
+    const message = createPaymentReminder1hAfterPriceTextMessage({
       displayCode,
       amountBaht: out.outstanding,
-      payUrl,
-      daysRemaining,
+      thaiPostPriceConfirmedAt: row.thaiPostPriceConfirmedAt,
     });
+    const paymentDueBy = formatPaymentDueDateThBeShort(row.thaiPostPriceConfirmedAt);
 
     let status: "sent" | "failed" = "sent";
     try {
@@ -201,28 +168,26 @@ async function runRemindUnpaid() {
     } catch (err) {
       status = "failed";
       const msg = err instanceof Error ? err.message : String(err);
-      failed.push({ parcelId: row.parcelId, day, error: msg });
+      failed.push({ parcelId: row.parcelId, error: msg });
     }
 
     await db.insert(notificationLog).values({
       userId: row.userId,
       lineUserId: row.lineUserId,
-      type: reminderTypeForDay(day),
+      type: PAYMENT_REMINDER_1H_AFTER_PRICE_TYPE,
       payload: {
         parcelId: row.parcelId,
         displayCode,
-        day,
-        daysSinceConfirmed: daysSince,
-        daysRemaining,
         outstanding: out.outstanding,
+        paymentDueBy,
+        thaiPostPriceConfirmedAt: row.thaiPostPriceConfirmedAt.toISOString(),
       },
       status,
     });
 
     if (status === "sent") {
-      alreadySent.add(day);
-      sentReminders.set(row.parcelId, alreadySent);
-      sent.push({ parcelId: row.parcelId, day, displayCode });
+      alreadySent.add(row.parcelId);
+      sent.push({ parcelId: row.parcelId, displayCode });
     }
   }
 
@@ -240,10 +205,10 @@ export async function GET(request: Request) {
   const denied = authorizeCron(request);
   if (denied) return denied;
   try {
-    return await runRemindUnpaid();
+    return await runRemind1hAfterPrice();
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
-    console.error("[remind-unpaid]", msg);
+    console.error("[remind-1h-after-price]", msg);
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
@@ -252,10 +217,10 @@ export async function POST(request: Request) {
   const denied = authorizeCron(request);
   if (denied) return denied;
   try {
-    return await runRemindUnpaid();
+    return await runRemind1hAfterPrice();
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
-    console.error("[remind-unpaid]", msg);
+    console.error("[remind-1h-after-price]", msg);
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }

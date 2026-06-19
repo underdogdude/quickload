@@ -239,10 +239,13 @@ export async function POST(request: Request) {
     for (const item of items) {
       const [parcel] = await db.select().from(parcels).where(eq(parcels.id, item.parcelId)).limit(1);
       if (parcel && !parcel.thaiPostPriceConfirmedAt) {
-        await db
-          .update(parcels)
-          .set({ thaiPostPriceConfirmedAt: new Date(), updatedAt: new Date() })
-          .where(eq(parcels.id, item.parcelId));
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "One or more parcels are not price-confirmed yet (waiting for carrier webhook)",
+          },
+          { status: 409 },
+        );
       }
     }
 

@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/payment/remind-1h-after-price",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/payment/remind-unpaid",
       "schedule": "0 2 * * *"
     }

@@ -18,20 +18,45 @@ export type ThaiPostWebhookHistoryEntry = {
   createdAt: string;
 };
 
-/** Parse "DD/MM/YYYY HH:mm:ss" (Thailand Post style) as local wall time → epoch ms. */
+/** Parse Thailand Post / Smartpost wall-clock timestamps (Asia/Bangkok, UTC+7) → epoch ms. */
 export function thaiPostStatusDateToMs(raw: string | null | undefined): number | null {
   if (!raw?.trim()) return null;
-  const m = raw.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})$/);
-  if (!m) return null;
-  const d = Number(m[1]);
-  const mo = Number(m[2]) - 1;
-  const y = Number(m[3]);
-  const h = Number(m[4]);
-  const mi = Number(m[5]);
-  const s = Number(m[6]);
-  const dt = new Date(y, mo, d, h, mi, s);
-  const t = dt.getTime();
-  return Number.isNaN(t) ? null : t;
+  const trimmed = raw.trim();
+  const dmy = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})$/);
+  if (dmy) {
+    return Date.UTC(
+      Number(dmy[3]),
+      Number(dmy[2]) - 1,
+      Number(dmy[1]),
+      Number(dmy[4]) - 7,
+      Number(dmy[5]),
+      Number(dmy[6]),
+    );
+  }
+  const isoish = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})$/);
+  if (isoish) {
+    return Date.UTC(
+      Number(isoish[1]),
+      Number(isoish[2]) - 1,
+      Number(isoish[3]),
+      Number(isoish[4]) - 7,
+      Number(isoish[5]),
+      Number(isoish[6]),
+    );
+  }
+  return null;
+}
+
+/** First billable-price confirm time from carrier fields; falls back to server now. */
+export function resolveCarrierWebhookConfirmedAt(
+  statusDateRaw: string | null | undefined,
+  envelopeTimestamp?: string | null,
+): Date {
+  const fromStatus = thaiPostStatusDateToMs(statusDateRaw);
+  if (fromStatus != null) return new Date(fromStatus);
+  const fromEnvelope = thaiPostStatusDateToMs(envelopeTimestamp);
+  if (fromEnvelope != null) return new Date(fromEnvelope);
+  return new Date();
 }
 
 /** JSONB / driver quirks: value may be a JSON string, or not an array — normalize before parsing entries. */

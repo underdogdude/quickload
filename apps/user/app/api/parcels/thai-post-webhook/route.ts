@@ -13,7 +13,7 @@ import {
   type TerminalParcelStatus,
 } from "@quickload/shared/thai-post-status";
 import { getDb, notificationLog, orders, parcels, thaiPostWebhookEvents, users } from "@quickload/shared/db";
-import { thaiPostStatusDateToMs } from "@quickload/shared/thai-post-webhook-history";
+import { thaiPostStatusDateToMs, resolveCarrierWebhookConfirmedAt } from "@quickload/shared/thai-post-webhook-history";
 import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
 import {
   computeBillableTotalFromTier,
@@ -85,6 +85,16 @@ function parseFinalCost(item: Record<string, unknown>): string | null {
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return null;
   return n.toFixed(2);
+}
+
+function smartpostEnvelopeTimestamp(rawEvent: Record<string, unknown>): string | null {
+  if (typeof rawEvent.timeStamp === "string") return rawEvent.timeStamp;
+  if (typeof rawEvent.timestamp === "string") return rawEvent.timestamp;
+  return null;
+}
+
+function resolveFirstPriceConfirmedAt(w: BatchItem): Date {
+  return resolveCarrierWebhookConfirmedAt(w.statusDateRaw, smartpostEnvelopeTimestamp(w.rawEvent));
 }
 
 type BatchItem = {
@@ -423,8 +433,12 @@ export async function POST(request: Request) {
               }
               parcelPatch.price = priceStr;
               parcelPatch.weightKg = weightKgFromGrams(w.weightGrams);
-              parcelPatch.thaiPostPriceConfirmedAt = new Date();
-              parcel.thaiPostPriceConfirmedAt = new Date();
+              // Immutable after first confirm — Thai Post resends weight on every status webhook.
+              if (firstConfirm) {
+                const confirmedAt = resolveFirstPriceConfirmedAt(w);
+                parcelPatch.thaiPostPriceConfirmedAt = confirmedAt;
+                parcel.thaiPostPriceConfirmedAt = confirmedAt;
+              }
               parcel.price = priceStr;
               console.info(
                 `[thai-post-webhook] billable parcelId=${parcel.id} weightG=${w.weightGrams} tier=${tier.weightUpToGrams}g shipping=${billable.shippingTierBaht} remote=${billable.remoteAreaBaht} insurance=${billable.insuranceBaht} total=${priceStr} carrierFinalcost=${w.finalCost ?? "null"}`,
@@ -459,11 +473,16 @@ export async function POST(request: Request) {
       // (Smartpost cron omits finalcost from all tracking events), confirm the price now so the
       // outstanding tab and the payment route can see it.
       if (parcel.price != null && Number(parcel.price) > 0 && parcel.thaiPostPriceConfirmedAt == null) {
+        const weightWebhook = ordered.find((item) => item.weightGrams != null && item.weightGrams > 0);
+        const source = weightWebhook ?? ordered.at(-1);
+        const confirmedAt = source
+          ? resolveFirstPriceConfirmedAt(source)
+          : new Date();
         await tx
           .update(parcels)
-          .set({ thaiPostPriceConfirmedAt: new Date(), updatedAt: new Date() })
+          .set({ thaiPostPriceConfirmedAt: confirmedAt, updatedAt: new Date() })
           .where(and(eq(parcels.id, parcel.id), eq(parcels.barcode, barcode)));
-        parcel.thaiPostPriceConfirmedAt = new Date();
+        parcel.thaiPostPriceConfirmedAt = confirmedAt;
         if (!shouldNotifyPaymentDue && notifyAmount == null) {
           shouldNotifyPaymentDue = true;
           notifyAmount = parcel.price;

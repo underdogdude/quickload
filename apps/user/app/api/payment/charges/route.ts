@@ -231,12 +231,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Parcel has no price" }, { status: 400 });
     }
     if (!parcel.thaiPostPriceConfirmedAt) {
-      // Smartpost cron webhooks omit finalcost, so thaiPostPriceConfirmedAt may never have been
-      // set even though we have a valid price. Confirm it now so payment can proceed.
-      await db
-        .update(parcels)
-        .set({ thaiPostPriceConfirmedAt: new Date(), updatedAt: new Date() })
-        .where(eq(parcels.id, parcelId));
+      return NextResponse.json(
+        { ok: false, error: "Parcel price is not confirmed yet (waiting for carrier webhook)" },
+        { status: 409 },
+      );
     }
 
     const out = computeOutstanding({
