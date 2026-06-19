@@ -1,9 +1,12 @@
 {
-  "crons": [
+  "_disabledCrons": [
     {
+      "_note": "Hobby plan — move back to crons[] on Pro, or use external scheduler",
       "path": "/api/payment/remind-1h-after-price",
       "schedule": "*/15 * * * *"
-    },
+    }
+  ],
+  "crons": [
     {
       "path": "/api/payment/remind-unpaid",
       "schedule": "0 2 * * *"
