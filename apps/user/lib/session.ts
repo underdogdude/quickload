@@ -6,6 +6,12 @@ export interface LineAppSession {
   displayName?: string;
   pictureUrl?: string | null;
   profileCompleted?: boolean;
+  /** Thaibulksms OTP token for the pending phone verification flow. */
+  phoneOtpToken?: string;
+  phoneOtpPhone?: string;
+  phoneOtpRequestedAt?: number;
+  /** Local Thai phone (0xxxxxxxxx) verified via OTP; required before saving a new phone. */
+  phoneOtpVerifiedFor?: string;
 }
 
 export function getSessionOptions(): SessionOptions {

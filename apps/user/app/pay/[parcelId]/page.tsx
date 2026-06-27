@@ -11,6 +11,7 @@ import {
   PROMPTPAY_METHOD_ID,
   type PaymentMethodId,
 } from "@quickload/shared/payment-methods";
+import { PromptPaySaveQrButton } from "../promptpay-save-qr-button";
 
 type ChargeStatus = "pending" | "succeeded" | "failed" | "expired" | "canceled";
 
@@ -473,6 +474,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                         </span>
                       </div>
                     </div>
+                    <PromptPaySaveQrButton paymentId={charge.paymentId} />
                     <p className="text-sm text-slate-600">
                       สแกน QR แล้วชำระในแอปธนาคาร · เหลือเวลา{" "}
                       <span className="font-semibold text-slate-900">{mm}:{ss}</span>

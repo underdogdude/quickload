@@ -42,3 +42,70 @@ body {
   @apply min-h-screen bg-slate-50 text-slate-900 antialiased;
   font-family: "Kanit", "Noto Sans Thai", "Noto Sans", sans-serif;
 }
+
+/* ── input[type="date"] — cross-browser / LINE WebView / mobile fix ────────
+   1. Grey background  → explicit white bg; -webkit-appearance:none strips native white.
+   2. Height collapses → root cause: color:transparent on ::-webkit-datetime-edit causes
+      mobile WebKit to skip layout entirely (optimisation), collapsing height to padding
+      only (~16px) until focus. Fix: use opacity:0 instead — opacity is a compositing/
+      paint property that NEVER affects layout, so the browser always reserves line-height.
+      Belt-and-suspenders: min-height on the input itself as a last resort.
+   3. Inset border     → explicit box-shadow:none removes native iOS inset shadow.
+   4. No icon          → native indicator hidden but kept clickable; custom SVG overlays. */
+input[type="date"] {
+  position: relative;
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  color-scheme: light;
+  background-color: white;
+  color: #1e293b; /* slate-900 */
+  -webkit-box-shadow: none;
+  box-shadow: none;
+  /* Prevents height collapse if internals still misbehave — matches py-2 + line-height */
+  min-height: 2.5rem;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  min-width: 0;
+  text-align: left;
+}
+
+input[type="date"]::-webkit-datetime-edit {
+  display: block;
+  overflow: hidden;
+  padding: 0;
+  /* Explicit line-height so this pseudo-element always contributes height to the box */
+  line-height: 1.5;
+}
+
+input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+  padding: 0;
+}
+
+/* Empty field (required + no value = :invalid): hide native format hint visually.
+   opacity:0 preserves layout (height). color:transparent does NOT on some mobile WebKit. */
+input[type="date"]:required:invalid::-webkit-datetime-edit {
+  opacity: 0;
+}
+
+/* Tapped into an empty field: reveal the browser format hint (dd/mm/yyyy) in placeholder
+   colour so the user knows what to enter. */
+input[type="date"]:required:invalid:focus::-webkit-datetime-edit {
+  opacity: 1;
+  color: #94a3b8; /* slate-400 */
+}
+
+/* Keep native picker clickable but invisible — cover full field so desktop opens
+   the calendar on any click (mobile already does; previously only the right 2.5rem worked). */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+}

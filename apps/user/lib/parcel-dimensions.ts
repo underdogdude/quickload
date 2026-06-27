@@ -60,14 +60,23 @@ export function validateParcelDimensionsFromStrings(
   return validateParcelDimensionsCm({ widthCm: width, lengthCm: length, heightCm: height });
 }
 
+export const MIN_PARCEL_WEIGHT_GRAM = 10;
 export const MAX_PARCEL_WEIGHT_GRAM = 30_000;
 
 /** Returns a Thai error message, or `null` when valid. */
-export function validateWeightGram(weightGram: string, maxGram = MAX_PARCEL_WEIGHT_GRAM): string | null {
-  if (!weightGram || Number(weightGram) <= 0) {
+export function validateWeightGram(
+  weightGram: string,
+  minGram = MIN_PARCEL_WEIGHT_GRAM,
+  maxGram = MAX_PARCEL_WEIGHT_GRAM,
+): string | null {
+  const n = Number(weightGram);
+  if (!weightGram || !Number.isFinite(n) || n <= 0) {
     return "กรุณาระบุน้ำหนักพัสดุให้ถูกต้อง";
   }
-  if (Number(weightGram) > maxGram) {
+  if (n < minGram) {
+    return `น้ำหนักพัสดุต้องไม่ต่ำกว่า ${minGram} กรัม`;
+  }
+  if (n > maxGram) {
     return "น้ำหนักพัสดุต้องไม่เกิน 30 กิโลกรัม หรือ 30,000 กรัม";
   }
   return null;

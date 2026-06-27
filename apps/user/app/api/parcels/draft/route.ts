@@ -83,7 +83,8 @@ export async function POST(request: Request) {
     if (!parsedSmartpost) {
       return NextResponse.json({ ok: false, error: "Invalid smartpostAddItemResponse" }, { status: 400 });
     }
-    if (parsedSmartpost.statuscode !== "201") {
+    // statuscode "201" is injected by add-item route before forwarding; this is a sanity check only.
+    if (parsedSmartpost.statuscode && parsedSmartpost.statuscode !== "201") {
       return NextResponse.json({ ok: false, error: "Smartpost order not successful" }, { status: 400 });
     }
 
@@ -92,7 +93,11 @@ export async function POST(request: Request) {
       smartpostFields.smartpostTrackingcode?.trim() || smartpostFields.barcode?.trim() || null;
     if (!trackingId) {
       return NextResponse.json(
-        { ok: false, error: "Smartpost response missing smartpost_trackingcode and barcode" },
+        {
+          ok: false,
+          error:
+            "Smartpost did not return a tracking code or barcode. Please contact Smartpost support.",
+        },
         { status: 400 },
       );
     }

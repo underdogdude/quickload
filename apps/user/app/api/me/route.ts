@@ -7,6 +7,7 @@ import { CacheHeaders, jsonWithCache } from "@/lib/api-cache";
 import { requireLineSession } from "@/lib/require-user";
 import type { LineAppSession } from "@/lib/session";
 import { getSessionOptions } from "@/lib/session";
+import { normalizeThaiPhone } from "@/lib/thai-phone";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^(\+66|0)\d{8,9}$/;
@@ -103,12 +104,34 @@ export async function PATCH(request: Request) {
     }
 
     const db = getDb();
+    const existingRows = await db
+      .select({ phone: users.phone })
+      .from(users)
+      .where(eq(users.id, session.userId))
+      .limit(1);
+    const existingUser = existingRows[0];
+    if (!existingUser) {
+      return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 });
+    }
+
+    const normalizedNewPhone = normalizeThaiPhone(phone);
+    const normalizedCurrentPhone = normalizeThaiPhone(existingUser.phone ?? "");
+    if (normalizedNewPhone !== normalizedCurrentPhone) {
+      const otpSession = await getIronSession<LineAppSession>(cookies(), getSessionOptions());
+      if (otpSession.phoneOtpVerifiedFor !== normalizedNewPhone) {
+        return NextResponse.json(
+          { ok: false, error: "กรุณายืนยันเบอร์โทรด้วยรหัส OTP ก่อนบันทึก" },
+          { status: 403 },
+        );
+      }
+    }
+
     const updatedRows = await db
       .update(users)
       .set({
         firstName,
         lastName,
-        phone,
+        phone: normalizedNewPhone,
         email,
         birthDate,
         updatedAt: new Date(),
@@ -133,6 +156,10 @@ export async function PATCH(request: Request) {
 
     const fullSession = await getIronSession<LineAppSession>(cookies(), getSessionOptions());
     fullSession.profileCompleted = true;
+    fullSession.phoneOtpVerifiedFor = undefined;
+    fullSession.phoneOtpToken = undefined;
+    fullSession.phoneOtpPhone = undefined;
+    fullSession.phoneOtpRequestedAt = undefined;
     await fullSession.save();
 
     return NextResponse.json(

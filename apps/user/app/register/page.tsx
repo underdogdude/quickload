@@ -1,6 +1,8 @@
 "use client";
 
 import { navigateAfterAuth } from "@/lib/navigate-after-auth";
+import { savePendingProfile } from "@/lib/pending-profile";
+import { isValidThaiPhone, normalizeThaiPhone } from "@/lib/thai-phone";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -16,7 +18,6 @@ type CurrentUser = {
 
 const TITLE_FONT_CLASS = "font-title-placeholder";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_REGEX = /^(\+66|0)\d{8,9}$/;
 
 function splitDisplayName(name: string | null | undefined): { firstName: string; lastName: string } {
   const trimmed = name?.trim() ?? "";
@@ -43,7 +44,11 @@ export default function RegisterPage() {
   const [emailError, setEmailError] = useState<string | null>(null);
 
   const needsProfile = !currentUser?.firstName || !currentUser?.lastName || !currentUser?.phone;
-  const normalizedPhone = useMemo(() => phone.replace(/[\s-]/g, ""), [phone]);
+  const normalizedPhone = useMemo(() => normalizeThaiPhone(phone), [phone]);
+  const phoneNeedsVerification = useMemo(() => {
+    const savedPhone = normalizeThaiPhone(currentUser?.phone ?? "");
+    return normalizedPhone !== savedPhone;
+  }, [currentUser?.phone, normalizedPhone]);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,7 +110,7 @@ export default function RegisterPage() {
     setMsgTone("info");
 
     const nextPhoneError =
-      normalizedPhone && !PHONE_REGEX.test(normalizedPhone)
+      normalizedPhone && !isValidThaiPhone(normalizedPhone)
         ? "กรุณากรอกเบอร์โทรให้ถูกต้อง เช่น 0812345678"
         : null;
     const nextEmailError =
@@ -125,6 +130,18 @@ export default function RegisterPage() {
 
     setSaving(true);
     try {
+      if (phoneNeedsVerification) {
+        savePendingProfile({
+          firstName,
+          lastName,
+          phone: normalizedPhone,
+          email,
+          birthDate,
+        });
+        router.push(`/register/verify-phone?phone=${encodeURIComponent(normalizedPhone)}`);
+        return;
+      }
+
       const res = await fetch("/api/me", {
         method: "PATCH",
         credentials: "include",
@@ -199,13 +216,10 @@ export default function RegisterPage() {
             <>
               <p className="mb-4 text-sm font-medium text-slate-800">ข้อมูลสมาชิก</p>
               <div className="mb-4">
-                <p className="text-sm font-semibold text-slate-900">
-                  {currentUser?.displayName ?? "ผู้ใช้ LINE"}
-                </p>
                 <p className="text-xs text-slate-500">
                   {isFirstTime
                     ? "กรอกข้อมูลให้ครบถ้วนเพื่อเริ่มใช้งานครั้งแรก"
-                    : "ข้อมูลนี้จะใช้สำหรับการจัดส่งพัสดุ"}
+                    : ""}
                 </p>
               </div>
 
@@ -213,7 +227,7 @@ export default function RegisterPage() {
                 <label className="block text-sm text-slate-700">
                   ชื่อ
                   <input
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
                     placeholder="เช่น สมชาย"
@@ -224,7 +238,7 @@ export default function RegisterPage() {
                 <label className="block text-sm text-slate-700">
                   นามสกุล
                   <input
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
                     placeholder="เช่น ใจดี"
@@ -235,7 +249,7 @@ export default function RegisterPage() {
                 <label className="block text-sm text-slate-700">
                   เบอร์โทรศัพท์
                   <input
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
                     value={phone}
                     onChange={(e) => {
                       setPhone(e.target.value);
@@ -244,16 +258,20 @@ export default function RegisterPage() {
                     inputMode="tel"
                     autoComplete="tel"
                     placeholder="เช่น 0812345678"
-                    pattern="^(\+66|0)\d{8,9}$"
                     required
                   />
+                  {phoneNeedsVerification && normalizedPhone ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      เปลี่ยนเบอร์โทรจะต้องยืนยันด้วยรหัส OTP ทาง SMS
+                    </p>
+                  ) : null}
                   {phoneError ? <p className="mt-1 text-xs text-red-600">{phoneError}</p> : null}
                 </label>
                 <label className="block text-sm text-slate-700">
                   อีเมล
                   <input
                     type="email"
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
                     value={email}
                     onChange={(e) => {
                       setEmail(e.target.value);
@@ -267,32 +285,51 @@ export default function RegisterPage() {
                 </label>
                 <label className="block text-sm text-slate-700">
                   วันเกิด
-                  <input
-                    type="date"
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none transition focus:border-[#2726F5]"
-                    value={birthDate}
-                    onChange={(e) => setBirthDate(e.target.value)}
-                    required
-                  />
+                  <div className="relative mt-1">
+                    <input
+                      type="date"
+                      className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-3 pr-10 outline-none transition focus:border-[#2726F5]"
+                      value={birthDate}
+                      onChange={(e) => setBirthDate(e.target.value)}
+                      required
+                    />
+                    {!birthDate ? (
+                      <span
+                        className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-400"
+                        aria-hidden
+                      >
+                        วว/ดด/ปปปป
+                      </span>
+                    ) : null}
+                    <span
+                      className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center text-slate-400"
+                      aria-hidden
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z" />
+                        <path d="M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2" />
+                      </svg>
+                    </span>
+                  </div>
                 </label>
 
-                <div className="pt-2">
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="rounded-xl bg-[#2726F5] px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-                  >
-                    {saving ? "กำลังบันทึก…" : isFirstTime ? "เริ่มใช้งาน" : "บันทึกข้อมูล"}
-                  </button>
+                <div className="flex gap-2 pt-2">
                   {!needsProfile && !isFirstTime ? (
                     <button
                       type="button"
                       onClick={() => router.replace("/")}
-                      className="ml-2 rounded-xl border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                      className="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                     >
                       ไปหน้าหลัก
                     </button>
                   ) : null}
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="flex-1 rounded-lg bg-[#2726F5] px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  >
+                    {saving ? "กำลังบันทึก…" : isFirstTime ? "เริ่มใช้งาน" : "บันทึกข้อมูล"}
+                  </button>
                 </div>
               </form>
             </>

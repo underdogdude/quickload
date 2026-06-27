@@ -60,8 +60,8 @@ export function parseSmartpostAddItemResponse(raw: unknown): ParsedSmartpostAddI
   if (!rec) return null;
   const statuscode = String(rec.statuscode ?? "");
   const message = String(rec.message ?? "");
-  const inner = materializeDataField(rec.data);
-  if (!inner) return null;
+  // `data` is absent when Smartpost returns bare {"message":"Create successful"} — fall back to {}.
+  const inner = materializeDataField(rec.data) ?? {};
   return { statuscode, message, inner };
 }
 

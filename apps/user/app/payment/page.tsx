@@ -229,12 +229,35 @@ export default function PaymentPage() {
           {tab === "outstanding" ? (
             <>
               <article className="rounded-md bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
-                <p className="text-sm font-medium text-slate-500">ยอดค้างชำระทั้งหมด</p>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-medium text-slate-500">ยอดค้างชำระทั้งหมด</p>
+                  {!outstandingLoading && items.length > 0 ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-[11px] font-medium text-rose-700">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="12"
+                        height="12"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        className="shrink-0 text-rose-600"
+                        aria-hidden
+                      >
+                        <path
+                          d="M4 8h16v12H4V8Zm0 0 8-4 8 4M9 12h6"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      ค้างชำระ {items.length} รายการ
+                    </span>
+                  ) : null}
+                </div>
                 {outstandingLoading ? (
                   <div className="mt-3 space-y-2">
                     <div className="h-10 w-48 animate-pulse rounded-lg bg-slate-100" />
                     <div className="h-4 w-56 animate-pulse rounded bg-slate-100" />
-                    <div className="h-8 w-40 animate-pulse rounded-full bg-slate-100" />
                     <div className="mt-2 h-12 w-full animate-pulse rounded-xl bg-slate-100" />
                   </div>
                 ) : (
@@ -246,31 +269,10 @@ export default function PaymentPage() {
                       อัพเดทล่าสุด {updatedAt ? formatUpdatedAt(updatedAt) : "—"} น.
                     </p>
                     {items.length > 0 ? (
-                      <>
-                        <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="14"
-                            height="14"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            className="shrink-0 text-rose-600"
-                            aria-hidden
-                          >
-                            <path
-                              d="M4 8h16v12H4V8Zm0 0 8-4 8 4M9 12h6"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                          ค้างชำระ {items.length} รายการ
-                        </div>
-                        <Link
-                          href={buildPayAllHref(items)}
-                          className="mt-4 flex w-full items-center justify-center gap-2.5 rounded-xl bg-[#2726F5] px-4 py-3.5 text-[15px] font-semibold leading-snug text-white shadow-[0_8px_22px_rgba(39,38,245,0.30)] transition hover:bg-[#1f1ed4] active:scale-[0.99]"
-                        >
+                      <Link
+                        href={buildPayAllHref(items)}
+                        className="mt-4 flex w-full items-center justify-center gap-2.5 rounded-xl bg-[#2726F5] px-4 py-3.5 text-[15px] font-semibold leading-snug text-white shadow-[0_8px_22px_rgba(39,38,245,0.30)] transition hover:bg-[#1f1ed4] active:scale-[0.99]"
+                      >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
                             width="18"
@@ -291,9 +293,8 @@ export default function PaymentPage() {
                           <span className="text-center">
                             ชำระยอดค้างทั้งหมด{" "}
                             <span className="tabular-nums">{formatTHB(totalOutstanding)}</span> บาท
-                          </span>
-                        </Link>
-                      </>
+                        </span>
+                      </Link>
                     ) : (
                       <div className="mt-3 space-y-1">
                         <p className="text-sm text-slate-600">ไม่มียอดค้างชำระ</p>
@@ -347,9 +348,9 @@ export default function PaymentPage() {
                         </div>
                         <Link
                           href={`/pay/${encodeURIComponent(it.parcelId)}`}
-                          className="flex w-full items-center justify-center rounded-md bg-[#2726F5] px-4 py-2 my-4 text-sm font-medium text-white shadow-[0_6px_14px_rgba(39,38,245,0.28)] gap-2"
+                          className="my-4 flex w-full items-center justify-center gap-2 rounded-md border border-[#2726F5] bg-transparent px-4 py-2 text-sm font-medium text-[#2726F5] transition hover:bg-[#2726F5]/5"
                         >
-                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" aria-hidden>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" aria-hidden>
                             <path d="M3 7h18v10H3V7Zm0 4h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                           </svg>
                           ไปชำระเงิน
@@ -399,11 +400,14 @@ export default function PaymentPage() {
               <div className="grid grid-cols-2 gap-3">
                 <Link
                   href="/parcels"
-                  className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700"
+                  className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-transparent px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
                 >
                   ดูรายการพัสดุ
                 </Link>
-                <SendLink className="inline-flex items-center justify-center rounded-lg bg-[#2726F5] px-4 py-2.5 text-sm font-medium text-white">
+                <SendLink className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#2726F5] bg-transparent px-4 py-2.5 text-sm font-medium text-[#2726F5] transition hover:bg-[#2726F5]/5 active:bg-[#2726F5]/10">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" aria-hidden className="shrink-0">
+                    <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+                  </svg>
                   สร้างรายการใหม่
                 </SendLink>
               </div>
@@ -488,11 +492,14 @@ export default function PaymentPage() {
               <div className="grid grid-cols-2 gap-3">
                 <Link
                   href="/parcels"
-                  className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700"
+                  className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-transparent px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
                 >
                   ดูรายการพัสดุ
                 </Link>
-                <SendLink className="inline-flex items-center justify-center rounded-lg bg-[#2726F5] px-4 py-2.5 text-sm font-medium text-white">
+                <SendLink className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#2726F5] bg-transparent px-4 py-2.5 text-sm font-medium text-[#2726F5] transition hover:bg-[#2726F5]/5 active:bg-[#2726F5]/10">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" aria-hidden className="shrink-0">
+                    <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+                  </svg>
                   สร้างรายการใหม่
                 </SendLink>
               </div>

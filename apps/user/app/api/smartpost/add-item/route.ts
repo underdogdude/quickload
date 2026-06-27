@@ -3,6 +3,7 @@ import { getDb, recipientAddresses, senderAddresses } from "@quickload/shared/db
 import { NextResponse } from "next/server";
 import { requireLineSession } from "@/lib/require-user";
 import { getSendAccessBlockForUser, sendAccessBlockedResponse } from "@/lib/send-access-block";
+import { MIN_PARCEL_WEIGHT_GRAM, MAX_PARCEL_WEIGHT_GRAM } from "@/lib/parcel-dimensions";
 
 type AddItemBody = {
   senderId?: string;
@@ -52,6 +53,18 @@ export async function POST(request: Request) {
 
     if (!senderId || !recipientId || !weightGram) {
       return NextResponse.json({ ok: false, error: "senderId, recipientId and weightGram are required" }, { status: 400 });
+    }
+    if (weightGram < MIN_PARCEL_WEIGHT_GRAM) {
+      return NextResponse.json(
+        { ok: false, error: `น้ำหนักพัสดุต้องไม่ต่ำกว่า ${MIN_PARCEL_WEIGHT_GRAM} กรัม` },
+        { status: 400 },
+      );
+    }
+    if (weightGram > MAX_PARCEL_WEIGHT_GRAM) {
+      return NextResponse.json(
+        { ok: false, error: "น้ำหนักพัสดุต้องไม่เกิน 30 กิโลกรัม หรือ 30,000 กรัม" },
+        { status: 400 },
+      );
     }
 
     const db = getDb();
@@ -124,25 +137,33 @@ export async function POST(request: Request) {
     const normalized = normalizeSmartpostResponse(upstreamJson);
     const smartpostStatus = String(normalized.statuscode ?? "");
     const smartpostMessage = normalized.message ?? "";
-    const isSmartpostSuccess = smartpostStatus === "201";
+    // Treat HTTP 201 OR body statuscode "201" as success (handles both response shapes).
+    const isSmartpostSuccess = upstreamRes.status === 201 || smartpostStatus === "201";
 
-    if (!upstreamRes.ok || !isSmartpostSuccess) {
+    if (!isSmartpostSuccess) {
+      const userFacingError = smartpostMessage || `Smartpost error ${upstreamRes.status}`;
       return NextResponse.json(
         {
           ok: false,
-          error: "Smartpost addItem failed",
+          error: userFacingError,
           upstreamHttpStatus: upstreamRes.status,
           smartpostStatus,
           smartpostMessage,
           endpoint,
-          payloadPreview: payload,
           details: upstreamJson,
         },
         { status: 502 },
       );
     }
 
-    return NextResponse.json({ ok: true, data: upstreamJson, payloadPreview: payload });
+    // Normalize: always include statuscode "201" so downstream (draft route, parser) can verify
+    // without re-reading HTTP status. PHP success body may only have {"message":"Create successful"}.
+    const normalizedData =
+      typeof upstreamJson === "object" && upstreamJson !== null && !Array.isArray(upstreamJson)
+        ? { statuscode: "201", ...(upstreamJson as Record<string, unknown>) }
+        : { statuscode: "201", message: "Create successful" };
+
+    return NextResponse.json({ ok: true, data: normalizedData });
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";

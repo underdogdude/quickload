@@ -602,58 +602,77 @@ function SendParcelInner() {
           </div>
 
           <div className="rounded-lg bg-white p-4 shadow-sm">
-          
 
-            <div className="mt-4 space-y-3 text-slate-900">
-              <label className="flex items-center justify-between rounded-lg border border-slate-300 bg-white px-4 py-3">
-                <span className="text-sm font-medium">
-                  น้ำหนัก<span className="text-red-500">*</span>
-                </span>
-                <span className="flex items-center gap-2">
+            {/* Limits info */}
+            <div className="mb-4 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" className="mt-px shrink-0 text-amber-500" aria-hidden>
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5"/>
+                <path d="M12 8v4m0 4h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+              <p className="text-[11px] leading-relaxed text-amber-800">
+                น้ำหนัก <strong>10 – 30,000 กรัม</strong> · ขนาดแต่ละด้านไม่เกิน <strong>60 ซม.</strong> · รวม 3 ด้านไม่เกิน <strong>120 ซม.</strong>
+              </p>
+            </div>
+
+            <div className="space-y-3 text-slate-900">
+              <div>
+                <div className="mb-1.5 flex items-baseline gap-2 justify-between">
+                  <p className="text-sm font-medium text-slate-700">น้ำหนัก<span className="text-red-500">*</span></p>
+                  <p className="text-[11px] text-slate-400">น้ำหนักโดยประมาณ ราคาค่าส่งจะคำนวณจากน้ำหนักจริงที่ชั่งที่ไปรษณีย์</p>
+                </div>
+                <div className="flex items-stretch overflow-hidden rounded-lg border border-slate-300 bg-white">
                   <input
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9]*"
+                    placeholder="0"
                     value={weightGram}
                     onChange={(e) => setWeightGram(onlyNumber(e.target.value))}
                     onBlur={validateWeightField}
-                    className="w-full rounded-md px-2 py-1 text-right text-sm text-slate-700 outline-none"
+                    className="min-w-0 flex-1 px-4 py-3 text-sm text-slate-800 outline-none placeholder:text-slate-300"
                   />
-                  <span className="text-sm text-slate-700">กรัม</span>
-                </span>
-              </label>
+                  <span className="flex items-center border-l border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-500">
+                    กรัม
+                  </span>
+                </div>
+              </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  placeholder="ความกว้าง(ซม.)"
-                  value={widthCm}
-                  onChange={(e) => setWidthCm(onlyNumber(e.target.value))}
-                  onBlur={validateDimensionsField}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400"
-                />
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  placeholder="ความยาว(ซม.)"
-                  value={lengthCm}
-                  onChange={(e) => setLengthCm(onlyNumber(e.target.value))}
-                  onBlur={validateDimensionsField}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400"
-                />
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  placeholder="ความสูง(ซม.)"
-                  value={heightCm}
-                  onChange={(e) => setHeightCm(onlyNumber(e.target.value))}
-                  onBlur={validateDimensionsField}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400"
-                />
+              <div>
+                <p className="mb-1.5 text-sm font-medium text-slate-700">
+                  ขนาด (กว้าง × ยาว × สูง)<span className="text-red-500">*</span>
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="กว้าง(ซม.)"
+                    value={widthCm}
+                    onChange={(e) => setWidthCm(onlyNumber(e.target.value))}
+                    onBlur={validateDimensionsField}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400"
+                  />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="ยาว(ซม.)"
+                    value={lengthCm}
+                    onChange={(e) => setLengthCm(onlyNumber(e.target.value))}
+                    onBlur={validateDimensionsField}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400"
+                  />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="สูง(ซม.)"
+                    value={heightCm}
+                    onChange={(e) => setHeightCm(onlyNumber(e.target.value))}
+                    onBlur={validateDimensionsField}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400"
+                  />
+                </div>
               </div>
 
               <div>

@@ -31,7 +31,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
   if (!session.profileCompleted) {
-    if (pathname === "/register") {
+    if (pathname === "/register" || pathname.startsWith("/register/")) {
       return response;
     }
     const url = request.nextUrl.clone();
