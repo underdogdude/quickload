@@ -185,6 +185,9 @@ export async function POST(request: Request) {
       referenceId: f.referenceId || null,
     });
 
+    // Build and fire the LINE Flex message without blocking the HTTP response.
+    // The order is already saved; a slow or failed LINE API call must not make
+    // the user's app appear hung (critical on Android with low bandwidth).
     try {
       const barcode = f.barcode?.trim() || parcelRow.barcode?.trim() || "";
       const trackingNumber = resolveParcelDisplayCode({
@@ -195,9 +198,6 @@ export async function POST(request: Request) {
       const referenceCode = f.smartpostTrackingcode?.trim() || "";
       const publicBaseUrl = resolvePublicBaseUrl(request);
 
-      // Signed tokens make Flex buttons work even after the user's session expires.
-      // The label token authenticates the PDF download without a cookie.
-      // The track token auto-establishes a session then redirects to the parcel page.
       const labelToken = createFlexToken({ userId: session.userId, parcelId: parcelRow.id, action: "label" });
       const trackToken = createFlexToken({ userId: session.userId, parcelId: parcelRow.id, action: "track" });
 
@@ -227,13 +227,16 @@ export async function POST(request: Request) {
         labelPdfUrl,
         qrCodeImageUrl,
       });
-      await pushLineMessage({
-        to: session.lineUserId,
-        message: flexMessage,
+      const lineUserId = session.lineUserId;
+      // Fire-and-forget: push runs after the response is sent.
+      void pushLineMessage({ to: lineUserId, message: flexMessage }).catch((lineErr: unknown) => {
+        const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
+        console.warn("[line-flex] send failed:", msg);
       });
-    } catch (lineErr) {
-      const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
-      console.warn("[line-flex] send failed:", msg);
+    } catch (buildErr) {
+      // Flex message construction failed (e.g. bad token). Log and move on.
+      const msg = buildErr instanceof Error ? buildErr.message : String(buildErr);
+      console.warn("[line-flex] build failed:", msg);
     }
 
     return NextResponse.json({

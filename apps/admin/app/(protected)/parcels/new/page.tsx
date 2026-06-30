@@ -1,5 +1,6 @@
 "use client";
 
+import { PageHeader } from "@/app/admin-ui";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -26,31 +27,33 @@ export default function NewParcelPage() {
   }
 
   return (
-    <main className="mx-auto max-w-lg">
-      <h1 className="text-xl font-semibold">Create parcel</h1>
-      <form onSubmit={onSubmit} className="mt-4 space-y-3">
-        <label className="block text-sm">
+    <div className="space-y-6">
+      <PageHeader title="Create parcel" description="Create a lightweight admin parcel record when a support case needs manual tracking." />
+      <form onSubmit={onSubmit} className="max-w-2xl space-y-4 rounded-lg border border-slate-200 bg-white p-5">
+        <label className="block text-sm font-medium text-slate-700">
           Tracking ID
           <input
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-950 placeholder:text-slate-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500"
             value={trackingId}
             onChange={(e) => setTrackingId(e.target.value)}
+            placeholder="Carrier tracking or internal reference"
             required
           />
         </label>
-        <label className="block text-sm">
+        <label className="block text-sm font-medium text-slate-700">
           Destination
           <input
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-950 placeholder:text-slate-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500"
             value={destination}
             onChange={(e) => setDestination(e.target.value)}
+            placeholder="Optional destination note"
           />
         </label>
-        <button type="submit" className="rounded bg-slate-900 px-4 py-2 text-white">
+        <button type="submit" className="h-10 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800">
           Create
         </button>
+        {error && <p className="text-sm font-medium text-rose-700">{error}</p>}
       </form>
-      {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
-    </main>
+    </div>
   );
 }

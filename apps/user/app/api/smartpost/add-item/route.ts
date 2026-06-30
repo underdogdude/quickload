@@ -158,9 +158,10 @@ export async function POST(request: Request) {
 
     // Normalize: always include statuscode "201" so downstream (draft route, parser) can verify
     // without re-reading HTTP status. PHP success body may only have {"message":"Create successful"}.
+    // statuscode is placed at the END of the spread so it always overrides the upstream body value.
     const normalizedData =
       typeof upstreamJson === "object" && upstreamJson !== null && !Array.isArray(upstreamJson)
-        ? { statuscode: "201", ...(upstreamJson as Record<string, unknown>) }
+        ? { ...(upstreamJson as Record<string, unknown>), statuscode: "201" }
         : { statuscode: "201", message: "Create successful" };
 
     return NextResponse.json({ ok: true, data: normalizedData });

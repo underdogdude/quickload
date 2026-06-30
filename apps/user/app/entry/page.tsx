@@ -31,9 +31,12 @@ export default function EntryPage() {
     }
 
     try {
+      setMsg("กำลังโหลด LINE SDK…");
       const liff = (await import("@line/liff")).default;
+      setMsg("กำลังเชื่อมต่อ LINE…");
       await liff.init({ liffId });
       if (!liff.isLoggedIn()) {
+        setMsg("กำลังพาไปยังหน้าล็อกอิน LINE…");
         liff.login();
         return;
       }
@@ -47,13 +50,13 @@ export default function EntryPage() {
       try {
         const p = await liff.getProfile();
         setProfile({ name: p.displayName, pictureUrl: p.pictureUrl });
-        setMsg(`กำลังเข้าสู่ระบบ ${p.displayName}…`);
+        setMsg(`กำลังยืนยันตัวตน ${p.displayName}…`);
       } catch {
-        /* Continue even if LINE profile fetch fails. */
+        setMsg("กำลังยืนยันตัวตนกับเซิร์ฟเวอร์…");
       }
 
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 12000);
+      const timer = setTimeout(() => controller.abort(), 15000);
       const res = await fetch("/api/auth/line", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -69,7 +72,9 @@ export default function EntryPage() {
         return;
       }
       if (!cancelledRef.current) {
-        navigateAfterAuth(router, json.needsRegistration ? "/register" : "/");
+        // Hard nav ensures the new iron-session cookie is included in the very next
+        // request, avoiding a middleware bounce in LINE in-app browser.
+        navigateAfterAuth(router, json.needsRegistration ? "/register" : "/", { hard: true });
       }
     } catch (e) {
       if (cancelledRef.current) return;
@@ -91,15 +96,24 @@ export default function EntryPage() {
     cancelledRef.current = false;
 
     if (skipLineAuth) {
-      navigateAfterAuth(router, "/");
+      navigateAfterAuth(router, "/", { hard: true });
       return;
     }
 
     (async () => {
       setStatus("checking");
       setMsg("กำลังตรวจสอบการเข้าสู่ระบบ…");
+
+      // Pre-check: does the user already have a valid session?
+      // Use a 6-second timeout — a hung fetch here blocks the LIFF init that follows.
       try {
-        const res = await fetch("/api/me", { cache: "no-store" });
+        const preCheckController = new AbortController();
+        const preCheckTimer = setTimeout(() => preCheckController.abort(), 6000);
+        const res = await fetch("/api/me", {
+          cache: "no-store",
+          signal: preCheckController.signal,
+        });
+        clearTimeout(preCheckTimer);
         if (cancelledRef.current) return;
         if (res.ok) {
           const json = (await res.json()) as {
@@ -110,12 +124,15 @@ export default function EntryPage() {
             const complete = Boolean(
               json.data.firstName?.trim() && json.data.lastName?.trim() && json.data.phone?.trim(),
             );
-            navigateAfterAuth(router, complete ? "/" : "/register");
+            // Hard nav: iron-session cookie was set by a previous request; a soft nav +
+            // router.refresh() can race with middleware in LINE in-app browser and bounce
+            // the user back to /entry before the new server component picks up the cookie.
+            navigateAfterAuth(router, complete ? "/" : "/register", { hard: true });
             return;
           }
         }
       } catch {
-        /* Fall through to full LIFF sign-in. */
+        /* Timed out or network error — fall through to full LIFF sign-in. */
       }
 
       if (cancelledRef.current) return;

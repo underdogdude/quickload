@@ -116,8 +116,10 @@ function ReviewInner() {
   const [recipient, setRecipient] = useState<RecipientAddress | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [submitStep, setSubmitStep] = useState<"smartpost" | "draft" | "navigating" | null>(null);
   const [redirecting, setRedirecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [createdParcelId, setCreatedParcelId] = useState<string | null>(null);
   const [estimatedPrice, setEstimatedPrice] = useState(0);
   const [baseEstimatedPrice, setBaseEstimatedPrice] = useState(0);
   const [orderCreatedAt] = useState(() => new Date());
@@ -242,55 +244,100 @@ function ReviewInner() {
     if (phoneBlockMessage) return;
     setError(null);
     setSubmitting(true);
-    let shouldKeepSubmitting = false;
+    setSubmitStep(null);
+
     try {
-      const addItemRes = await fetch("/api/smartpost/add-item", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          senderId,
-          recipientId,
-          parcelType,
-          weightGram,
-          insuredValue,
-          extraInsurance,
-        }),
-      });
-      const addItemJson = (await addItemRes.json()) as { ok?: boolean; error?: string; data?: unknown };
-      if (!addItemRes.ok || !addItemJson.ok) {
-        setError(addItemJson.error ?? "ส่งคำสั่งซื้อไป Smartpost ไม่สำเร็จ");
+      // ── Step 1: Register with Smartpost (external API — 30 s timeout) ──────────
+      setSubmitStep("smartpost");
+      const smartpostController = new AbortController();
+      const smartpostTimer = setTimeout(() => smartpostController.abort(), 30_000);
+      let addItemJson: { ok?: boolean; error?: string; data?: unknown };
+      try {
+        const addItemRes = await fetch("/api/smartpost/add-item", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ senderId, recipientId, parcelType, weightGram, insuredValue, extraInsurance }),
+          signal: smartpostController.signal,
+        });
+        clearTimeout(smartpostTimer);
+        addItemJson = (await addItemRes.json()) as { ok?: boolean; error?: string; data?: unknown };
+        if (!addItemRes.ok || !addItemJson.ok) {
+          setError(addItemJson.error ?? "ส่งคำสั่งซื้อไป Smartpost ไม่สำเร็จ");
+          return;
+        }
+      } catch (e) {
+        clearTimeout(smartpostTimer);
+        if (e instanceof Error && e.name === "AbortError") {
+          setError("ระบบ Smartpost ไม่ตอบสนอง (timeout 30 วิ) กรุณาลองใหม่อีกครั้ง");
+        } else {
+          setError("เชื่อมต่อ Smartpost ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
+        }
         return;
       }
 
-      const res = await fetch("/api/parcels/draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          senderId,
-          recipientId,
-          shippingMode,
-          autoPrint,
-          weightGram,
-          widthCm,
-          lengthCm,
-          heightCm,
-          parcelType,
-          note,
-          smartpostAddItemResponse: addItemJson.data,
-        }),
-      });
-      const json = (await res.json()) as { ok?: boolean; data?: { id?: string; trackingId?: string }; error?: string };
-      if (!res.ok || !json.ok || !json.data?.id) {
-        setError(json.error ?? "สร้างออเดอร์ไม่สำเร็จ");
+      // ── Step 2: Save order to database (20 s timeout) ─────────────────────────
+      setSubmitStep("draft");
+      const draftController = new AbortController();
+      const draftTimer = setTimeout(() => draftController.abort(), 20_000);
+      let parcelId: string;
+      try {
+        const res = await fetch("/api/parcels/draft", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            senderId,
+            recipientId,
+            shippingMode,
+            autoPrint,
+            weightGram,
+            widthCm,
+            lengthCm,
+            heightCm,
+            parcelType,
+            note,
+            smartpostAddItemResponse: addItemJson.data,
+          }),
+          signal: draftController.signal,
+        });
+        clearTimeout(draftTimer);
+        const json = (await res.json()) as {
+          ok?: boolean;
+          data?: { id?: string; trackingId?: string };
+          error?: string;
+        };
+        if (!res.ok || !json.ok || !json.data?.id) {
+          setError(json.error ?? "สร้างออเดอร์ไม่สำเร็จ");
+          return;
+        }
+        parcelId = json.data.id;
+      } catch (e) {
+        clearTimeout(draftTimer);
+        if (e instanceof Error && e.name === "AbortError") {
+          setError("เซิร์ฟเวอร์ไม่ตอบสนอง (timeout 20 วิ) กรุณาลองใหม่อีกครั้ง");
+        } else {
+          setError("สร้างออเดอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
+        }
         return;
       }
-      shouldKeepSubmitting = true;
+
+      // ── Step 3: Navigate to parcel detail ──────────────────────────────────────
+      // Store the ID first so a "ดูออเดอร์" fallback appears if navigation fails
+      // on a slow Android connection.
+      setCreatedParcelId(parcelId);
+      setSubmitStep("navigating");
       setRedirecting(true);
-      router.replace(`/parcels/${json.data.id}`);
+      // Hard nav: on Android LINE in-app browser, soft nav can fail to load the
+      // new page chunks when the connection is slow. A full page load guarantees
+      // the server renders the parcel page fresh with the updated session.
+      window.location.replace(`/parcels/${parcelId}`);
     } catch {
-      setError("สร้างออเดอร์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+      setError("เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่อีกครั้ง");
     } finally {
-      if (!shouldKeepSubmitting) setSubmitting(false);
+      // Only clear submitting if we didn't reach the navigation step.
+      if (!redirecting) {
+        setSubmitting(false);
+        setSubmitStep(null);
+      }
     }
   }
 
@@ -405,14 +452,29 @@ function ReviewInner() {
       </section>
 
       <div className="fixed inset-x-0 bottom-0 z-30 bg-slate-100 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 shadow-[0_-6px_20px_rgba(15,23,42,0.08)]">
-        <div className="mx-auto w-full max-w-lg">
+        <div className="mx-auto w-full max-w-lg space-y-2">
+          {/* Fallback: order was saved but page navigation stalled (slow connection). */}
+          {createdParcelId && !redirecting ? (
+            <a
+              href={`/parcels/${createdParcelId}`}
+              className="flex w-full items-center justify-center rounded-md border border-[#2726F5] bg-white px-6 py-3 text-base font-semibold text-[#2726F5]"
+            >
+              ดูออเดอร์ที่สร้างแล้ว →
+            </a>
+          ) : null}
           <button
             type="button"
             disabled={loading || submitting || redirecting || !sender || !recipient || Boolean(phoneBlockMessage)}
             onClick={onConfirmCreateOrder}
             className="w-full rounded-md bg-[#2726F5] px-6 py-3 text-base font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)] disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
           >
-            {submitting || redirecting ? "กำลังสร้างออเดอร์..." : "ยืนยันสร้างออเดอร์"}
+            {submitStep === "smartpost"
+              ? "กำลังลงทะเบียนกับ Smartpost…"
+              : submitStep === "draft"
+                ? "กำลังบันทึกออเดอร์…"
+                : submitStep === "navigating" || redirecting
+                  ? "กำลังเปิดหน้าพัสดุ…"
+                  : "ยืนยันสร้างออเดอร์"}
           </button>
         </div>
       </div>

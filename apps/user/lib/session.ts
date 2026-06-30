@@ -6,6 +6,9 @@ export interface LineAppSession {
   displayName?: string;
   pictureUrl?: string | null;
   profileCompleted?: boolean;
+  /** Normalized Thai phone (0xxxxxxxxx) stored after first OTP-verified save. Used by
+   *  middleware to gate access for users who have never added a phone number. */
+  phone?: string;
   /** Thaibulksms OTP token for the pending phone verification flow. */
   phoneOtpToken?: string;
   phoneOtpPhone?: string;

@@ -1,4 +1,7 @@
 {
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
+  "buildCommand": "cd ../.. && pnpm --filter @quickload/admin build",
+  "outputDirectory": ".next",
   "crons": [
     {
       "path": "/api/cron/ping",

@@ -17,7 +17,9 @@
     "db:apply:payment-stack": "pnpm --filter @quickload/shared db:apply:payment-stack",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
-    "supabase:status": "supabase status"
+    "supabase:status": "supabase status",
+    "test": "turbo test",
+    "test:user": "pnpm --filter @quickload/user test"
   },
   "devDependencies": {
     "turbo": "^2.3.3",

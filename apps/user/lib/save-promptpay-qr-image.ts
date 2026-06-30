@@ -6,6 +6,19 @@ function defaultFilename(paymentId: string): string {
   return `promptpay-qr-${paymentId.slice(0, 8)}.png`;
 }
 
+/** Revoke an object URL safely after a short delay so mobile browsers have
+ *  time to start the download / render the blob before the URL is invalidated. */
+function revokeAfterDelay(objectUrl: string, ms = 2000) {
+  setTimeout(() => URL.revokeObjectURL(objectUrl), ms);
+}
+
+/** Returns true when running inside the LINE in-app browser on Android. */
+function isAndroidLineWebView(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  return /Android/i.test(ua) && /Line\//i.test(ua);
+}
+
 /** Save branded PromptPay QR (from /api/payment/charges/[id]/qr.png) to Photos / downloads. */
 export async function savePromptPayQrImage(paymentId: string): Promise<SavePromptPayQrResult> {
   const id = paymentId.trim();
@@ -21,7 +34,9 @@ export async function savePromptPayQrImage(paymentId: string): Promise<SavePromp
     const filename = defaultFilename(id);
     const file = new File([blob], filename, { type: "image/png" });
 
-    // iOS / Android: share sheet → "Save Image" / "บันทึกลงรูปภาพ"
+    // ── Strategy 1: Web Share API (iOS & Android Chrome 75+) ─────────────────
+    // Gives the native share sheet where the user can pick "Save Image" /
+    // "บันทึกลงรูปภาพ". On Android LINE WebView this is the most reliable path.
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
       try {
         if (navigator.canShare?.({ files: [file] })) {
@@ -29,14 +44,29 @@ export async function savePromptPayQrImage(paymentId: string): Promise<SavePromp
           return { ok: true, method: "share" };
         }
       } catch (e) {
+        // AbortError = user dismissed share sheet — treat as success (they chose not to save).
         if (e instanceof Error && e.name === "AbortError") {
           return { ok: true, method: "share" };
         }
+        // Other share error: fall through to next strategy.
       }
     }
 
-    // Desktop / browsers with download support
     const objectUrl = URL.createObjectURL(blob);
+
+    // ── Strategy 2: Android LINE WebView — window.open ────────────────────────
+    // anchor[download] is often silently ignored in Android LINE WebView; opening
+    // the blob URL instead lets the user long-press the image and tap "Save".
+    if (isAndroidLineWebView()) {
+      window.open(objectUrl, "_blank");
+      revokeAfterDelay(objectUrl, 5000);
+      return { ok: true, method: "open" };
+    }
+
+    // ── Strategy 3: Standard anchor[download] (desktop + non-LINE Android) ───
+    // IMPORTANT: revoke AFTER a delay — calling revokeObjectURL synchronously
+    // right after anchor.click() means mobile browsers can't start the download
+    // before the URL is invalidated.
     const anchor = document.createElement("a");
     anchor.href = objectUrl;
     anchor.download = filename;
@@ -44,7 +74,7 @@ export async function savePromptPayQrImage(paymentId: string): Promise<SavePromp
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    URL.revokeObjectURL(objectUrl);
+    revokeAfterDelay(objectUrl, 2000);
     return { ok: true, method: "download" };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "เกิดข้อผิดพลาด";

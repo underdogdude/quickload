@@ -72,6 +72,7 @@ export async function POST(request: Request) {
     session.pictureUrl = user.pictureUrl;
     const profileCompleted = Boolean(user.firstName?.trim() && user.lastName?.trim() && user.phone?.trim());
     session.profileCompleted = profileCompleted;
+    session.phone = user.phone?.trim() || undefined;
     await session.save();
 
     return NextResponse.json({ ok: true, needsRegistration: !profileCompleted });

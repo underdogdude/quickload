@@ -64,7 +64,13 @@ function VerifyPhoneInner() {
   }, [resendIn]);
 
   const focusInput = useCallback((index: number) => {
-    inputRefs.current[index]?.focus();
+    const el = inputRefs.current[index];
+    if (!el) return;
+    el.focus();
+    // On Android, the soft keyboard pushes the viewport up but the focused element
+    // can still be partially hidden under the keyboard. scrollIntoView with
+    // block:"center" ensures the input is always visible after focus.
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
   }, []);
 
   const handleSendCode = useCallback(async () => {
@@ -74,13 +80,17 @@ function VerifyPhoneInner() {
     setSendError(null);
     setMsg(null);
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const res = await fetch("/api/auth/otp/request", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: normalizedPhone }),
+        signal: controller.signal,
       });
+      clearTimeout(timer);
       const json = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok || !json.ok) {
         if (res.status === 429) {
@@ -92,8 +102,13 @@ function VerifyPhoneInner() {
       setCodeSent(true);
       setResendIn(RESEND_SECONDS);
       focusInput(0);
-    } catch {
-      setSendError("ส่งรหัส OTP ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    } catch (e) {
+      clearTimeout(timer);
+      if (e instanceof Error && e.name === "AbortError") {
+        setSendError("ส่งรหัส OTP ช้าเกินไป กรุณาลองใหม่อีกครั้ง");
+      } else {
+        setSendError("ส่งรหัส OTP ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+      }
     } finally {
       setSending(false);
     }

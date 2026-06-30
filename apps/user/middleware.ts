@@ -30,7 +30,7 @@ export async function middleware(request: NextRequest) {
     url.pathname = "/entry";
     return NextResponse.redirect(url);
   }
-  if (!session.profileCompleted) {
+  if (!session.profileCompleted || !session.phone) {
     if (pathname === "/register" || pathname.startsWith("/register/")) {
       return response;
     }

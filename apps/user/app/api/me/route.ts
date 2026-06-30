@@ -60,6 +60,7 @@ export async function GET() {
         fullSession.profileCompleted = Boolean(
           user.firstName?.trim() && user.lastName?.trim() && user.phone?.trim(),
         );
+        fullSession.phone = user.phone?.trim() || undefined;
         await fullSession.save();
       }
     }
@@ -156,6 +157,7 @@ export async function PATCH(request: Request) {
 
     const fullSession = await getIronSession<LineAppSession>(cookies(), getSessionOptions());
     fullSession.profileCompleted = true;
+    fullSession.phone = normalizedNewPhone || undefined;
     fullSession.phoneOtpVerifiedFor = undefined;
     fullSession.phoneOtpToken = undefined;
     fullSession.phoneOtpPhone = undefined;
