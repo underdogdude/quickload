@@ -902,7 +902,7 @@ export function createPaymentReminderDay1FlexMessage(input: PaymentReminderFlexI
 } {
   return createPaymentReminderFlexMessage(
     input,
-    "พัสดุของคุณพร้อมชำระแล้ว หากชำระไปแล้วขออภัยที่รบกวน 🙏",
+    "พัสดุของคุณพร้อมชำระแล้ว ขออภัยหากชำระไปแล้ว",
   );
 }
 
@@ -919,7 +919,7 @@ export function createPaymentReminderDay2FlexMessage(input: PaymentReminderFlexI
       "",
       "รบกวนตรวจสอบและชำระยอดค้างเมื่อสะดวก เพื่อให้รายการนี้เรียบร้อย",
       "",
-      "หากชำระแล้ว ขออภัยที่รบกวน 🙏",
+      "ขออภัยหากชำระไปแล้ว",
     ].join("\n"),
   );
 }

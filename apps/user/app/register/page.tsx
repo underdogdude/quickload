@@ -3,6 +3,7 @@
 import { navigateAfterAuth } from "@/lib/navigate-after-auth";
 import { savePendingProfile } from "@/lib/pending-profile";
 import { isValidThaiPhone, normalizeThaiPhone } from "@/lib/thai-phone";
+import { BirthDateField } from "@/components/birth-date-field";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -283,35 +284,12 @@ export default function RegisterPage() {
                   />
                   {emailError ? <p className="mt-1 text-xs text-red-600">{emailError}</p> : null}
                 </label>
-                <label className="block text-sm text-slate-700">
-                  วันเกิด
-                  <div className="relative mt-1">
-                    <input
-                      type="date"
-                      className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-3 pr-10 outline-none transition focus:border-[#2726F5]"
-                      value={birthDate}
-                      onChange={(e) => setBirthDate(e.target.value)}
-                      required
-                    />
-                    {!birthDate ? (
-                      <span
-                        className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-400"
-                        aria-hidden
-                      >
-                        วว/ดด/ปปปป
-                      </span>
-                    ) : null}
-                    <span
-                      className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center text-slate-400"
-                      aria-hidden
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                        <path d="M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z" />
-                        <path d="M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2" />
-                      </svg>
-                    </span>
+                <div className="block text-sm text-slate-700">
+                  <div className="flex items-center justify-between gap-2">
+                    <span>วันเกิด</span>
                   </div>
-                </label>
+                  <BirthDateField value={birthDate} onChange={setBirthDate} required />
+                </div>
 
                 <div className="flex gap-2 pt-2">
                   {!needsProfile && !isFirstTime ? (
