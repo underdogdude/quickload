@@ -4,6 +4,7 @@ import { navigateAfterAuth } from "@/lib/navigate-after-auth";
 import { savePendingProfile } from "@/lib/pending-profile";
 import { isValidThaiPhone, normalizeThaiPhone } from "@/lib/thai-phone";
 import { BirthDateField } from "@/components/birth-date-field";
+import { AppFooter } from "@/components/app-footer";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -315,6 +316,8 @@ export default function RegisterPage() {
 
           {msg ? <p className={`mt-4 text-sm ${msgToneClass}`}>{msg}</p> : null}
         </div>
+
+        <AppFooter />
       </section>
     </main>
   );

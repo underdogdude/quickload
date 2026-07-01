@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ManualPageActions } from "./manual-page-actions";
 
 const steps = [
@@ -28,6 +29,14 @@ export default function ManualPage() {
     <main className="min-h-screen bg-slate-100 pb-28">
       <section className="bg-[#2726F5] px-6 pb-14 pt-10 text-white">
         <div className="mx-auto w-full max-w-lg">
+          <Link
+            href="/"
+            className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white/95"
+            aria-label="กลับไปหน้าแรก"
+          >
+            <span aria-hidden>←</span>
+            <span>กลับ</span>
+          </Link>
           <h1 className="text-3xl font-bold leading-none">คู่มือการใช้งาน</h1>
           <p className="mt-1 text-sm text-white/80">ขั้นตอนการใช้งานระบบส่งพัสดุแบบสั้นและเข้าใจง่าย</p>
         </div>

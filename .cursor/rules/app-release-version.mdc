@@ -1,0 +1,33 @@
+---
+description: Bump apps/user footer version and release date on every production deploy
+alwaysApply: true
+---
+
+# App release metadata (apps/user)
+
+The home page footer displays version and deploy date from a **single source of truth**:
+
+`apps/user/lib/app-release.ts`
+
+## Mandatory on every production deploy
+
+When preparing a deploy of **apps/user** (Vercel / production), you **must** update that file in the **same PR or commit** as the deploy:
+
+1. **`APP_VERSION`** — bump semver (`1.0.1` → `1.0.2` for routine releases)
+2. **`APP_RELEASE_DATE`** — set to deploy date in **Asia/Bangkok**, format **`YYYYMMDD`** (e.g. `20260701`)
+
+Do **not** duplicate version/date in `page.tsx`, env vars, or package.json for the footer.
+
+## When to apply
+
+- User asks to deploy, release, or ship to production
+- PR touches `apps/user` and is intended for production
+- Completing a feature batch that will go live on Vercel
+
+## Verification
+
+Before finishing, confirm:
+
+- [ ] `APP_RELEASE_DATE` matches today in Bangkok (unless user specified another deploy date)
+- [ ] `APP_VERSION` was incremented from the previous deploy
+- [ ] Footer still imports from `@/lib/app-release` only

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AppFooter } from "@/components/app-footer";
 import { getCurrentUser } from "@/lib/current-user";
 import { BannerCarousel } from "./banner-carousel";
 import { SendParcelPromoCard } from "./send-parcel-promo-card";
@@ -92,6 +93,8 @@ export default async function HomePage() {
         <section className="mx-auto mt-8 max-w-lg overflow-hidden rounded-lg bg-gradient-to-r from-[#2726F5] to-[#5655ff] text-white shadow-sm">
           <BannerCarousel />
         </section>
+
+        <AppFooter />
       </section>
     </main>
   );
