@@ -610,15 +610,15 @@ function SendParcelInner() {
                 <path d="M12 8v4m0 4h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
               <p className="text-[11px] leading-relaxed text-amber-800">
-                น้ำหนัก <strong>10 – 30,000 กรัม</strong> · ขนาดแต่ละด้านไม่เกิน <strong>60 ซม.</strong> · รวม 3 ด้านไม่เกิน <strong>120 ซม.</strong>
+                น้ำหนัก 10 – 30,000 กรัม ด้านละไม่เกิน 60 ซม. รวมไม่เกิน 120 ซม.
               </p>
             </div>
 
             <div className="space-y-3 text-slate-900">
               <div>
                 <div className="mb-1.5 flex items-baseline gap-2 justify-between">
-                  <p className="text-sm font-medium text-slate-700">น้ำหนัก<span className="text-red-500">*</span></p>
-                  <p className="text-[11px] text-slate-400">น้ำหนักโดยประมาณ ราคาค่าส่งจะคำนวณจากน้ำหนักจริงที่ชั่งที่ไปรษณีย์</p>
+                  <p className="min-w-[60px] shrink-0 text-sm font-medium text-slate-700">น้ำหนัก<span className="text-red-500">*</span></p>
+                  <p className="text-[11px] text-slate-400">น้ำหนักโดยประมาณ ราคาค่าส่งคิดตามน้ำหนักจริงที่ไปรษณีย์</p>
                 </div>
                 <div className="flex items-stretch overflow-hidden rounded-lg border border-slate-300 bg-white">
                   <input
