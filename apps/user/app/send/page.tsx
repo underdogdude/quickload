@@ -18,7 +18,7 @@ import {
 import { MAX_PARCEL_NOTE_LENGTH, sanitizeParcelNote } from "@quickload/shared/parcel-note";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 type CustomDimensions = {
   widthCm: string;
@@ -258,6 +258,43 @@ function AddressBookIcon({ muted = false }: { muted?: boolean }) {
         fill={fill}
       />
     </svg>
+  );
+}
+
+function SendPickerSheet({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-40 bg-black/35 px-6 py-10" onClick={onClose}>
+      <div
+        className="mx-auto mt-20 w-full max-w-lg rounded-2xl bg-white p-2 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
+        <div className="flex items-center justify-between gap-2 px-1 py-1">
+          <p className="px-2 py-1 text-xs font-medium text-slate-500">{title}</p>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="ปิด"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden>
+              <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto">{children}</div>
+      </div>
+    </div>
   );
 }
 
@@ -1095,57 +1132,41 @@ function SendParcelInner() {
         </div>
       </section>
       {parcelSizeOpen ? (
-        <div className="fixed inset-0 z-40 bg-black/35 px-6 py-10" onClick={() => setParcelSizeOpen(false)}>
-          <div
-            className="mx-auto mt-20 w-full max-w-lg rounded-2xl bg-white p-2 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p className="px-3 py-2 text-xs font-medium text-slate-500">เลือกขนาดพัสดุ</p>
-            <div className="max-h-[60vh] overflow-y-auto">
-              {PARCEL_SIZE_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => selectParcelSizePreset(preset.id)}
-                  className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm ${
-                    parcelSizePresetId === preset.id ? "bg-[#2726F5]/10 text-[#2726F5]" : "text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  <span>{formatParcelSizePresetOptionLabel(preset)}</span>
-                  {parcelSizePresetId === preset.id ? <span aria-hidden>✓</span> : null}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+        <SendPickerSheet title="เลือกขนาดพัสดุ" onClose={() => setParcelSizeOpen(false)}>
+          {PARCEL_SIZE_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => selectParcelSizePreset(preset.id)}
+              className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm ${
+                parcelSizePresetId === preset.id ? "bg-[#2726F5]/10 text-[#2726F5]" : "text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <span>{formatParcelSizePresetOptionLabel(preset)}</span>
+              {parcelSizePresetId === preset.id ? <span aria-hidden>✓</span> : null}
+            </button>
+          ))}
+        </SendPickerSheet>
       ) : null}
       {parcelTypeOpen ? (
-        <div className="fixed inset-0 z-40 bg-black/35 px-6 py-10" onClick={() => setParcelTypeOpen(false)}>
-          <div
-            className="mx-auto mt-20 w-full max-w-lg rounded-2xl bg-white p-2 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p className="px-3 py-2 text-xs font-medium text-slate-500">เลือกประเภทพัสดุ</p>
-            <div className="max-h-[60vh] overflow-y-auto">
-              {PARCEL_TYPE_OPTIONS.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => {
-                    setParcelType(option);
-                    setParcelTypeOpen(false);
-                  }}
-                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
-                    parcelType === option ? "bg-[#2726F5]/10 text-[#2726F5]" : "text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  <ParcelTypeIcon type={option} />
-                  <span>{option}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+        <SendPickerSheet title="เลือกประเภทพัสดุ" onClose={() => setParcelTypeOpen(false)}>
+          {PARCEL_TYPE_OPTIONS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => {
+                setParcelType(option);
+                setParcelTypeOpen(false);
+              }}
+              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
+                parcelType === option ? "bg-[#2726F5]/10 text-[#2726F5]" : "text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <ParcelTypeIcon type={option} />
+              <span>{option}</span>
+            </button>
+          ))}
+        </SendPickerSheet>
       ) : null}
       {formError || showSenderSavedToast || showRecipientSavedToast ? (
         <div className="pointer-events-none fixed inset-x-0 z-40 px-4" style={{ bottom: "calc(env(safe-area-inset-bottom) + 88px)" }}>

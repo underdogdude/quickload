@@ -1,0 +1,43 @@
+---
+description: Core agent behavior — think first, simplicity, surgical changes, verifiable goals
+alwaysApply: true
+---
+
+# Coding behavior (always apply)
+
+Bias toward caution over speed. For trivial tasks, use judgment.
+
+## 1. Think before coding
+
+- State assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — do not pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop, name what's confusing, and ask.
+
+## 2. Simplicity first
+
+- Minimum code that solves the problem. Nothing speculative.
+- No features, abstractions, flexibility, or error handling beyond what was asked.
+- If the diff is much larger than needed, simplify.
+- Ask: "Would a senior engineer say this is overcomplicated?"
+
+## 3. Surgical changes
+
+- Touch only what the request requires. Do not "improve" adjacent code.
+- Match existing style. Do not refactor unrelated code.
+- Unrelated dead code: mention it; do not delete unless asked.
+- Remove orphans only from **your** changes (unused imports/vars/functions you introduced).
+
+Every changed line should trace directly to the user's request.
+
+## 4. Goal-driven execution
+
+Turn tasks into verifiable goals before implementing:
+
+- "Add validation" → tests for invalid inputs, then make them pass
+- "Fix the bug" → repro test, then fix
+- "Refactor X" → tests pass before and after
+
+For multi-step work, state a brief plan with verify checks per step.
+
+Strong success criteria → loop independently. Weak criteria ("make it work") → ask first.
