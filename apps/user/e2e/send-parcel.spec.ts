@@ -13,6 +13,11 @@ import {
   setupE2EPage,
 } from "./helpers";
 
+async function selectCustomParcelSize(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "เลือกขนาดพัสดุ" }).click();
+  await page.getByRole("button", { name: "ระบุเอง", exact: true }).click();
+}
+
 async function gotoSendPage(page: import("@playwright/test").Page) {
   await loginAsTestUser(page);
   await mockSendAccessAllowed(page);
@@ -33,6 +38,7 @@ test("Flow 2: fills /send form and proceeds to review step", async ({ page }) =>
   await gotoSendPage(page);
 
   await page.getByPlaceholder("0").fill("500");
+  await selectCustomParcelSize(page);
   await page.getByPlaceholder("กว้าง(ซม.)").fill("20");
   await page.getByPlaceholder("ยาว(ซม.)").fill("30");
   await page.getByPlaceholder("สูง(ซม.)").fill("10");
@@ -86,6 +92,7 @@ test("Flow 7: weight above maximum shows inline error", async ({ page }) => {
 test("Flow 7: side dimension exceeding 60cm shows inline error", async ({ page }) => {
   await setupE2EPage(page);
   await gotoSendPage(page);
+  await selectCustomParcelSize(page);
 
   const widthInput = page.getByPlaceholder("กว้าง(ซม.)");
   await widthInput.fill("70");
@@ -99,6 +106,7 @@ test("Flow 7: side dimension exceeding 60cm shows inline error", async ({ page }
 test("Flow 7: dimension sum exceeding 120cm shows inline error", async ({ page }) => {
   await setupE2EPage(page);
   await gotoSendPage(page);
+  await selectCustomParcelSize(page);
 
   await page.getByPlaceholder("กว้าง(ซม.)").fill("50");
   await page.getByPlaceholder("ยาว(ซม.)").fill("50");
@@ -107,4 +115,29 @@ test("Flow 7: dimension sum exceeding 120cm shows inline error", async ({ page }
   await heightInput.blur();
 
   await expect(page.getByText(/ผลรวมกว้าง\+ยาว\+สูงห้ามเกิน/i)).toBeVisible({ timeout: 5000 });
+});
+
+test("Flow 7: selecting box preset shows label and hides manual inputs", async ({ page }) => {
+  await setupE2EPage(page);
+  await gotoSendPage(page);
+
+  await page.getByRole("button", { name: "เลือกขนาดพัสดุ" }).click();
+  await page.getByRole("button", { name: /กล่องไปรษณีย์.*\(B\)/i }).click();
+
+  await expect(page.getByRole("button", { name: /กล่องไปรษณีย์.*\(B\)/i })).toBeVisible();
+  await expect(page.getByPlaceholder("กว้าง(ซม.)")).not.toBeVisible();
+  await expect(page.getByPlaceholder("ยาว(ซม.)")).not.toBeVisible();
+  await expect(page.getByPlaceholder("สูง(ซม.)")).not.toBeVisible();
+});
+
+test("Flow 7: continuing without selecting parcel size shows inline error", async ({ page }) => {
+  await setupE2EPage(page);
+  await gotoSendPage(page);
+
+  await page.getByPlaceholder("0").fill("500");
+  await page.getByPlaceholder("0").blur();
+
+  await page.getByRole("button", { name: /ดำเนินการต่อ|ถัดไป|continue/i }).click();
+
+  await expect(page.getByText(/กรุณาเลือกขนาดพัสดุ/i)).toBeVisible({ timeout: 5000 });
 });

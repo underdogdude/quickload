@@ -32,6 +32,7 @@ function buildSendBaseHref(params: Record<string, string>): string {
     "widthCm",
     "lengthCm",
     "heightCm",
+    "parcelSizePreset",
     "parcelType",
     "note",
   ] as const;
@@ -53,7 +54,7 @@ function buildRowHref(id: string, rowTab: TabKey, params: Record<string, string>
   else usp.set("recipientId", id);
   if (rowTab === "sender" && params.recipientId) usp.set("recipientId", params.recipientId);
   if (rowTab === "recipient" && params.senderId) usp.set("senderId", params.senderId);
-  for (const key of ["shippingMode", "autoPrint", "weightGram", "widthCm", "lengthCm", "heightCm", "parcelType", "note"] as const) {
+  for (const key of ["shippingMode", "autoPrint", "weightGram", "widthCm", "lengthCm", "heightCm", "parcelSizePreset", "parcelType", "note"] as const) {
     if (params[key]) usp.set(key, params[key]);
   }
   return `/send?${usp.toString()}`;
@@ -120,6 +121,7 @@ export default async function AddressBookPage({ searchParams }: PageProps) {
     widthCm: asString(searchParams.widthCm),
     lengthCm: asString(searchParams.lengthCm),
     heightCm: asString(searchParams.heightCm),
+    parcelSizePreset: asString(searchParams.parcelSizePreset),
     parcelType: asString(searchParams.parcelType),
     note: asString(searchParams.note),
   };

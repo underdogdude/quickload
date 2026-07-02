@@ -6,10 +6,36 @@ import {
   validateParcelSideCm,
   validateWeightGram,
 } from "@/lib/parcel-dimensions";
+import {
+  PARCEL_SIZE_PRESETS,
+  SELECT_PARCEL_SIZE_ERROR,
+  dimensionsFromParcelSizePreset,
+  findParcelSizePreset,
+  formatParcelSizePresetOptionLabel,
+  isCustomParcelSizePreset,
+  resolveParcelSizePresetFromQuery,
+} from "@/lib/parcel-size-presets";
 import { MAX_PARCEL_NOTE_LENGTH, sanitizeParcelNote } from "@quickload/shared/parcel-note";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+
+type CustomDimensions = {
+  widthCm: string;
+  lengthCm: string;
+  heightCm: string;
+};
+
+function initialCustomDimensions(get: (key: string) => string | null): CustomDimensions {
+  const width = get("widthCm") || "";
+  const length = get("lengthCm") || "";
+  const height = get("heightCm") || "";
+  const presetId = resolveParcelSizePresetFromQuery(get, width, length, height);
+  if (isCustomParcelSizePreset(presetId)) {
+    return { widthCm: width, lengthCm: length, heightCm: height };
+  }
+  return { widthCm: "", lengthCm: "", heightCm: "" };
+}
 
 const PARCEL_TYPE_OPTIONS = [
   "เอกสาร",
@@ -37,16 +63,18 @@ function parcelTypeFromQuery(get: (key: string) => string | null): ParcelTypeOpt
   return "เอกสาร";
 }
 
-function SendStepDot({ complete, kind }: { complete: boolean; kind: "sender" | "recipient" }) {
+function SendStepDot({ complete, kind, hasError = false }: { complete: boolean; kind: "sender" | "recipient"; hasError?: boolean }) {
   const incompleteRecipient = kind === "recipient" && !complete;
   return (
     <div
       className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${
-        complete
-          ? "border-[#2726F5] bg-[#2726F5]"
-          : incompleteRecipient
-            ? "border-slate-300 bg-[#ECECEC]"
-            : "border-[#2726F5] bg-white"
+        hasError
+          ? "border-rose-500 bg-rose-50"
+          : complete
+            ? "border-[#2726F5] bg-[#2726F5]"
+            : incompleteRecipient
+              ? "border-slate-300 bg-[#ECECEC]"
+              : "border-[#2726F5] bg-white"
       }`}
     >
       {complete ? (
@@ -65,6 +93,7 @@ type SendAddressStepProps = {
   addressBookAriaLabel: string;
   stepComplete: boolean;
   stepKind: "sender" | "recipient";
+  hasError?: boolean;
   loading?: boolean;
   loadingAriaLabel?: string;
   selected?: {
@@ -157,14 +186,16 @@ function SendAddressStepRow({
           <div aria-hidden className="-mt-5 h-5 w-0 shrink-0 border-l border-dashed border-slate-300" />
         ) : null}
         <div className="flex min-h-7 shrink-0 items-center justify-center">
-          <SendStepDot complete={step.stepComplete} kind={step.stepKind} />
+          <SendStepDot complete={step.stepComplete} kind={step.stepKind} hasError={step.hasError} />
         </div>
         {lineBelow ? (
           <div aria-hidden className="min-h-4 w-0 flex-1 border-l border-dashed border-slate-300" />
         ) : null}
       </div>
       <div
-        className={`min-w-0 flex-1 ${contentBorderBottom ? "border-b border-slate-100 pb-3" : ""}`}
+        className={`min-w-0 flex-1 ${contentBorderBottom ? "border-b border-slate-100 pb-3" : ""} ${
+          step.hasError ? "rounded-lg border border-rose-500 bg-rose-50/40 px-2 py-2 -mx-2 ring-1 ring-rose-500/20" : ""
+        }`}
       >
         {step.loading ? (
           <div
@@ -230,6 +261,157 @@ function AddressBookIcon({ muted = false }: { muted?: boolean }) {
   );
 }
 
+type FormValidationContext = {
+  activeSender: SenderAddress | null;
+  activeRecipient: RecipientAddress | null;
+  weightGram: string;
+  widthCm: string;
+  lengthCm: string;
+  heightCm: string;
+  parcelType: string;
+  parcelSizePresetId: string;
+  extraInsurance: boolean;
+  insuredValue: string;
+};
+
+type FormFieldKey =
+  | "sender"
+  | "recipient"
+  | "weight"
+  | "parcelSize"
+  | "width"
+  | "length"
+  | "height"
+  | "parcelType"
+  | "insuredValue";
+
+const SIDE_DIMENSION_ERROR = "ขนาดความกว้าง หรือ ความยาว หรือ ความสูง ห้ามเกิน 60 ซม.";
+const INCOMPLETE_DIMENSION_ERROR = "กรุณาระบุขนาดพัสดุ (กว้าง/ยาว/สูง) ให้ครบถ้วน";
+
+function inputBorderClass(invalid: boolean) {
+  return invalid ? "border-rose-500 ring-1 ring-rose-500/20" : "border-slate-300";
+}
+
+function collectFormValidationIssues(input: FormValidationContext): string[] {
+  const issues: string[] = [];
+
+  if (!input.activeSender) {
+    issues.push("กรุณาเพิ่มหรือเลือกข้อมูลผู้ส่ง");
+  }
+  if (!input.activeRecipient) {
+    issues.push("กรุณาเพิ่มหรือเลือกข้อมูลผู้รับ");
+  }
+
+  const weightError = validateWeightGram(input.weightGram);
+  if (weightError) issues.push(weightError);
+
+  if (!input.parcelSizePresetId) {
+    issues.push(SELECT_PARCEL_SIZE_ERROR);
+  } else if (isCustomParcelSizePreset(input.parcelSizePresetId)) {
+    for (const value of [input.widthCm, input.lengthCm, input.heightCm]) {
+      const sideError = validateParcelSideCm(value);
+      if (sideError) {
+        issues.push(sideError);
+        break;
+      }
+    }
+
+    const dimensionError = validateParcelDimensionsFromStrings(input.widthCm, input.lengthCm, input.heightCm);
+    if (dimensionError) issues.push(dimensionError);
+  } else {
+    const preset = findParcelSizePreset(input.parcelSizePresetId);
+    const presetDimensions = preset ? dimensionsFromParcelSizePreset(preset) : null;
+    if (!presetDimensions) {
+      issues.push(SELECT_PARCEL_SIZE_ERROR);
+    } else {
+      for (const value of [
+        presetDimensions.widthCm,
+        presetDimensions.lengthCm,
+        presetDimensions.heightCm,
+      ]) {
+        const sideError = validateParcelSideCm(value);
+        if (sideError) {
+          issues.push(sideError);
+          break;
+        }
+      }
+
+      const dimensionError = validateParcelDimensionsFromStrings(
+        presetDimensions.widthCm,
+        presetDimensions.lengthCm,
+        presetDimensions.heightCm,
+      );
+      if (dimensionError) issues.push(dimensionError);
+    }
+  }
+
+  if (!input.parcelType.trim()) {
+    issues.push("กรุณาเลือกประเภทพัสดุ");
+  }
+  if (input.extraInsurance && (!input.insuredValue || Number(input.insuredValue) <= 0)) {
+    issues.push("กรุณากรอกราคาพัสดุสำหรับการซื้อประกันเพิ่ม");
+  }
+
+  return issues;
+}
+
+function getFieldsForFormError(error: string, input: FormValidationContext): Set<FormFieldKey> {
+  const fields = new Set<FormFieldKey>();
+
+  if (error === "กรุณาเพิ่มหรือเลือกข้อมูลผู้ส่ง") {
+    fields.add("sender");
+    return fields;
+  }
+  if (error === "กรุณาเพิ่มหรือเลือกข้อมูลผู้รับ") {
+    fields.add("recipient");
+    return fields;
+  }
+  if (validateWeightGram(input.weightGram) === error) {
+    fields.add("weight");
+    return fields;
+  }
+  if (error === SELECT_PARCEL_SIZE_ERROR) {
+    fields.add("parcelSize");
+    return fields;
+  }
+  if (error === SIDE_DIMENSION_ERROR) {
+    if (validateParcelSideCm(input.widthCm) === error) fields.add("width");
+    if (validateParcelSideCm(input.lengthCm) === error) fields.add("length");
+    if (validateParcelSideCm(input.heightCm) === error) fields.add("height");
+    if (fields.size === 0) fields.add("parcelSize");
+    return fields;
+  }
+
+  const dimensionError = validateParcelDimensionsFromStrings(input.widthCm, input.lengthCm, input.heightCm);
+  if (dimensionError === error) {
+    if (dimensionError === INCOMPLETE_DIMENSION_ERROR) {
+      if (!input.widthCm.trim()) fields.add("width");
+      if (!input.lengthCm.trim()) fields.add("length");
+      if (!input.heightCm.trim()) fields.add("height");
+      if (fields.size === 0) fields.add("parcelSize");
+    } else {
+      if (isCustomParcelSizePreset(input.parcelSizePresetId)) {
+        fields.add("width");
+        fields.add("length");
+        fields.add("height");
+      } else {
+        fields.add("parcelSize");
+      }
+    }
+    return fields;
+  }
+  if (error === "กรุณาเลือกประเภทพัสดุ") {
+    fields.add("parcelType");
+    return fields;
+  }
+  if (error === "กรุณากรอกราคาพัสดุสำหรับการซื้อประกันเพิ่ม") {
+    fields.add("insuredValue");
+    return fields;
+  }
+
+  return fields;
+}
+
 function SendParcelInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -252,7 +434,14 @@ function SendParcelInner() {
   const [note, setNote] = useState(() => clampNote(searchParams.get("note") || ""));
   const [formError, setFormError] = useState<string | null>(() => searchParams.get("parcelError") || null);
   const [parcelTypeOpen, setParcelTypeOpen] = useState(false);
+  const [parcelSizeOpen, setParcelSizeOpen] = useState(false);
   const [parcelType, setParcelType] = useState<ParcelTypeOption>(() => parcelTypeFromQuery((k) => searchParams.get(k)));
+  const [parcelSizePresetId, setParcelSizePresetId] = useState(() =>
+    resolveParcelSizePresetFromQuery((key) => searchParams.get(key), searchParams.get("widthCm") || "", searchParams.get("lengthCm") || "", searchParams.get("heightCm") || ""),
+  );
+  const customDimensionsRef = useRef<CustomDimensions>(
+    initialCustomDimensions((key) => searchParams.get(key)),
+  );
   const [addresses, setAddresses] = useState<SenderAddress[]>([]);
   const [addressesLoading, setAddressesLoading] = useState(true);
   const [recipientAddresses, setRecipientAddresses] = useState<RecipientAddress[]>([]);
@@ -292,6 +481,43 @@ function SendParcelInner() {
   }
 
   function validateDimensionsField() {
+    if (!parcelSizePresetId) {
+      showParcelFormError(SELECT_PARCEL_SIZE_ERROR);
+      return false;
+    }
+
+    if (!isCustomParcelSizePreset(parcelSizePresetId)) {
+      const preset = findParcelSizePreset(parcelSizePresetId);
+      const presetDimensions = preset ? dimensionsFromParcelSizePreset(preset) : null;
+      if (!presetDimensions) {
+        showParcelFormError(SELECT_PARCEL_SIZE_ERROR);
+        return false;
+      }
+
+      for (const value of [
+        presetDimensions.widthCm,
+        presetDimensions.lengthCm,
+        presetDimensions.heightCm,
+      ]) {
+        const sideError = validateParcelSideCm(value);
+        if (sideError) {
+          showParcelFormError(sideError);
+          return false;
+        }
+      }
+
+      const dimensionError = validateParcelDimensionsFromStrings(
+        presetDimensions.widthCm,
+        presetDimensions.lengthCm,
+        presetDimensions.heightCm,
+      );
+      if (dimensionError) {
+        showParcelFormError(dimensionError);
+        return false;
+      }
+      return true;
+    }
+
     for (const value of [widthCm, lengthCm, heightCm]) {
       const sideError = validateParcelSideCm(value);
       if (sideError) {
@@ -301,7 +527,8 @@ function SendParcelInner() {
     }
 
     if (!widthCm || !lengthCm || !heightCm) {
-      return true;
+      showParcelFormError(INCOMPLETE_DIMENSION_ERROR);
+      return false;
     }
 
     const dimensionError = validateParcelDimensionsFromStrings(widthCm, lengthCm, heightCm);
@@ -311,6 +538,37 @@ function SendParcelInner() {
     }
     return true;
   }
+
+  function selectParcelSizePreset(id: string) {
+    if (isCustomParcelSizePreset(parcelSizePresetId)) {
+      customDimensionsRef.current = { widthCm, lengthCm, heightCm };
+    }
+
+    setParcelSizePresetId(id);
+    setParcelSizeOpen(false);
+
+    if (isCustomParcelSizePreset(id)) {
+      const saved = customDimensionsRef.current;
+      setWidthCm(saved.widthCm);
+      setLengthCm(saved.lengthCm);
+      setHeightCm(saved.heightCm);
+      return;
+    }
+
+    const preset = findParcelSizePreset(id);
+    const presetDimensions = preset ? dimensionsFromParcelSizePreset(preset) : null;
+    if (!presetDimensions) return;
+
+    setWidthCm(presetDimensions.widthCm);
+    setLengthCm(presetDimensions.lengthCm);
+    setHeightCm(presetDimensions.heightCm);
+  }
+
+  const selectedParcelSizePreset = useMemo(
+    () => (parcelSizePresetId ? findParcelSizePreset(parcelSizePresetId) : undefined),
+    [parcelSizePresetId],
+  );
+  const showCustomDimensionFields = isCustomParcelSizePreset(parcelSizePresetId);
 
   useEffect(() => {
     setContinuing(false);
@@ -338,6 +596,16 @@ function SendParcelInner() {
     if (continuing) return;
     setFormError(null);
     setContinuing(true);
+
+    const effectiveDims = (() => {
+      if (!isCustomParcelSizePreset(parcelSizePresetId)) {
+        const preset = findParcelSizePreset(parcelSizePresetId);
+        const dims = preset ? dimensionsFromParcelSizePreset(preset) : null;
+        if (dims) return dims;
+      }
+      return { widthCm, lengthCm, heightCm };
+    })();
+
     const params = new URLSearchParams({
       senderId: activeSender.id,
       recipientId: activeRecipient.id,
@@ -346,12 +614,13 @@ function SendParcelInner() {
       extraInsurance: extraInsurance ? "1" : "0",
       insuredValue: insuredValue || "0",
       weightGram,
-      widthCm,
-      lengthCm,
-      heightCm,
+      widthCm: effectiveDims.widthCm,
+      lengthCm: effectiveDims.lengthCm,
+      heightCm: effectiveDims.heightCm,
       parcelType,
       note: note.trim(),
     });
+    if (parcelSizePresetId) params.set("parcelSizePreset", parcelSizePresetId);
     router.push(`/send/review?${params.toString()}`);
   }
 
@@ -511,6 +780,58 @@ function SendParcelInner() {
   }, [recipientAddresses, recipientIdParam]);
 
   const recipientComplete = Boolean(activeRecipient);
+
+  useEffect(() => {
+    setFormError((current) => {
+      if (!current) return null;
+      const issues = collectFormValidationIssues({
+        activeSender,
+        activeRecipient,
+        weightGram,
+        widthCm,
+        lengthCm,
+        heightCm,
+        parcelType,
+        extraInsurance,
+        insuredValue,
+        parcelSizePresetId,
+      });
+      return issues.includes(current) ? current : null;
+    });
+  }, [
+    activeSender,
+    activeRecipient,
+    weightGram,
+    widthCm,
+    lengthCm,
+    heightCm,
+    parcelType,
+    extraInsurance,
+    insuredValue,
+    parcelSizePresetId,
+  ]);
+
+  const validationContext = useMemo<FormValidationContext>(
+    () => ({
+      activeSender,
+      activeRecipient,
+      weightGram,
+      widthCm,
+      lengthCm,
+      heightCm,
+      parcelType,
+      parcelSizePresetId,
+      extraInsurance,
+      insuredValue,
+    }),
+    [activeSender, activeRecipient, weightGram, widthCm, lengthCm, heightCm, parcelType, parcelSizePresetId, extraInsurance, insuredValue],
+  );
+
+  const invalidFields = useMemo(() => {
+    if (!formError) return new Set<FormFieldKey>();
+    return getFieldsForFormError(formError, validationContext);
+  }, [formError, validationContext]);
+
   const addressBookHref = useMemo(() => {
     const build = (tab: "sender" | "recipient") => {
       const params = new URLSearchParams();
@@ -526,12 +847,13 @@ function SendParcelInner() {
       if (widthCm) params.set("widthCm", widthCm);
       if (lengthCm) params.set("lengthCm", lengthCm);
       if (heightCm) params.set("heightCm", heightCm);
+      if (parcelSizePresetId) params.set("parcelSizePreset", parcelSizePresetId);
       if (parcelType) params.set("parcelType", parcelType);
       if (note.trim()) params.set("note", note.trim());
       return `/addresses?${params.toString()}`;
     };
     return { sender: build("sender"), recipient: build("recipient") };
-  }, [activeRecipient?.id, activeSender?.id, autoPrint, extraInsurance, heightCm, insuredValue, lengthCm, note, parcelType, shippingMode, weightGram, widthCm]);
+  }, [activeRecipient?.id, activeSender?.id, autoPrint, extraInsurance, heightCm, insuredValue, lengthCm, note, parcelSizePresetId, parcelType, shippingMode, weightGram, widthCm]);
 
   return (
     <main className="min-h-screen bg-slate-100 pb-36">
@@ -557,6 +879,7 @@ function SendParcelInner() {
               sender={{
                 stepComplete: senderComplete,
                 stepKind: "sender",
+                hasError: invalidFields.has("sender"),
                 emptyCtaHref: "/send/sender",
                 emptyCtaText: "เพิ่มข้อมูลผู้ส่ง",
                 addressBookHref: addressBookHref.sender,
@@ -579,6 +902,7 @@ function SendParcelInner() {
               recipient={{
                 stepComplete: recipientComplete,
                 stepKind: "recipient",
+                hasError: invalidFields.has("recipient"),
                 emptyCtaHref: "/send/recipient",
                 emptyCtaText: "เพิ่มข้อมูลผู้รับ",
                 addressBookHref: addressBookHref.recipient,
@@ -602,25 +926,13 @@ function SendParcelInner() {
           </div>
 
           <div className="rounded-lg bg-white p-4 shadow-sm">
-
-            {/* Limits info */}
-            <div className="mb-4 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" className="mt-px shrink-0 text-amber-500" aria-hidden>
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5"/>
-                <path d="M12 8v4m0 4h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-              <p className="text-[11px] leading-relaxed text-amber-800">
-                น้ำหนัก 10 – 30,000 กรัม ด้านละไม่เกิน 60 ซม. รวมไม่เกิน 120 ซม.
-              </p>
-            </div>
-
             <div className="space-y-3 text-slate-900">
               <div>
                 <div className="mb-1.5 flex items-baseline gap-2 justify-between">
                   <p className="min-w-[60px] shrink-0 text-sm font-medium text-slate-700">น้ำหนัก<span className="text-red-500">*</span></p>
                   <p className="text-[11px] text-slate-400">น้ำหนักโดยประมาณ ราคาค่าส่งคิดตามน้ำหนักจริงที่ไปรษณีย์</p>
                 </div>
-                <div className="flex items-stretch overflow-hidden rounded-lg border border-slate-300 bg-white">
+                <div className={`flex items-stretch overflow-hidden rounded-lg border bg-white ${inputBorderClass(invalidFields.has("weight"))}`}>
                   <input
                     type="text"
                     inputMode="numeric"
@@ -629,6 +941,7 @@ function SendParcelInner() {
                     value={weightGram}
                     onChange={(e) => setWeightGram(onlyNumber(e.target.value))}
                     onBlur={validateWeightField}
+                    aria-invalid={invalidFields.has("weight")}
                     className="min-w-0 flex-1 px-4 py-3 text-sm text-slate-800 outline-none placeholder:text-slate-300"
                   />
                   <span className="flex items-center border-l border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-500">
@@ -641,45 +954,71 @@ function SendParcelInner() {
                 <p className="mb-1.5 text-sm font-medium text-slate-700">
                   ขนาด (กว้าง × ยาว × สูง)<span className="text-red-500">*</span>
                 </p>
-                <div className="grid grid-cols-3 gap-2">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    placeholder="กว้าง(ซม.)"
-                    value={widthCm}
-                    onChange={(e) => setWidthCm(onlyNumber(e.target.value))}
-                    onBlur={validateDimensionsField}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400"
-                  />
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    placeholder="ยาว(ซม.)"
-                    value={lengthCm}
-                    onChange={(e) => setLengthCm(onlyNumber(e.target.value))}
-                    onBlur={validateDimensionsField}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400"
-                  />
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    placeholder="สูง(ซม.)"
-                    value={heightCm}
-                    onChange={(e) => setHeightCm(onlyNumber(e.target.value))}
-                    onBlur={validateDimensionsField}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400"
-                  />
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setParcelSizeOpen(true)}
+                  aria-label="เลือกขนาดพัสดุ"
+                  className={`flex w-full items-center justify-between gap-3 rounded-lg border bg-white px-4 py-3 ${inputBorderClass(
+                    invalidFields.has("parcelSize") ||
+                      invalidFields.has("width") ||
+                      invalidFields.has("length") ||
+                      invalidFields.has("height"),
+                  )}`}
+                >
+                  <span
+                    className={`truncate text-sm ${selectedParcelSizePreset ? "text-slate-700" : "text-slate-400"}`}
+                  >
+                    {selectedParcelSizePreset
+                      ? formatParcelSizePresetOptionLabel(selectedParcelSizePreset)
+                      : "เลือกขนาดพัสดุ"}
+                  </span>
+                  <span className="shrink-0 text-base text-[#2726F5]">▾</span>
+                </button>
+
+                {showCustomDimensionFields ? (
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      placeholder="กว้าง(ซม.)"
+                      value={widthCm}
+                      onChange={(e) => setWidthCm(onlyNumber(e.target.value))}
+                      onBlur={validateDimensionsField}
+                      aria-invalid={invalidFields.has("width")}
+                      className={`rounded-lg border bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400 ${inputBorderClass(invalidFields.has("width"))}`}
+                    />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      placeholder="ยาว(ซม.)"
+                      value={lengthCm}
+                      onChange={(e) => setLengthCm(onlyNumber(e.target.value))}
+                      onBlur={validateDimensionsField}
+                      aria-invalid={invalidFields.has("length")}
+                      className={`rounded-lg border bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400 ${inputBorderClass(invalidFields.has("length"))}`}
+                    />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      placeholder="สูง(ซม.)"
+                      value={heightCm}
+                      onChange={(e) => setHeightCm(onlyNumber(e.target.value))}
+                      onBlur={validateDimensionsField}
+                      aria-invalid={invalidFields.has("height")}
+                      className={`rounded-lg border bg-white px-3 py-3 text-center text-sm text-slate-600 outline-none placeholder:text-slate-400 ${inputBorderClass(invalidFields.has("height"))}`}
+                    />
+                  </div>
+                ) : null}
               </div>
 
               <div>
                 <button
                   type="button"
                   onClick={() => setParcelTypeOpen((prev) => !prev)}
-                  className="flex w-full items-center justify-between rounded-lg border border-slate-300 bg-white px-4 py-3"
+                  className={`flex w-full items-center justify-between rounded-lg border bg-white px-4 py-3 ${inputBorderClass(invalidFields.has("parcelType"))}`}
                 >
                   <span className="text-sm font-medium">ประเภทพัสดุ</span>
                   <span className="flex items-center gap-2 text-sm text-slate-700">
@@ -735,7 +1074,8 @@ function SendParcelInner() {
                     value={insuredValue}
                     onChange={(e) => setInsuredValue(onlyNumber(e.target.value))}
                     placeholder="กรอกราคาสินค้า"
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                    aria-invalid={invalidFields.has("insuredValue")}
+                    className={`mt-1 w-full rounded-lg border bg-white px-4 py-3 text-sm text-slate-700 outline-none placeholder:text-slate-400 ${inputBorderClass(invalidFields.has("insuredValue"))}`}
                   />
                 </label>
                 <label className="block">
@@ -754,6 +1094,31 @@ function SendParcelInner() {
 
         </div>
       </section>
+      {parcelSizeOpen ? (
+        <div className="fixed inset-0 z-40 bg-black/35 px-6 py-10" onClick={() => setParcelSizeOpen(false)}>
+          <div
+            className="mx-auto mt-20 w-full max-w-lg rounded-2xl bg-white p-2 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="px-3 py-2 text-xs font-medium text-slate-500">เลือกขนาดพัสดุ</p>
+            <div className="max-h-[60vh] overflow-y-auto">
+              {PARCEL_SIZE_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => selectParcelSizePreset(preset.id)}
+                  className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm ${
+                    parcelSizePresetId === preset.id ? "bg-[#2726F5]/10 text-[#2726F5]" : "text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <span>{formatParcelSizePresetOptionLabel(preset)}</span>
+                  {parcelSizePresetId === preset.id ? <span aria-hidden>✓</span> : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
       {parcelTypeOpen ? (
         <div className="fixed inset-0 z-40 bg-black/35 px-6 py-10" onClick={() => setParcelTypeOpen(false)}>
           <div

@@ -18,10 +18,10 @@
  */
 
 /** Semver shown in footer, e.g. "1.0.1" */
-export const APP_VERSION = "1.0.1";
+export const APP_VERSION = "1.0.2";
 
 /** Deploy date YYYYMMDD (Asia/Bangkok), e.g. "20260701" */
-export const APP_RELEASE_DATE = "20260701";
+export const APP_RELEASE_DATE = "20260702";
 
 export function formatAppReleaseLabel(): string {
   return `Version: ${APP_VERSION} (${APP_RELEASE_DATE})`;
