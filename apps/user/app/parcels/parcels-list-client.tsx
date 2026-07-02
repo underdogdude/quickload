@@ -748,7 +748,7 @@ export function ParcelsListClient({
       ) : null}
 
       {devToolsEnabled ? (
-        <div className="fixed bottom-24 right-4 z-40">
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+7.5rem)] right-4 z-50">
           <button
             type="button"
             disabled={simulatingParcelId !== null || !awaitingForDev}
@@ -763,7 +763,7 @@ export function ParcelsListClient({
         </div>
       ) : null}
       {simulateMessage ? (
-        <div className="fixed bottom-14 right-4 z-40 max-w-[280px] rounded-md bg-white px-2 py-1 text-[10px] text-slate-600 shadow ring-1 ring-slate-200">
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] right-4 z-50 max-w-[280px] rounded-md bg-white px-2 py-1 text-[10px] text-slate-600 shadow ring-1 ring-slate-200">
           {simulateMessage}
         </div>
       ) : null}

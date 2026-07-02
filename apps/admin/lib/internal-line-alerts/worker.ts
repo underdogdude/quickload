@@ -119,18 +119,19 @@ async function renderPaymentReceived(row: InternalEventRow): Promise<string> {
   const customerName =
     [payment?.firstName, payment?.lastName].filter(Boolean).join(" ").trim() ||
     payment?.displayName ||
-    null;
+    asString(payload.customerName);
+  const payloadAmount = asNumber(payload.amount) ?? asString(payload.amount);
 
   return paymentReceivedTemplate({
-    amount: bulkMeta?.totalCharged ?? payment?.amount ?? null,
-    paymentMethod: payment?.paymentMethod ?? null,
+    amount: bulkMeta?.totalCharged ?? payment?.amount ?? payloadAmount,
+    paymentMethod: payment?.paymentMethod ?? asString(payload.paymentMethod),
     trackingCode: payment
       ? resolveParcelDisplayCode({ barcode: payment.barcode, trackingId: payment.trackingId })
-      : null,
+      : asString(payload.trackingId),
     customerName,
-    customerPhone: payment?.phone ?? null,
+    customerPhone: payment?.phone ?? asString(payload.customerPhone),
     bulk: Boolean(bulkMeta) || asBoolean(payload.bulk),
-    itemCount: bulkMeta?.itemCount ?? null,
+    itemCount: bulkMeta?.itemCount ?? asNumber(payload.itemCount),
     paymentId,
   });
 }

@@ -1,11 +1,3 @@
-function envLabel(): string {
-  const raw = process.env.APP_ENV || process.env.VERCEL_ENV || process.env.NODE_ENV || "local";
-  if (raw === "production") return "PROD";
-  if (raw === "preview") return "PREVIEW";
-  if (raw === "development") return "LOCAL";
-  return raw.toUpperCase();
-}
-
 function compact(lines: Array<string | null | undefined | false>): string {
   return lines.filter((line): line is string => typeof line === "string" && line.length > 0).join("\n");
 }
@@ -28,15 +20,17 @@ export type PaymentReceivedTemplateInput = {
 };
 
 export function paymentReceivedTemplate(input: PaymentReceivedTemplateInput): string {
+  const amount = amountThb(input.amount);
   return compact([
-    `[${envLabel()}] Money received`,
+    "💰 Money received",
     "",
-    `Amount: ${amountThb(input.amount)}`,
+    `Amount: ${amount}`,
     input.bulk ? `Bulk parcels: ${input.itemCount ?? "-"}` : input.trackingCode ? `Tracking: ${input.trackingCode}` : null,
     input.customerName ? `Customer: ${input.customerName}` : null,
     input.customerPhone ? `Phone: ${input.customerPhone}` : null,
     input.paymentMethod ? `Method: ${input.paymentMethod}` : null,
-    `Payment ID: ${input.paymentId}`,
+    "",
+    `\nYou poor bastard, do you think ${amount} is enough? NO, IT'S NOT. FIND MORE MONEY.`,
   ]);
 }
 
@@ -54,15 +48,15 @@ export type ParcelCreatedTemplateInput = {
 export function parcelCreatedTemplate(input: ParcelCreatedTemplateInput): string {
   const destination = [input.recipientName, input.recipientProvince].filter(Boolean).join(", ");
   return compact([
-    `[${envLabel()}] Parcel created`,
+    "Parcel created",
     "",
     input.trackingCode ? `Tracking: ${input.trackingCode}` : null,
-    input.referenceCode ? `Reference: ${input.referenceCode}` : null,
     input.senderName ? `From: ${input.senderName}` : null,
     destination ? `To: ${destination}` : null,
     input.weightGram ? `Weight: ${Number(input.weightGram).toLocaleString("en-US")} g` : null,
     input.parcelType ? `Type: ${input.parcelType}` : null,
-    `Parcel ID: ${input.parcelId}`,
+    "",
+    "\nNow is your chance to become a fucking MILLIONAIRE. Do everything you can to get money from this guy. No excuses.",
   ]);
 }
 
@@ -78,12 +72,13 @@ export type UserRegisteredTemplateInput = {
 export function userRegisteredTemplate(input: UserRegisteredTemplateInput): string {
   const fullName = [input.firstName, input.lastName].filter(Boolean).join(" ").trim();
   return compact([
-    `[${envLabel()}] New user registered`,
+    "New user registered",
     "",
     fullName ? `Name: ${fullName}` : input.displayName ? `LINE: ${input.displayName}` : null,
     input.phone ? `Phone: ${input.phone}` : null,
     input.email ? `Email: ${input.email}` : null,
-    `User ID: ${input.userId}`,
+    "",
+    "\nGET MONEY FROM THIS GUY, EVEN IF WE HAVE TO SUCK HIS DICK.",
   ]);
 }
 
@@ -100,13 +95,16 @@ export function criticalErrorTemplate(input: CriticalErrorTemplateInput): string
     input.context && typeof input.context === "object"
       ? JSON.stringify(input.context).slice(0, 500)
       : null;
+  const isWarning = input.severity?.toLowerCase() === "warning";
   return compact([
-    `[${envLabel()}] System error`,
+    "System error",
     "",
     input.severity ? `Severity: ${input.severity}` : null,
     input.source ? `Source: ${input.source}` : null,
     input.message ? `Message: ${input.message.slice(0, 600)}` : null,
     context ? `Context: ${context}` : null,
     `Event: ${input.eventKey}`,
+    "",
+    isWarning ? "\nเกิดเหี้ยไรวะเย็ดเข้ แก้ให้ไวเลยนะ" : "\nรีบไปแก้บัค ไอชิบหาย!!",
   ]);
 }

@@ -12,6 +12,10 @@ type EntryProfile = {
 type Status = "checking" | "signing_in" | "error";
 
 const TITLE_FONT_CLASS = "font-title-placeholder";
+// liff.init() can hang indefinitely on Android LINE in-app browser on first load.
+// Timeout + one auto-reload (simulating "close and reopen") recovers silently.
+const LIFF_INIT_TIMEOUT_MS = 8000;
+const LIFF_INIT_RETRY_KEY = "liff_init_retry";
 
 export default function EntryPage() {
   const router = useRouter();
@@ -34,7 +38,13 @@ export default function EntryPage() {
       setMsg("กำลังโหลด LINE SDK…");
       const liff = (await import("@line/liff")).default;
       setMsg("กำลังเชื่อมต่อ LINE…");
-      await liff.init({ liffId });
+      await Promise.race([
+        liff.init({ liffId }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("LIFF_INIT_TIMEOUT")), LIFF_INIT_TIMEOUT_MS),
+        ),
+      ]);
+      try { sessionStorage.removeItem(LIFF_INIT_RETRY_KEY); } catch { /* ignore */ }
       if (!liff.isLoggedIn()) {
         setMsg("กำลังพาไปยังหน้าล็อกอิน LINE…");
         liff.login();
@@ -78,6 +88,20 @@ export default function EntryPage() {
       }
     } catch (e) {
       if (cancelledRef.current) return;
+      // Handle LIFF init hang before setting error status — first attempt silently
+      // reloads (simulating "close and reopen"); subsequent failures surface to the user.
+      if (e instanceof Error && e.message === "LIFF_INIT_TIMEOUT") {
+        try {
+          if (!sessionStorage.getItem(LIFF_INIT_RETRY_KEY)) {
+            sessionStorage.setItem(LIFF_INIT_RETRY_KEY, "1");
+            window.location.replace(`${window.location.origin}${window.location.pathname}`);
+            return;
+          }
+        } catch { /* sessionStorage unavailable — fall through to error */ }
+        setStatus("error");
+        setMsg("ไม่สามารถเชื่อมต่อ LINE ได้ กรุณาปิดและเปิดแอปใหม่อีกครั้ง");
+        return;
+      }
       setStatus("error");
       if (e instanceof Error && e.name === "AbortError") {
         setMsg("การเข้าสู่ระบบใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้ง");
@@ -94,6 +118,11 @@ export default function EntryPage() {
 
   useEffect(() => {
     cancelledRef.current = false;
+    // Download the LIFF SDK immediately, in parallel with the session pre-check,
+    // so it is cached by the time signIn() calls liff.init(). Reduces the gap
+    // between page load and liff.init(), which matters on Android where the
+    // native LIFF bridge can expire if liff.init() is called too late.
+    import("@line/liff").catch(() => {});
 
     if (skipLineAuth) {
       navigateAfterAuth(router, "/", { hard: true });

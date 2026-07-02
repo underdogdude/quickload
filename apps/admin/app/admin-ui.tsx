@@ -19,6 +19,7 @@ export function formatDateTime(value: Date | string | null | undefined) {
   const date = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return "-";
   return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
     day: "2-digit",
     month: "short",
     hour: "2-digit",
