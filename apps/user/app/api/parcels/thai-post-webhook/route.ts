@@ -13,6 +13,7 @@ import {
   type TerminalParcelStatus,
 } from "@quickload/shared/thai-post-status";
 import { getDb, notificationLog, orders, parcels, thaiPostWebhookEvents, users } from "@quickload/shared/db";
+import { recordSystemErrorEvent } from "@quickload/shared/internal-events";
 import { thaiPostStatusDateToMs, resolveCarrierWebhookConfirmedAt } from "@quickload/shared/thai-post-webhook-history";
 import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
 import {
@@ -226,7 +227,7 @@ function resolvePublicBaseUrl(request: Request): string | null {
   }
 }
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   // Always consume body as raw text so we can verify HMAC before parsing.
   let rawBody: string;
   try {
@@ -717,4 +718,16 @@ export async function POST(request: Request) {
 
   // Smartpost checks for exactly {"errorDetail":"success","status":"true"} to mark sent_to_webhook=1.
   return NextResponse.json({ errorCode: 0, errorDetail: "success", status: "true", updated, ignored });
+}
+
+export async function POST(request: Request) {
+  try {
+    return await handlePost(request);
+  } catch (error) {
+    await recordSystemErrorEvent({
+      source: "user.api.parcels.thai-post-webhook",
+      error,
+    });
+    throw error;
+  }
 }

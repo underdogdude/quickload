@@ -5,13 +5,14 @@ import {
   readBeamEnv,
   verifyBeamWebhookSignature,
 } from "@quickload/shared/beam";
+import { recordSystemErrorEvent } from "@quickload/shared/internal-events";
 import { NextResponse } from "next/server";
 import { sendPaymentTerminalFlexIfSingle, sendBulkPaymentSuccessFlex, sendPaymentSuccessFlexForPayment } from "@/lib/payment-line-notify";
 
 // Next.js App Router: disable caching and body parsing for raw signature verification.
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const rawBody = await request.text();
   const signature = request.headers.get("x-beam-signature");
   const event = request.headers.get("x-beam-event");
@@ -236,4 +237,16 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ ok: true, ignored: event });
+}
+
+export async function POST(request: Request) {
+  try {
+    return await handlePost(request);
+  } catch (error) {
+    await recordSystemErrorEvent({
+      source: "user.api.payment.beam-webhook",
+      error,
+    });
+    throw error;
+  }
 }

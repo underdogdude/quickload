@@ -10,6 +10,7 @@ import {
   readBeamEnv,
   reconcilePendingPaymentFromBeamApi,
 } from "@quickload/shared/beam";
+import { recordSystemErrorEvent } from "@quickload/shared/internal-events";
 import {
   DEFAULT_PAYMENT_METHOD_ID,
   getPaymentMethod,
@@ -293,6 +294,14 @@ export async function POST(request: Request) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[payment.charges.create] Beam error:", msg);
+      await recordSystemErrorEvent({
+        source: "user.api.payment.charges.create.beam",
+        error: err,
+        context: {
+          parcelId: parcel.id,
+          paymentMethod: methodDef.id,
+        },
+      });
       return NextResponse.json(
         { ok: false, error: "Payment provider unavailable" },
         { status: 502 },
@@ -397,6 +406,10 @@ export async function POST(request: Request) {
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";
+    await recordSystemErrorEvent({
+      source: "user.api.payment.charges",
+      error: e,
+    });
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }

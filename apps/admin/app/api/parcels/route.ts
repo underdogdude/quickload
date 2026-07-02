@@ -1,5 +1,6 @@
 import { parcels } from "@quickload/shared/db/schema";
 import { getDb } from "@quickload/shared/db";
+import { recordInternalEvent, recordSystemErrorEvent } from "@quickload/shared/internal-events";
 import { desc, ilike, or } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { requireAdminUser } from "@/lib/require-admin";
@@ -50,10 +51,25 @@ export async function POST(request: Request) {
         source: body.source ?? "self",
       })
       .returning();
-    return NextResponse.json({ ok: true, data: inserted[0] });
+    const parcel = inserted[0];
+    if (parcel) {
+      await recordInternalEvent("parcel.created", `parcel.created:${parcel.id}`, {
+        parcelId: parcel.id,
+        userId: parcel.userId,
+        trackingId: parcel.trackingId,
+        barcode: parcel.barcode,
+        destination: parcel.destination,
+        source: parcel.source,
+      });
+    }
+    return NextResponse.json({ ok: true, data: parcel });
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";
+    await recordSystemErrorEvent({
+      source: "admin.api.parcels",
+      error: e,
+    });
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }

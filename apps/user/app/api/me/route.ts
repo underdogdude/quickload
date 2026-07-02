@@ -1,4 +1,5 @@
 import { getDb, users } from "@quickload/shared/db";
+import { recordInternalEvent, recordSystemErrorEvent } from "@quickload/shared/internal-events";
 import { eq } from "drizzle-orm";
 import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
@@ -106,7 +107,7 @@ export async function PATCH(request: Request) {
 
     const db = getDb();
     const existingRows = await db
-      .select({ phone: users.phone })
+      .select({ firstName: users.firstName, lastName: users.lastName, phone: users.phone })
       .from(users)
       .where(eq(users.id, session.userId))
       .limit(1);
@@ -115,6 +116,9 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 });
     }
 
+    const wasProfileComplete = Boolean(
+      existingUser.firstName?.trim() && existingUser.lastName?.trim() && existingUser.phone?.trim(),
+    );
     const normalizedNewPhone = normalizeThaiPhone(phone);
     const normalizedCurrentPhone = normalizeThaiPhone(existingUser.phone ?? "");
     if (normalizedNewPhone !== normalizedCurrentPhone) {
@@ -164,6 +168,19 @@ export async function PATCH(request: Request) {
     fullSession.phoneOtpRequestedAt = undefined;
     await fullSession.save();
 
+    if (!wasProfileComplete) {
+      await recordInternalEvent("user.registered", `user.registered:${updated.id}`, {
+        userId: updated.id,
+        lineUserId: updated.lineUserId,
+        displayName: updated.displayName,
+        firstName: updated.firstName,
+        lastName: updated.lastName,
+        phone: updated.phone,
+        email: updated.email,
+        birthDate: updated.birthDate,
+      });
+    }
+
     return NextResponse.json(
       { ok: true, data: updated },
       { headers: { "Cache-Control": "no-store" } },
@@ -171,6 +188,10 @@ export async function PATCH(request: Request) {
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";
+    await recordSystemErrorEvent({
+      source: "user.api.me.patch",
+      error: e,
+    });
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }

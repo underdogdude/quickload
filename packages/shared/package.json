@@ -12,6 +12,7 @@
     "./legacy": "./src/legacy/adapter.ts",
     "./line": "./src/line.ts",
     "./notifications": "./src/notifications.ts",
+    "./internal-events": "./src/internal-events.ts",
     "./beam": "./src/beam.ts",
     "./bulk-payment": "./src/bulk-payment.ts",
     "./bulk-payment-db": "./src/bulk-payment-db.ts",
@@ -52,7 +53,8 @@
     "db:apply:one-pending-idx": "node ./scripts/apply-sql.mjs ./sql/20260426_payments_one_pending_per_parcel.sql",
     "db:apply:redirect-url": "node ./scripts/apply-sql.mjs ./sql/20260614_payments_redirect_url.sql",
     "db:apply:parcels-note": "node ./scripts/apply-sql.mjs ./sql/20260617_parcels_note.sql",
-    "db:apply:parcels-note-50": "node ./scripts/apply-sql.mjs ./sql/20260617_parcels_note_length_50.sql"
+    "db:apply:parcels-note-50": "node ./scripts/apply-sql.mjs ./sql/20260617_parcels_note_length_50.sql",
+    "db:apply:internal-events": "node ./scripts/apply-sql.mjs ./sql/20260702_internal_events.sql"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",

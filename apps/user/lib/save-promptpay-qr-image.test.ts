@@ -84,7 +84,7 @@ describe("savePromptPayQrImage", () => {
     );
   });
 
-  it("treats AbortError from share as success (user cancelled)", async () => {
+  it("treats AbortError from share as cancelled (user dismissed sheet)", async () => {
     global.fetch = makeMockFetch();
     global.URL.createObjectURL = vi.fn().mockReturnValue("blob:mock");
 
@@ -96,8 +96,8 @@ describe("savePromptPayQrImage", () => {
     Object.defineProperty(navigator, "canShare", { configurable: true, value: mockCanShare });
 
     const result = await savePromptPayQrImage("pay-001");
-    expect(result.ok).toBe(true);
-    expect((result as { ok: true; method: string }).method).toBe("share");
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; cancelled?: boolean }).cancelled).toBe(true);
   });
 
   it("falls back to download when navigator.share is not available", async () => {

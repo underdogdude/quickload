@@ -3,6 +3,7 @@ import { reconcilePendingPaymentFromBeamApi } from "@quickload/shared/beam";
 import { readBulkMasterMeta } from "@quickload/shared/bulk-payment";
 import { expireBulkPaymentGroup } from "@quickload/shared/bulk-payment-db";
 import { getDb, parcels, payments } from "@quickload/shared/db";
+import { recordSystemErrorEvent } from "@quickload/shared/internal-events";
 import { computeOutstanding } from "@quickload/shared/penalty";
 import { NextResponse } from "next/server";
 import {
@@ -124,6 +125,10 @@ export async function GET(
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";
+    await recordSystemErrorEvent({
+      source: "user.api.payment.charges.get",
+      error: e,
+    });
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }

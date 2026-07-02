@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, recipientAddresses, senderAddresses } from "@quickload/shared/db";
+import { recordSystemErrorEvent } from "@quickload/shared/internal-events";
 import { NextResponse } from "next/server";
 import { requireLineSession } from "@/lib/require-user";
 import { getSendAccessBlockForUser, sendAccessBlockedResponse } from "@/lib/send-access-block";
@@ -142,6 +143,15 @@ export async function POST(request: Request) {
 
     if (!isSmartpostSuccess) {
       const userFacingError = smartpostMessage || `Smartpost error ${upstreamRes.status}`;
+      await recordSystemErrorEvent({
+        source: "user.api.smartpost.add-item",
+        error: new Error(userFacingError),
+        context: {
+          upstreamHttpStatus: upstreamRes.status,
+          smartpostStatus,
+          smartpostMessage,
+        },
+      });
       return NextResponse.json(
         {
           ok: false,
@@ -168,6 +178,10 @@ export async function POST(request: Request) {
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";
+    await recordSystemErrorEvent({
+      source: "user.api.smartpost.add-item",
+      error: e,
+    });
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }

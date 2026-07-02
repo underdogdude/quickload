@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { computeOutstanding } from "./penalty";
 import type { BeamPaymentMethodType } from "./payment-methods";
+import { recordInternalEvent } from "./internal-events";
 
 /** Beam webhook HMAC verification per docs.beamcheckout.com/webhook/webhook. */
 export function verifyBeamWebhookSignature({
@@ -286,7 +287,7 @@ export async function markPaymentSucceeded({
   rawWebhookPayload: unknown;
 }): Promise<{ paymentId: string; parcelId: string; settled: boolean; bulk?: boolean } | null> {
   const db = getDb();
-  return await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [masterRow] = await tx
       .select()
       .from(payments)
@@ -371,6 +372,14 @@ export async function markPaymentSucceeded({
 
     return { paymentId: row.id, parcelId: row.parcelId, settled: out.outstanding === 0 };
   });
+  if (result) {
+    await recordInternalEvent("payment.received", `payment.received:${result.paymentId}`, {
+      paymentId: result.paymentId,
+      parcelId: result.parcelId,
+      bulk: Boolean(result.bulk),
+    });
+  }
+  return result;
 }
 
 export async function markPaymentTerminalStatus({

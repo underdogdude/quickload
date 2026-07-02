@@ -2,12 +2,14 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
+  index,
   integer,
   jsonb,
   numeric,
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -140,6 +142,31 @@ export const notificationLog = pgTable("notification_log", {
   sentAt: timestamp("sent_at", { withTimezone: true }).defaultNow().notNull(),
   status: text("status").notNull().default("sent"),
 });
+
+export const internalEvents = pgTable(
+  "internal_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    type: text("type").notNull(),
+    eventKey: text("event_key").notNull(),
+    payload: jsonb("payload"),
+    status: text("status").notNull().default("pending"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).defaultNow().notNull(),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => ({
+    eventKeyIdx: uniqueIndex("internal_events_event_key_idx").on(table.eventKey),
+    statusNextAttemptIdx: index("internal_events_status_next_attempt_idx").on(
+      table.status,
+      table.nextAttemptAt,
+    ),
+    typeCreatedAtIdx: index("internal_events_type_created_at_idx").on(table.type, table.createdAt),
+  }),
+);
 
 /** Saved sender (address book) for parcel registration; one user may have many. */
 export const senderAddresses = pgTable("sender_addresses", {

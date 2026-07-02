@@ -5,6 +5,7 @@ import {
   readBeamEnv,
   reconcilePendingPaymentFromBeamApi,
 } from "@quickload/shared/beam";
+import { recordSystemErrorEvent } from "@quickload/shared/internal-events";
 import {
   readBulkMasterMeta,
   withBulkChildMeta,
@@ -213,6 +214,14 @@ export async function POST(request: Request) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[payment.charges.bulk.create] Beam error:", msg);
+      await recordSystemErrorEvent({
+        source: "user.api.payment.charges.bulk.create.beam",
+        error: err,
+        context: {
+          itemCount: items.length,
+          paymentMethod: methodDef.id,
+        },
+      });
       return NextResponse.json({ ok: false, error: "Payment provider unavailable" }, { status: 502 });
     }
 
@@ -334,6 +343,10 @@ export async function POST(request: Request) {
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";
+    await recordSystemErrorEvent({
+      source: "user.api.payment.charges.bulk",
+      error: e,
+    });
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }

@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, orders, parcels, recipientAddresses, senderAddresses } from "@quickload/shared/db";
+import { recordInternalEvent, recordSystemErrorEvent } from "@quickload/shared/internal-events";
 import { sanitizeParcelNote } from "@quickload/shared/parcel-note";
 import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
 import { NextResponse } from "next/server";
@@ -185,6 +186,21 @@ export async function POST(request: Request) {
       referenceId: f.referenceId || null,
     });
 
+    await recordInternalEvent("parcel.created", `parcel.created:${parcelRow.id}`, {
+      parcelId: parcelRow.id,
+      userId: session.userId,
+      trackingId: parcelRow.trackingId,
+      barcode: parcelRow.barcode,
+      smartpostTrackingcode: f.smartpostTrackingcode || null,
+      recipientProvince: recipient.province,
+      recipientName: recipient.contactName,
+      senderName: sender.contactName,
+      weightGram,
+      parcelType,
+      shippingMode,
+      autoPrint,
+    });
+
     // Build and fire the LINE Flex message without blocking the HTTP response.
     // The order is already saved; a slow or failed LINE API call must not make
     // the user's app appear hung (critical on Android with low bandwidth).
@@ -249,6 +265,10 @@ export async function POST(request: Request) {
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";
+    await recordSystemErrorEvent({
+      source: "user.api.parcels.draft",
+      error: e,
+    });
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }

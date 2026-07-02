@@ -1,6 +1,6 @@
 export type SavePromptPayQrResult =
   | { ok: true; method: "share" | "download" | "open" }
-  | { ok: false; error: string };
+  | { ok: false; error: string; cancelled?: boolean };
 
 function defaultFilename(paymentId: string): string {
   return `promptpay-qr-${paymentId.slice(0, 8)}.png`;
@@ -44,9 +44,9 @@ export async function savePromptPayQrImage(paymentId: string): Promise<SavePromp
           return { ok: true, method: "share" };
         }
       } catch (e) {
-        // AbortError = user dismissed share sheet — treat as success (they chose not to save).
+        // User dismissed share sheet — not an error, but not a save either.
         if (e instanceof Error && e.name === "AbortError") {
-          return { ok: true, method: "share" };
+          return { ok: false, error: "", cancelled: true };
         }
         // Other share error: fall through to next strategy.
       }
