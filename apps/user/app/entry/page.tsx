@@ -1,6 +1,7 @@
 "use client";
 
 import { navigateAfterAuth } from "@/lib/navigate-after-auth";
+import lineLiff, { type Liff } from "@line/liff";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -12,10 +13,36 @@ type EntryProfile = {
 type Status = "checking" | "signing_in" | "error";
 
 const TITLE_FONT_CLASS = "font-title-placeholder";
-// liff.init() can hang indefinitely on Android LINE in-app browser on first load.
-// Timeout + one auto-reload (simulating "close and reopen") recovers silently.
-const LIFF_INIT_TIMEOUT_MS = 8000;
+// liff.init() can hang on Android if called too late after page load (native LIFF
+// bridge has a finite readiness window). Timeout is a safety net; the real fix is
+// calling liff.init() at t=0 in parallel with the session pre-check (see effect).
+const LIFF_INIT_TIMEOUT_MS = 10000;
 const LIFF_INIT_RETRY_KEY = "liff_init_retry";
+
+/**
+ * Starts liff.init() immediately and returns a promise resolving to the liff
+ * instance. The promise is stored in a ref so signIn() can await an init that
+ * has been running concurrently with the session pre-check.
+ */
+function startLiffInit(liffId: string): Promise<Liff> {
+  const p = (async () => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        lineLiff.init({ liffId }),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error("LIFF_INIT_TIMEOUT")), LIFF_INIT_TIMEOUT_MS);
+        }),
+      ]);
+      return lineLiff;
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  })();
+  // Suppress unhandled-rejection warning; signIn() catches it when it awaits.
+  p.catch(() => {});
+  return p;
+}
 
 export default function EntryPage() {
   const router = useRouter();
@@ -23,28 +50,33 @@ export default function EntryPage() {
   const [msg, setMsg] = useState("กำลังตรวจสอบการเข้าสู่ระบบ…");
   const [profile, setProfile] = useState<EntryProfile | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const cancelledRef = useRef(false);
-  const skipLineAuth = process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_DEV_SKIP_LINE_AUTH === "true";
+  const runIdRef = useRef(0);
+  // Holds the liff.init() promise that is started at the very top of the effect,
+  // BEFORE the session pre-check, so that both run concurrently.
+  const liffInitRef = useRef<Promise<Liff> | null>(null);
+  const skipLineAuth =
+    process.env.NODE_ENV !== "production" &&
+    process.env.NEXT_PUBLIC_DEV_SKIP_LINE_AUTH === "true";
 
-  const signIn = useCallback(async () => {
-    const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
-    if (!liffId) {
-      setStatus("error");
-      setMsg("ยังไม่ได้ตั้งค่า LIFF ID กรุณาติดต่อทีมงาน");
-      return;
-    }
-
+  const signIn = useCallback(async (liffPromise: Promise<Liff>, isRunActive: () => boolean) => {
     try {
-      setMsg("กำลังโหลด LINE SDK…");
-      const liff = (await import("@line/liff")).default;
       setMsg("กำลังเชื่อมต่อ LINE…");
-      await Promise.race([
-        liff.init({ liffId }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("LIFF_INIT_TIMEOUT")), LIFF_INIT_TIMEOUT_MS),
-        ),
-      ]);
-      try { sessionStorage.removeItem(LIFF_INIT_RETRY_KEY); } catch { /* ignore */ }
+      // Await the liff.init() that was already started at page load.
+      // By the time signIn() is called, it has been running for however long
+      // the pre-check took (up to 6 s) and is likely already resolved.
+      const liff = await liffPromise.catch((e) => {
+        if (liffInitRef.current === liffPromise) {
+          liffInitRef.current = null;
+        }
+        throw e;
+      });
+      if (!isRunActive()) return;
+      try {
+        sessionStorage.removeItem(LIFF_INIT_RETRY_KEY);
+      } catch {
+        /* ignore */
+      }
+
       if (!liff.isLoggedIn()) {
         setMsg("กำลังพาไปยังหน้าล็อกอิน LINE…");
         liff.login();
@@ -59,6 +91,7 @@ export default function EntryPage() {
 
       try {
         const p = await liff.getProfile();
+        if (!isRunActive()) return;
         setProfile({ name: p.displayName, pictureUrl: p.pictureUrl });
         setMsg(`กำลังยืนยันตัวตน ${p.displayName}…`);
       } catch {
@@ -67,37 +100,50 @@ export default function EntryPage() {
 
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 15000);
-      const res = await fetch("/api/auth/line", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessToken }),
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
+      let res: Response;
+      try {
+        res = await fetch("/api/auth/line", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accessToken }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!isRunActive()) return;
       const text = await res.text();
-      const json = text ? (JSON.parse(text) as { ok?: boolean; error?: string; needsRegistration?: boolean }) : {};
+      const json = text
+        ? (JSON.parse(text) as { ok?: boolean; error?: string; needsRegistration?: boolean })
+        : {};
       if (!res.ok || !json.ok) {
         setStatus("error");
         setMsg(json.error ?? "เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
         return;
       }
-      if (!cancelledRef.current) {
+      if (isRunActive()) {
         // Hard nav ensures the new iron-session cookie is included in the very next
         // request, avoiding a middleware bounce in LINE in-app browser.
         navigateAfterAuth(router, json.needsRegistration ? "/register" : "/", { hard: true });
       }
     } catch (e) {
-      if (cancelledRef.current) return;
-      // Handle LIFF init hang before setting error status — first attempt silently
-      // reloads (simulating "close and reopen"); subsequent failures surface to the user.
+      if (!isRunActive()) return;
       if (e instanceof Error && e.message === "LIFF_INIT_TIMEOUT") {
+        // Reset so the next attempt (retry button) starts a fresh liff.init().
+        liffInitRef.current = null;
         try {
           if (!sessionStorage.getItem(LIFF_INIT_RETRY_KEY)) {
             sessionStorage.setItem(LIFF_INIT_RETRY_KEY, "1");
+            // Reload the page — this resets the WebView's page context.
+            // Note: only a full WebView destroy/recreate (i.e. manually closing and
+            // reopening LINE) resets the native LIFF bridge. That is why we call
+            // liff.init() at t=0 (before the pre-check) rather than relying on reload.
             window.location.replace(`${window.location.origin}${window.location.pathname}`);
             return;
           }
-        } catch { /* sessionStorage unavailable — fall through to error */ }
+        } catch {
+          /* sessionStorage unavailable — fall through to error */
+        }
         setStatus("error");
         setMsg("ไม่สามารถเชื่อมต่อ LINE ได้ กรุณาปิดและเปิดแอปใหม่อีกครั้ง");
         return;
@@ -117,16 +163,31 @@ export default function EntryPage() {
   }, [router]);
 
   useEffect(() => {
-    cancelledRef.current = false;
-    // Download the LIFF SDK immediately, in parallel with the session pre-check,
-    // so it is cached by the time signIn() calls liff.init(). Reduces the gap
-    // between page load and liff.init(), which matters on Android where the
-    // native LIFF bridge can expire if liff.init() is called too late.
-    import("@line/liff").catch(() => {});
+    const runId = runIdRef.current + 1;
+    runIdRef.current = runId;
+    const isRunActive = () => runIdRef.current === runId;
 
     if (skipLineAuth) {
       navigateAfterAuth(router, "/", { hard: true });
       return;
+    }
+
+    const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+
+    // ─── CRITICAL: start liff.init() HERE, synchronously, before the pre-check. ───
+    //
+    // Root cause of the Android first-login hang:
+    //   The LINE in-app browser creates a native LIFF bridge when it opens the
+    //   WebView. That bridge has a finite readiness window (~a few seconds from
+    //   page load). If liff.init() is called after this window closes — which
+    //   happens when the 6-second session pre-check runs first — the init call
+    //   hangs forever because the bridge is no longer listening.
+    //
+    // Fix: call liff.init() at t≈0 and run the pre-check concurrently. By the
+    // time the pre-check finishes, liff.init() has been running in parallel and
+    // is typically already resolved, well within the bridge window.
+    if (liffId && !liffInitRef.current) {
+      liffInitRef.current = startLiffInit(liffId);
     }
 
     (async () => {
@@ -134,16 +195,20 @@ export default function EntryPage() {
       setMsg("กำลังตรวจสอบการเข้าสู่ระบบ…");
 
       // Pre-check: does the user already have a valid session?
-      // Use a 6-second timeout — a hung fetch here blocks the LIFF init that follows.
+      // liff.init() is now running in parallel so this delay no longer blocks it.
       try {
         const preCheckController = new AbortController();
         const preCheckTimer = setTimeout(() => preCheckController.abort(), 6000);
-        const res = await fetch("/api/me", {
-          cache: "no-store",
-          signal: preCheckController.signal,
-        });
-        clearTimeout(preCheckTimer);
-        if (cancelledRef.current) return;
+        let res: Response;
+        try {
+          res = await fetch("/api/me", {
+            cache: "no-store",
+            signal: preCheckController.signal,
+          });
+        } finally {
+          clearTimeout(preCheckTimer);
+        }
+        if (!isRunActive()) return;
         if (res.ok) {
           const json = (await res.json()) as {
             ok?: boolean;
@@ -164,14 +229,27 @@ export default function EntryPage() {
         /* Timed out or network error — fall through to full LIFF sign-in. */
       }
 
-      if (cancelledRef.current) return;
+      if (!isRunActive()) return;
+
+      if (!liffId) {
+        setStatus("error");
+        setMsg("ยังไม่ได้ตั้งค่า LIFF ID กรุณาติดต่อทีมงาน");
+        return;
+      }
+
+      // Defensive: ensure ref is set (should always be true when liffId exists).
+      if (!liffInitRef.current) {
+        liffInitRef.current = startLiffInit(liffId);
+      }
+
       setStatus("signing_in");
-      setMsg("กำลังเข้าสู่ระบบด้วย LINE…");
-      await signIn();
+      await signIn(liffInitRef.current, isRunActive);
     })();
 
     return () => {
-      cancelledRef.current = true;
+      if (runIdRef.current === runId) {
+        runIdRef.current += 1;
+      }
     };
   }, [router, signIn, skipLineAuth, attempt]);
 
