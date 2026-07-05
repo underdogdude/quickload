@@ -4,6 +4,7 @@ import { navigateAfterAuth } from "@/lib/navigate-after-auth";
 import lineLiff, { type Liff } from "@line/liff";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { cleanEntryRedirectUrl, isLiffInitTimeout, startLiffInit } from "./liff-auth";
 
 type EntryProfile = {
   name?: string;
@@ -13,36 +14,6 @@ type EntryProfile = {
 type Status = "checking" | "signing_in" | "error";
 
 const TITLE_FONT_CLASS = "font-title-placeholder";
-// liff.init() can hang on Android if called too late after page load (native LIFF
-// bridge has a finite readiness window). Timeout is a safety net; the real fix is
-// calling liff.init() at t=0 in parallel with the session pre-check (see effect).
-const LIFF_INIT_TIMEOUT_MS = 10000;
-const LIFF_INIT_RETRY_KEY = "liff_init_retry";
-
-/**
- * Starts liff.init() immediately and returns a promise resolving to the liff
- * instance. The promise is stored in a ref so signIn() can await an init that
- * has been running concurrently with the session pre-check.
- */
-function startLiffInit(liffId: string): Promise<Liff> {
-  const p = (async () => {
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        lineLiff.init({ liffId }),
-        new Promise<never>((_, reject) => {
-          timeout = setTimeout(() => reject(new Error("LIFF_INIT_TIMEOUT")), LIFF_INIT_TIMEOUT_MS);
-        }),
-      ]);
-      return lineLiff;
-    } finally {
-      if (timeout) clearTimeout(timeout);
-    }
-  })();
-  // Suppress unhandled-rejection warning; signIn() catches it when it awaits.
-  p.catch(() => {});
-  return p;
-}
 
 export default function EntryPage() {
   const router = useRouter();
@@ -71,15 +42,10 @@ export default function EntryPage() {
         throw e;
       });
       if (!isRunActive()) return;
-      try {
-        sessionStorage.removeItem(LIFF_INIT_RETRY_KEY);
-      } catch {
-        /* ignore */
-      }
 
       if (!liff.isLoggedIn()) {
         setMsg("กำลังพาไปยังหน้าล็อกอิน LINE…");
-        liff.login();
+        liff.login({ redirectUri: cleanEntryRedirectUrl(window.location) });
         return;
       }
       const accessToken = liff.getAccessToken();
@@ -128,24 +94,10 @@ export default function EntryPage() {
       }
     } catch (e) {
       if (!isRunActive()) return;
-      if (e instanceof Error && e.message === "LIFF_INIT_TIMEOUT") {
-        // Reset so the next attempt (retry button) starts a fresh liff.init().
+      if (isLiffInitTimeout(e)) {
         liffInitRef.current = null;
-        try {
-          if (!sessionStorage.getItem(LIFF_INIT_RETRY_KEY)) {
-            sessionStorage.setItem(LIFF_INIT_RETRY_KEY, "1");
-            // Reload the page — this resets the WebView's page context.
-            // Note: only a full WebView destroy/recreate (i.e. manually closing and
-            // reopening LINE) resets the native LIFF bridge. That is why we call
-            // liff.init() at t=0 (before the pre-check) rather than relying on reload.
-            window.location.replace(`${window.location.origin}${window.location.pathname}`);
-            return;
-          }
-        } catch {
-          /* sessionStorage unavailable — fall through to error */
-        }
         setStatus("error");
-        setMsg("ไม่สามารถเชื่อมต่อ LINE ได้ กรุณาปิดและเปิดแอปใหม่อีกครั้ง");
+        setMsg("เชื่อมต่อ LINE ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
         return;
       }
       setStatus("error");
@@ -174,20 +126,11 @@ export default function EntryPage() {
 
     const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
 
-    // ─── CRITICAL: start liff.init() HERE, synchronously, before the pre-check. ───
-    //
-    // Root cause of the Android first-login hang:
-    //   The LINE in-app browser creates a native LIFF bridge when it opens the
-    //   WebView. That bridge has a finite readiness window (~a few seconds from
-    //   page load). If liff.init() is called after this window closes — which
-    //   happens when the 6-second session pre-check runs first — the init call
-    //   hangs forever because the bridge is no longer listening.
-    //
-    // Fix: call liff.init() at t≈0 and run the pre-check concurrently. By the
-    // time the pre-check finishes, liff.init() has been running in parallel and
-    // is typically already resolved, well within the bridge window.
+    // Start LIFF init before the session pre-check. Android LINE WebView can
+    // leave late LIFF initialization unresolved, so the timeout path must show
+    // an error state rather than auto-reloading and recycling LINE callbacks.
     if (liffId && !liffInitRef.current) {
-      liffInitRef.current = startLiffInit(liffId);
+      liffInitRef.current = startLiffInit(lineLiff, liffId);
     }
 
     (async () => {
@@ -239,7 +182,7 @@ export default function EntryPage() {
 
       // Defensive: ensure ref is set (should always be true when liffId exists).
       if (!liffInitRef.current) {
-        liffInitRef.current = startLiffInit(liffId);
+        liffInitRef.current = startLiffInit(lineLiff, liffId);
       }
 
       setStatus("signing_in");
