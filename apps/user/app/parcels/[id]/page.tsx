@@ -265,7 +265,7 @@ export default function ParcelDetailPage() {
     parcel == null
       ? null
       : displayStatus === "awaiting_actual_weight"
-        ? "นำพัสดุไปชั่งน้ำหนักที่จุดบริการ"
+        ? "ชั่งพัสดุที่เคาน์เตอร์ไปรษณีย์ไทย"
         : parcel.status === "pending_payment" && !parcel.isPaid && parcel.thaiPostPriceConfirmedAt
           ? `ชำระเงิน ${formatBaht(toNumberOrZero(parcel.price) - toNumberOrZero(parcel.amountPaid))} บาท`
           : parcel.isPaid

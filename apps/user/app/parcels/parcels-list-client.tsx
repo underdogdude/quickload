@@ -4,7 +4,7 @@ import Link from "next/link";
 import { resolveParcelDisplayStatus } from "@quickload/shared/parcel-display-status";
 import { SendLink } from "@/lib/send-access-ui";
 import { ListParcelThaiPostProgressHorizontal } from "@/lib/parcel-shipment-progress";
-import { parcelBarcodeDataUrl, parcelQrDataUrl } from "@/lib/parcel-scan-media";
+import { parcelBarcodeDataUrl } from "@/lib/parcel-scan-media";
 import { useEffect, useMemo, useState } from "react";
 
 type ParcelRow = {
@@ -272,15 +272,13 @@ export function ParcelsListClient({
   const [activeStatus, setActiveStatus] = useState<string>("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [placeholderModal, setPlaceholderModal] = useState<{
-    type: "qr" | "barcode";
     parcelCode: string;
   } | null>(null);
   const [scanModalMedia, setScanModalMedia] = useState<{
-    qr: string | null;
     barcode: string | null;
     loading: boolean;
     error: string | null;
-  }>({ qr: null, barcode: null, loading: false, error: null });
+  }>({ barcode: null, loading: false, error: null });
   const [expandedParcelId, setExpandedParcelId] = useState<string | null>(null);
   const [weightInfoParcelId, setWeightInfoParcelId] = useState<string | null>(null);
   const [simulatingParcelId, setSimulatingParcelId] = useState<string | null>(null);
@@ -294,37 +292,32 @@ export function ParcelsListClient({
 
   useEffect(() => {
     if (!placeholderModal) {
-      setScanModalMedia({ qr: null, barcode: null, loading: false, error: null });
+      setScanModalMedia({ barcode: null, loading: false, error: null });
       return;
     }
     const text = placeholderModal.parcelCode.trim();
     if (!text || text === "-") {
       setScanModalMedia({
-        qr: null,
         barcode: null,
         loading: false,
-        error: "ไม่มีเลขพัสดุสำหรับสร้างคิวอาร์โค้ด / บาร์โค้ด",
+        error: "ไม่มีเลขพัสดุสำหรับสร้างบาร์โค้ด",
       });
       return;
     }
     let cancelled = false;
-    setScanModalMedia({ qr: null, barcode: null, loading: true, error: null });
+    setScanModalMedia({ barcode: null, loading: true, error: null });
     (async () => {
       try {
-        const [qr, bc] = await Promise.all([
-          parcelQrDataUrl(text),
-          Promise.resolve().then(() => parcelBarcodeDataUrl(text)),
-        ]);
+        const barcode = await parcelBarcodeDataUrl(text);
         if (!cancelled) {
-          setScanModalMedia({ qr, barcode: bc, loading: false, error: null });
+          setScanModalMedia({ barcode, loading: false, error: null });
         }
       } catch {
         if (!cancelled) {
           setScanModalMedia({
-            qr: null,
             barcode: null,
             loading: false,
-            error: "สร้าง QR / บาร์โค้ดไม่สำเร็จ",
+            error: "สร้างบาร์โค้ดไม่สำเร็จ",
           });
         }
       }
@@ -587,21 +580,9 @@ export function ParcelsListClient({
           <div className="mt-5 border-t border-slate-200 px-5 pt-4">
             <div className={`flex w-full items-center gap-4 text-slate-400 ${showPaymentInfo ? "justify-between" : "justify-end"}`}>
             {listStatus === "awaiting_actual_weight" ? (
-              <div className="relative flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  aria-label="ข้อมูลการชั่งน้ำหนักจริง"
-                  className="inline-flex h-5 w-5 items-center rounded-full justify-center text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setWeightInfoParcelId((cur) => (cur === p.id ? null : p.id));
-                  }}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
-                  </svg>
-                </button>
-                <span className="text-xs font-normal text-slate-700">นำพัสดุไปชั่งน้ำหนักที่จุดบริการ</span>
+              <div className="relative flex shrink-0 items-center ">
+
+                <span className="text-xs font-normal text-slate-700">ชั่งพัสดุที่เคาน์เตอร์ไปรษณีย์ไทย</span>
 
                 {weightInfoParcelId === p.id ? (
                   <div
@@ -662,28 +643,11 @@ export function ParcelsListClient({
               </Link>
               <button
                 type="button"
-                aria-label="แสดงคิวอาร์โค้ด"
-                className="text-slate-400 transition hover:text-slate-600"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setPlaceholderModal({
-                    type: "qr",
-                    parcelCode: parcelScanText(p),
-                  });
-                }}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24">
-                  <path d="M4 4h6v6H4V4Zm0 10h6v6H4v-6Zm10-10h6v6h-6V4Zm6 12v4h-4m-2 0v-2m0-4v-2m4 2h2" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-              <button
-                type="button"
                 aria-label="แสดงบาร์โค้ด"
                 className="text-slate-400 transition hover:text-slate-600"
                 onClick={(e) => {
                   e.stopPropagation();
                   setPlaceholderModal({
-                    type: "barcode",
                     parcelCode: parcelScanText(p),
                   });
                 }}
@@ -774,9 +738,7 @@ export function ParcelsListClient({
             className="mx-auto mt-24 w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-base font-semibold text-slate-900">
-              {placeholderModal.type === "qr" ? "QR CODE" : "BARCODE"}
-            </h3>
+            <h3 className="text-base font-semibold text-slate-900">BARCODE</h3>
             <p className="mt-1 text-xs text-slate-500">
               สแกนเพื่ออ่านเลขพัสดุ
             </p>
@@ -785,10 +747,7 @@ export function ParcelsListClient({
                 <span className="text-sm text-slate-500">กำลังสร้าง…</span>
               ) : scanModalMedia.error ? (
                 <span className="px-2 text-center text-sm text-rose-600">{scanModalMedia.error}</span>
-              ) : placeholderModal.type === "qr" && scanModalMedia.qr ? (
-                // eslint-disable-next-line @next/next/no-img-element -- data URL from qrcode
-                <img src={scanModalMedia.qr} alt="" className="max-h-52 w-auto max-w-full" />
-              ) : placeholderModal.type === "barcode" && scanModalMedia.barcode ? (
+              ) : scanModalMedia.barcode ? (
                 // eslint-disable-next-line @next/next/no-img-element -- data URL from jsbarcode
                 <img src={scanModalMedia.barcode} alt="" className="max-h-52 w-full object-contain" />
               ) : null}
