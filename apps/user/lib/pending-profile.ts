@@ -2,8 +2,8 @@ export type PendingProfile = {
   firstName: string;
   lastName: string;
   phone: string;
-  email: string;
-  birthDate: string;
+  email?: string;
+  birthDate?: string;
 };
 
 const PENDING_PROFILE_KEY = "quickload_pending_profile";

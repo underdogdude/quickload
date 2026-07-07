@@ -31,10 +31,6 @@ test("Flow 1: new user fills register form, verifies phone via OTP, lands on /",
   await page.getByPlaceholder("เช่น สมชาย").fill("สมชาย");
   await page.getByPlaceholder("เช่น ใจดี").fill("ใจดี");
   await page.getByPlaceholder("เช่น 0812345678").fill("0812345678");
-  await page.getByPlaceholder("name@example.com").fill("test@example.com");
-  await page.getByTestId("birth-date-day").selectOption("1");
-  await page.getByTestId("birth-date-month").selectOption("1");
-  await page.getByTestId("birth-date-year").selectOption("2533");
 
   await page.getByRole("button", { name: "เริ่มใช้งาน" }).click();
 

@@ -281,7 +281,6 @@ export default function RegisterPage() {
                     }}
                     autoComplete="email"
                     placeholder="name@example.com"
-                    required
                   />
                   {emailError ? <p className="mt-1 text-xs text-red-600">{emailError}</p> : null}
                 </label>
@@ -289,7 +288,7 @@ export default function RegisterPage() {
                   <div className="flex items-center justify-between gap-2">
                     <span>วันเกิด</span>
                   </div>
-                  <BirthDateField value={birthDate} onChange={setBirthDate} required />
+                  <BirthDateField value={birthDate} onChange={setBirthDate} />
                 </div>
 
                 <div className="flex gap-2 pt-2">
