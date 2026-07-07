@@ -117,13 +117,13 @@ function SenderFormInner() {
   }, []);
 
   useEffect(() => {
-    function onDocMouseDown(e: MouseEvent) {
+    function onDocPointerDown(e: PointerEvent) {
       if (comboRef.current && !comboRef.current.contains(e.target as Node)) {
         setListOpen(false);
       }
     }
-    document.addEventListener("mousedown", onDocMouseDown);
-    return () => document.removeEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("pointerdown", onDocPointerDown);
+    return () => document.removeEventListener("pointerdown", onDocPointerDown);
   }, []);
 
   useEffect(() => {
@@ -223,7 +223,7 @@ function SenderFormInner() {
   }
 
   const inputClass =
-    "mt-1 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none placeholder:text-slate-400 focus:border-[#2726F5] focus:ring-1 focus:ring-[#2726F5]";
+    "mt-1 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none placeholder:text-slate-400 focus:border-[#2726F5] focus:ring-1 focus:ring-[#2726F5]";
 
   const title = editId ? senderCopy.titleEdit : senderCopy.title;
 
@@ -337,16 +337,35 @@ function SenderFormInner() {
               name="location"
               value={locationQuery}
               onChange={(e) => onLocationChange(e.target.value)}
-              onFocus={() => setListOpen(true)}
+              onFocus={() => { if (!locationSelected) setListOpen(true); }}
               autoComplete="off"
-              className={inputClass}
+              className={`${inputClass} ${locationSelected ? "border-emerald-500 focus:border-emerald-500 focus:ring-emerald-500" : ""}`}
               placeholder={senderCopy.placeholderLocation}
               disabled={saving}
+              readOnly={Boolean(locationSelected)}
             />
+            {locationSelected ? (
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
+                  <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5" aria-hidden>
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 0 1 0 1.414l-8 8a1 1 0 0 1-1.414 0l-4-4a1 1 0 0 1 1.414-1.414L8 12.586l7.293-7.293a1 1 0 0 1 1.414 0Z" clipRule="evenodd" />
+                  </svg>
+                  เลือกแล้ว
+                </span>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => { setLocationSelected(null); setLocationQuery(""); setListOpen(false); setLocationError(null); }}
+                  className="text-xs text-[#2726F5] underline underline-offset-2 disabled:opacity-50"
+                >
+                  เปลี่ยน
+                </button>
+              </div>
+            ) : null}
             {locationError ? <p className="mt-1 text-sm text-red-600">{locationError}</p> : null}
 
             {listOpen && !locationSelected && (locationQuery.trim() || suggestLoading) ? (
-              <div className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+              <div className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
                 {suggestLoading && suggestions.length === 0 ? (
                   <p className="px-3 py-2 text-sm text-slate-500">{senderCopy.searching}</p>
                 ) : null}
@@ -357,9 +376,8 @@ function SenderFormInner() {
                   <button
                     key={`${row.tambon}|${row.amphoe}|${row.province}|${row.zipcode}`}
                     type="button"
-                    className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-slate-50"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => onPickLocation(row)}
+                    className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-slate-50 active:bg-slate-100"
+                    onPointerDown={(e) => { e.preventDefault(); onPickLocation(row); }}
                   >
                     <span className="text-sm font-medium text-slate-900">
                       {row.tambon}, {row.amphoe}, {row.province}, {row.zipcode}
@@ -370,7 +388,7 @@ function SenderFormInner() {
             ) : null}
           </div>
 
-          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-300 bg-white px-4 py-3">
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3">
             <input
               type="checkbox"
               checked={primaryAccount}

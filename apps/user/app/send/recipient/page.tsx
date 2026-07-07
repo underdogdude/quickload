@@ -27,7 +27,6 @@ function RecipientFormInner() {
   const [addressLine, setAddressLine] = useState("");
   const [locationQuery, setLocationQuery] = useState("");
   const [locationSelected, setLocationSelected] = useState<ThaiAddressRow | null>(null);
-  const [saveAddress, setSaveAddress] = useState(true);
 
   const [suggestions, setSuggestions] = useState<ThaiAddressRow[]>([]);
   const [suggestLoading, setSuggestLoading] = useState(false);
@@ -118,13 +117,13 @@ function RecipientFormInner() {
   }, []);
 
   useEffect(() => {
-    function onDocMouseDown(e: MouseEvent) {
+    function onDocPointerDown(e: PointerEvent) {
       if (comboRef.current && !comboRef.current.contains(e.target as Node)) {
         setListOpen(false);
       }
     }
-    document.addEventListener("mousedown", onDocMouseDown);
-    return () => document.removeEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("pointerdown", onDocPointerDown);
+    return () => document.removeEventListener("pointerdown", onDocPointerDown);
   }, []);
 
   useEffect(() => {
@@ -181,11 +180,6 @@ function RecipientFormInner() {
     const loc = locationSelected;
     if (!loc) return;
 
-    if (!saveAddress && !editId) {
-      router.replace("/send");
-      return;
-    }
-
     setSaving(true);
     const payload = {
       contactName: name.trim(),
@@ -215,10 +209,9 @@ function RecipientFormInner() {
         setFormError(json.error ?? recipientCopy.errSave);
         return;
       }
-      const redir = saveAddress
-        ? `/send?recipientSaved=1&recipientId=${encodeURIComponent(json.data.id)}&_t=${Date.now()}`
-        : `/send?recipientId=${encodeURIComponent(json.data.id)}&_t=${Date.now()}`;
-      router.replace(redir);
+      router.replace(
+        `/send?recipientSaved=1&recipientId=${encodeURIComponent(json.data.id)}&_t=${Date.now()}`,
+      );
     } catch {
       setFormError(recipientCopy.errSave);
     } finally {
@@ -227,7 +220,7 @@ function RecipientFormInner() {
   }
 
   const inputClass =
-    "mt-1 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none placeholder:text-slate-400 focus:border-[#2726F5] focus:ring-1 focus:ring-[#2726F5]";
+    "mt-1 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none placeholder:text-slate-400 focus:border-[#2726F5] focus:ring-1 focus:ring-[#2726F5]";
   const title = editId ? recipientCopy.titleEdit : recipientCopy.title;
 
   if (loadingRecord) {
@@ -336,16 +329,35 @@ function RecipientFormInner() {
               id="recipient-location-search"
               value={locationQuery}
               onChange={(e) => onLocationChange(e.target.value)}
-              onFocus={() => setListOpen(true)}
+              onFocus={() => { if (!locationSelected) setListOpen(true); }}
               autoComplete="off"
-              className={inputClass}
+              className={`${inputClass} ${locationSelected ? "border-emerald-500 focus:border-emerald-500 focus:ring-emerald-500" : ""}`}
               placeholder={recipientCopy.placeholderLocation}
               disabled={saving}
+              readOnly={Boolean(locationSelected)}
             />
+            {locationSelected ? (
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
+                  <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5" aria-hidden>
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 0 1 0 1.414l-8 8a1 1 0 0 1-1.414 0l-4-4a1 1 0 0 1 1.414-1.414L8 12.586l7.293-7.293a1 1 0 0 1 1.414 0Z" clipRule="evenodd" />
+                  </svg>
+                  เลือกแล้ว
+                </span>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => { setLocationSelected(null); setLocationQuery(""); setListOpen(false); setLocationError(null); }}
+                  className="text-xs text-[#2726F5] underline underline-offset-2 disabled:opacity-50"
+                >
+                  เปลี่ยน
+                </button>
+              </div>
+            ) : null}
             {locationError ? <p className="mt-1 text-sm text-red-600">{locationError}</p> : null}
 
             {listOpen && !locationSelected && (locationQuery.trim() || suggestLoading) ? (
-              <div className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+              <div className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
                 {suggestLoading && suggestions.length === 0 ? (
                   <p className="px-3 py-2 text-sm text-slate-500">{recipientCopy.searching}</p>
                 ) : null}
@@ -356,9 +368,8 @@ function RecipientFormInner() {
                   <button
                     key={`${row.tambon}|${row.amphoe}|${row.province}|${row.zipcode}`}
                     type="button"
-                    className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-slate-50"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => onPickLocation(row)}
+                    className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-slate-50 active:bg-slate-100"
+                    onPointerDown={(e) => { e.preventDefault(); onPickLocation(row); }}
                   >
                     <span className="text-sm font-medium text-slate-900">
                       {row.tambon}, {row.amphoe}, {row.province}, {row.zipcode}
@@ -368,17 +379,6 @@ function RecipientFormInner() {
               </div>
             ) : null}
           </div>
-
-          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-300 bg-white px-4 py-3">
-            <input
-              type="checkbox"
-              checked={saveAddress}
-              onChange={(e) => setSaveAddress(e.target.checked)}
-              className="mt-1 h-4 w-4 rounded border-slate-300 text-[#2726F5] focus:ring-[#2726F5]"
-              disabled={saving}
-            />
-            <span className="text-sm font-medium text-slate-800">{recipientCopy.checkboxSaveAddress}</span>
-          </label>
 
           <div className="flex flex-wrap gap-3 pt-1">
             <button

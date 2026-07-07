@@ -13,7 +13,6 @@ export const recipientCopy = {
   searching: "กำลังค้นหา...",
   loadingForm: "กำลังโหลด...",
   noResults: "ไม่พบผลลัพธ์",
-  checkboxSaveAddress: "บันทึกที่อยู่นี้",
   save: "บันทึก",
   back: "กลับ",
   errName: "กรุณากรอกชื่อ",
