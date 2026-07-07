@@ -6,6 +6,11 @@ import { getDb, recipientAddresses, senderAddresses } from "@quickload/shared/db
 import { getCurrentUser } from "@/lib/current-user";
 import { serializeRecipientAddress } from "@/lib/recipient-address-api";
 import { serializeSenderAddress } from "@/lib/sender-address-api";
+import { buildAddressFormHref } from "@/lib/address-form-return";
+import { AddressSavedToast } from "./address-saved-toast";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type TabKey = "sender" | "recipient";
 
@@ -47,7 +52,7 @@ function buildSendBaseHref(params: Record<string, string>): string {
 
 function buildRowHref(id: string, rowTab: TabKey, params: Record<string, string>, fromSend: boolean): string {
   if (!fromSend) {
-    return rowTab === "sender" ? `/send/sender?id=${id}` : `/send/recipient?id=${id}`;
+    return buildAddressFormHref(rowTab, { id, fromAddresses: true, tab: rowTab });
   }
   const usp = new URLSearchParams();
   if (rowTab === "sender") usp.set("senderId", id);
@@ -133,11 +138,16 @@ export default async function AddressBookPage({ searchParams }: PageProps) {
 
   const activeRows = tab === "sender" ? senders : recipients;
   const emptyText = tab === "sender" ? "ยังไม่มีข้อมูลผู้ส่ง" : "ยังไม่มีข้อมูลผู้รับ";
-  const addHref = tab === "sender" ? "/send/sender" : "/send/recipient";
+  // When the user came from /send (address-book picker), a new address should
+  // also return to /send after save — not back to /addresses.
+  const addHref = fromSend
+    ? (tab === "sender" ? "/send/sender" : "/send/recipient")
+    : buildAddressFormHref(tab, { fromAddresses: true, tab });
   const selectedId = tab === "sender" ? selectedSenderId : selectedRecipientId;
 
   return (
     <main className="min-h-screen bg-slate-100 pb-24">
+      <AddressSavedToast />
       <section className="bg-[#2726F5] px-6 pb-6 pt-8 text-white">
         <div className="mx-auto w-full max-w-lg">
           <Link

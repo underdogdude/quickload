@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { normalizeThaiPhone, isValidThaiPhone } from "@/lib/thai-phone";
+import {
+  buildAddressFormAfterSaveHref,
+  buildAddressFormBackHref,
+  isAddressFormFromAddresses,
+} from "@/lib/address-form-return";
 import { recipientCopy } from "./strings";
 
 type ThaiAddressRow = {
@@ -21,6 +26,8 @@ function RecipientFormInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("id");
+  const backHref = buildAddressFormBackHref("recipient", searchParams);
+  const fromAddresses = isAddressFormFromAddresses(searchParams);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -52,7 +59,7 @@ function RecipientFormInner() {
     }
     let cancelled = false;
     (async () => {
-      const res = await fetch(`/api/recipient-addresses/${editId}`);
+      const res = await fetch(`/api/recipient-addresses/${editId}`, { cache: "no-store" });
       if (res.status === 401) {
         router.replace("/entry");
         return;
@@ -176,7 +183,19 @@ function RecipientFormInner() {
     setAddressError(nextAddressError);
     setLocationError(nextLocationError);
 
-    if (nextNameError || nextPhoneError || nextAddressError || nextLocationError) return;
+    if (nextNameError || nextPhoneError || nextAddressError || nextLocationError) {
+      const firstErrorId = nextNameError
+        ? "recipient-name"
+        : nextPhoneError
+          ? "recipient-phone"
+          : nextAddressError
+            ? "recipient-address"
+            : "recipient-location-search";
+      setTimeout(() => {
+        document.getElementById(firstErrorId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 50);
+      return;
+    }
     const loc = locationSelected;
     if (!loc) return;
 
@@ -209,9 +228,8 @@ function RecipientFormInner() {
         setFormError(json.error ?? recipientCopy.errSave);
         return;
       }
-      router.replace(
-        `/send?recipientSaved=1&recipientId=${encodeURIComponent(json.data.id)}&_t=${Date.now()}`,
-      );
+      const nextHref = buildAddressFormAfterSaveHref("recipient", json.data.id, searchParams);
+      window.location.replace(nextHref);
     } catch {
       setFormError(recipientCopy.errSave);
     } finally {
@@ -243,9 +261,9 @@ function RecipientFormInner() {
       <section className="bg-[#2726F5] px-6 pb-20 pt-8 text-white">
         <div className="mx-auto w-full max-w-lg">
           <Link
-            href="/send"
+            href={backHref}
             className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white/95"
-            aria-label="กลับไปหน้าลงทะเบียนพัสดุ"
+            aria-label={fromAddresses ? "กลับไปสมุดที่อยู่" : "กลับไปหน้าลงทะเบียนพัสดุ"}
           >
             <span aria-hidden>←</span>
             <span>กลับ</span>

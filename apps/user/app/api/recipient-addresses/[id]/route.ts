@@ -1,6 +1,8 @@
 import { getDb, recipientAddresses } from "@quickload/shared/db";
 import { and, eq, ne } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+import { CacheHeaders } from "@/lib/api-cache";
 import { normalizeThaiPhone, isValidThaiPhone } from "@/lib/thai-phone";
 import { requireLineSession } from "@/lib/require-user";
 import { serializeRecipientAddress } from "@/lib/recipient-address-api";
@@ -52,13 +54,16 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       .limit(1);
     const row = rows[0];
     if (!row) {
-      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+      return NextResponse.json(
+        { ok: false, error: "Not found" },
+        { status: 404, headers: CacheHeaders.noStore },
+      );
     }
-    return NextResponse.json({ ok: true, data: serializeRecipientAddress(row) });
+    return NextResponse.json({ ok: true, data: serializeRecipientAddress(row) }, { headers: CacheHeaders.noStore });
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    return NextResponse.json({ ok: false, error: msg }, { status: 500, headers: CacheHeaders.noStore });
   }
 }
 
@@ -69,7 +74,10 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const body = (await request.json()) as Body;
     const parsed = parseBody(body);
     if ("error" in parsed) {
-      return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: parsed.error },
+        { status: 400, headers: CacheHeaders.noStore },
+      );
     }
     const { contactName, phone, addressLine, tambon, amphoe, province, zipcode, isPrimary } = parsed.data;
 
@@ -80,7 +88,10 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       .where(and(eq(recipientAddresses.id, id), eq(recipientAddresses.userId, session.userId)))
       .limit(1);
     if (!existing[0]) {
-      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+      return NextResponse.json(
+        { ok: false, error: "Not found" },
+        { status: 404, headers: CacheHeaders.noStore },
+      );
     }
 
     const updated = await db.transaction(async (tx) => {
@@ -109,12 +120,20 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     });
 
     if (!updated) {
-      return NextResponse.json({ ok: false, error: "Update failed" }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: "Update failed" },
+        { status: 500, headers: CacheHeaders.noStore },
+      );
     }
-    return NextResponse.json({ ok: true, data: serializeRecipientAddress(updated) });
+    revalidatePath("/addresses");
+    revalidatePath("/send");
+    return NextResponse.json(
+      { ok: true, data: serializeRecipientAddress(updated) },
+      { headers: CacheHeaders.noStore },
+    );
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    return NextResponse.json({ ok: false, error: msg }, { status: 500, headers: CacheHeaders.noStore });
   }
 }

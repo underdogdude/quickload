@@ -745,12 +745,15 @@ function SendParcelInner() {
       setAddressesLoading(true);
       try {
         if (senderIdParam) {
-          const res = await fetch(`/api/sender-addresses/${encodeURIComponent(senderIdParam)}`);
+          const res = await fetch(
+            `/api/sender-addresses/${encodeURIComponent(senderIdParam)}`,
+            { cache: "no-store" },
+          );
           const json = (await res.json()) as { ok?: boolean; data?: SenderAddress };
           if (cancelled) return;
           if (res.ok && json.ok && json.data) setAddresses([json.data]);
         } else {
-          const res = await fetch("/api/sender-addresses");
+          const res = await fetch("/api/sender-addresses", { cache: "no-store" });
           const json = (await res.json()) as { ok?: boolean; data?: SenderAddress[] };
           if (cancelled) return;
           if (res.ok && json.ok && Array.isArray(json.data)) setAddresses(json.data);
@@ -782,12 +785,15 @@ function SendParcelInner() {
       setRecipientAddressesLoading(true);
       try {
         if (recipientIdParam) {
-          const res = await fetch(`/api/recipient-addresses/${encodeURIComponent(recipientIdParam)}`);
+          const res = await fetch(
+            `/api/recipient-addresses/${encodeURIComponent(recipientIdParam)}`,
+            { cache: "no-store" },
+          );
           const json = (await res.json()) as { ok?: boolean; data?: RecipientAddress };
           if (cancelled) return;
           if (res.ok && json.ok && json.data) setRecipientAddresses([json.data]);
         } else {
-          const res = await fetch("/api/recipient-addresses");
+          const res = await fetch("/api/recipient-addresses", { cache: "no-store" });
           const json = (await res.json()) as { ok?: boolean; data?: RecipientAddress[] };
           if (cancelled) return;
           if (res.ok && json.ok && Array.isArray(json.data)) setRecipientAddresses(json.data);
@@ -892,6 +898,37 @@ function SendParcelInner() {
     return { sender: build("sender"), recipient: build("recipient") };
   }, [activeRecipient?.id, activeSender?.id, autoPrint, extraInsurance, heightCm, insuredValue, lengthCm, note, parcelSizePresetId, parcelType, shippingMode, weightGram, widthCm]);
 
+  const addressEditHref = useMemo(() => {
+    const appendSendContext = (params: URLSearchParams) => {
+      if (activeSender?.id) params.set("senderId", activeSender.id);
+      if (activeRecipient?.id) params.set("recipientId", activeRecipient.id);
+      params.set("shippingMode", shippingMode);
+      params.set("autoPrint", autoPrint ? "1" : "0");
+      params.set("extraInsurance", extraInsurance ? "1" : "0");
+      if (insuredValue) params.set("insuredValue", insuredValue);
+      if (weightGram) params.set("weightGram", weightGram);
+      if (widthCm) params.set("widthCm", widthCm);
+      if (lengthCm) params.set("lengthCm", lengthCm);
+      if (heightCm) params.set("heightCm", heightCm);
+      if (parcelSizePresetId) params.set("parcelSizePreset", parcelSizePresetId);
+      if (parcelType) params.set("parcelType", parcelType);
+      if (note.trim()) params.set("note", note.trim());
+    };
+
+    const senderParams = new URLSearchParams();
+    if (activeSender?.id) senderParams.set("id", activeSender.id);
+    appendSendContext(senderParams);
+
+    const recipientParams = new URLSearchParams();
+    if (activeRecipient?.id) recipientParams.set("id", activeRecipient.id);
+    appendSendContext(recipientParams);
+
+    return {
+      sender: `/send/sender?${senderParams.toString()}`,
+      recipient: `/send/recipient?${recipientParams.toString()}`,
+    };
+  }, [activeRecipient?.id, activeSender?.id, autoPrint, extraInsurance, heightCm, insuredValue, lengthCm, note, parcelSizePresetId, parcelType, shippingMode, weightGram, widthCm]);
+
   return (
     <main className="min-h-screen bg-slate-100 pb-36">
       <section className="bg-[#2726F5] px-6 pb-20 pt-8 text-white">
@@ -925,7 +962,7 @@ function SendParcelInner() {
                 loadingAriaLabel: "กำลังโหลดข้อมูลผู้ส่ง",
                 selected: activeSender
                   ? {
-                      editHref: `/send/sender?id=${activeSender.id}`,
+                      editHref: addressEditHref.sender,
                       contactName: activeSender.contactName,
                       phone: activeSender.phone,
                       addressLine: activeSender.addressLine,
@@ -948,7 +985,7 @@ function SendParcelInner() {
                 loadingAriaLabel: "กำลังโหลดข้อมูลผู้รับ",
                 selected: activeRecipient
                   ? {
-                      editHref: `/send/recipient?id=${activeRecipient.id}`,
+                      editHref: addressEditHref.recipient,
                       contactName: activeRecipient.contactName,
                       phone: activeRecipient.phone,
                       addressLine: activeRecipient.addressLine,
@@ -1178,12 +1215,12 @@ function SendParcelInner() {
             ) : null}
             {showSenderSavedToast ? (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 shadow-sm">
-                บันทึกข้อมูลผู้ส่งเรียบร้อยแล้ว ดำเนินการขั้นถัดไปได้เลย
+                บันทึกข้อมูลผู้ส่งเรียบร้อยแล้ว
               </div>
             ) : null}
             {showRecipientSavedToast ? (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 shadow-sm">
-                บันทึกข้อมูลผู้รับเรียบร้อยแล้ว ดำเนินการขั้นถัดไปได้เลย
+                บันทึกข้อมูลผู้รับเรียบร้อยแล้ว
               </div>
             ) : null}
           </div>

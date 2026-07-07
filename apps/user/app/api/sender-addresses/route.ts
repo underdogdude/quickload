@@ -1,5 +1,6 @@
 import { getDb, senderAddresses } from "@quickload/shared/db";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { CacheHeaders, jsonWithCache } from "@/lib/api-cache";
 import { normalizeThaiPhone, isValidThaiPhone } from "@/lib/thai-phone";
@@ -52,12 +53,12 @@ export async function GET() {
       .orderBy(desc(senderAddresses.isPrimary), desc(senderAddresses.createdAt));
     return jsonWithCache(
       { ok: true, data: rows.map(serializeSenderAddress) },
-      CacheHeaders.privateShortSwr(10, 30),
+      CacheHeaders.noStore,
     );
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    return NextResponse.json({ ok: false, error: msg }, { status: 500, headers: CacheHeaders.noStore });
   }
 }
 
@@ -67,7 +68,10 @@ export async function POST(request: Request) {
     const body = (await request.json()) as Body;
     const parsed = parseBody(body);
     if ("error" in parsed) {
-      return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: parsed.error },
+        { status: 400, headers: CacheHeaders.noStore },
+      );
     }
     const { contactName, phone, addressLine, tambon, amphoe, province, zipcode, isPrimary } = parsed.data;
 
@@ -98,18 +102,26 @@ export async function POST(request: Request) {
     });
 
     if (!created) {
-      return NextResponse.json({ ok: false, error: "Insert failed" }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: "Insert failed" },
+        { status: 500, headers: CacheHeaders.noStore },
+      );
     }
-    return NextResponse.json({ ok: true, data: serializeSenderAddress(created) });
+    revalidatePath("/addresses");
+    revalidatePath("/send");
+    return NextResponse.json(
+      { ok: true, data: serializeSenderAddress(created) },
+      { headers: CacheHeaders.noStore },
+    );
   } catch (e) {
     if (e instanceof Response) return e;
     const msg = e instanceof Error ? e.message : "Error";
     if (msg.includes("sender_addresses") || msg.includes("does not exist")) {
       return NextResponse.json(
         { ok: false, error: "Database table missing. Run sql/20260214_sender_addresses.sql on your database." },
-        { status: 503 },
+        { status: 503, headers: CacheHeaders.noStore },
       );
     }
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    return NextResponse.json({ ok: false, error: msg }, { status: 500, headers: CacheHeaders.noStore });
   }
 }

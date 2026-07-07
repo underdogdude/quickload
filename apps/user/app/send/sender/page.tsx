@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { normalizeThaiPhone, isValidThaiPhone } from "@/lib/thai-phone";
+import {
+  buildAddressFormAfterSaveHref,
+  buildAddressFormBackHref,
+  isAddressFormFromAddresses,
+} from "@/lib/address-form-return";
 import { senderCopy } from "./strings";
 
 type ThaiAddressRow = {
@@ -21,6 +26,8 @@ function SenderFormInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("id");
+  const backHref = buildAddressFormBackHref("sender", searchParams);
+  const fromAddresses = isAddressFormFromAddresses(searchParams);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -53,7 +60,7 @@ function SenderFormInner() {
     }
     let cancelled = false;
     (async () => {
-      const res = await fetch(`/api/sender-addresses/${editId}`);
+      const res = await fetch(`/api/sender-addresses/${editId}`, { cache: "no-store" });
       if (res.status === 401) {
         router.replace("/entry");
         return;
@@ -154,6 +161,9 @@ function SenderFormInner() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const formData = new FormData(e.currentTarget as HTMLFormElement);
+    const submittedPrimaryAccount = formData.get("isPrimary") === "on";
+
     setFormError(null);
     setMsgClear();
 
@@ -173,7 +183,19 @@ function SenderFormInner() {
     setAddressError(nextAddressError);
     setLocationError(nextLocationError);
 
-    if (nextNameError || nextPhoneError || nextAddressError || nextLocationError) return;
+    if (nextNameError || nextPhoneError || nextAddressError || nextLocationError) {
+      const firstErrorId = nextNameError
+        ? "sender-name"
+        : nextPhoneError
+          ? "sender-phone"
+          : nextAddressError
+            ? "sender-address"
+            : "sender-location-search";
+      setTimeout(() => {
+        document.getElementById(firstErrorId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 50);
+      return;
+    }
 
     const loc = locationSelected;
     if (!loc) return;
@@ -187,7 +209,7 @@ function SenderFormInner() {
       amphoe: loc.amphoe,
       province: loc.province,
       zipcode: loc.zipcode,
-      isPrimary: primaryAccount,
+      isPrimary: submittedPrimaryAccount,
     };
 
     try {
@@ -207,7 +229,8 @@ function SenderFormInner() {
         setFormError(json.error ?? senderCopy.errSave);
         return;
       }
-      router.replace(`/send?senderSaved=1&senderId=${encodeURIComponent(json.data.id)}&_t=${Date.now()}`);
+      const nextHref = buildAddressFormAfterSaveHref("sender", json.data.id, searchParams);
+      window.location.replace(nextHref);
     } catch {
       setFormError(senderCopy.errSave);
     } finally {
@@ -247,9 +270,9 @@ function SenderFormInner() {
       <section className="bg-[#2726F5] px-6 pb-20 pt-8 text-white">
         <div className="mx-auto w-full max-w-lg">
           <Link
-            href="/send"
+            href={backHref}
             className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white/95"
-            aria-label="กลับไปหน้าลงทะเบียนพัสดุ"
+            aria-label={fromAddresses ? "กลับไปสมุดที่อยู่" : "กลับไปหน้าลงทะเบียนพัสดุ"}
           >
             <span aria-hidden>←</span>
             <span>กลับ</span>
@@ -391,6 +414,7 @@ function SenderFormInner() {
           <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3">
             <input
               type="checkbox"
+              name="isPrimary"
               checked={primaryAccount}
               onChange={(e) => setPrimaryAccount(e.target.checked)}
               className="mt-1 h-4 w-4 rounded border-slate-300 text-[#2726F5] focus:ring-[#2726F5]"
