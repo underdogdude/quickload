@@ -18,15 +18,13 @@ const TITLE_FONT_CLASS = "font-title-placeholder";
 
 export default async function HomePage() {
   const user = await getCurrentUser();
-  const firstName = user.firstName?.trim() ?? "";
-  const lastName = user.lastName?.trim() ?? "";
-  const helloName = `${firstName} ${lastName}`.trim() || user.displayName || "Quickload user";
+  const helloName = user.firstName?.trim() || user.displayName || "Quickload user";
 
   return (
     <main className="min-h-full bg-slate-100">
       <section className="bg-[#2726F5] px-6 pb-20 pt-8 text-white">
         <div className="mx-auto w-full max-w-lg">
-          <p className={`${TITLE_FONT_CLASS} text-3xl font-bold leading-tight`}>Hello, {helloName}</p>
+          <p className={`${TITLE_FONT_CLASS} text-3xl font-bold leading-tight`}>สวัสดีคุณ {helloName}</p>
           <p className="mt-0 text-base text-white/80">เลือกบริการด้านล่าง</p>
           <form className="mt-4" action="/parcels" method="get">
             <label className="sr-only" htmlFor="tracking-search">

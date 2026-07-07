@@ -551,7 +551,7 @@ export function ParcelsListClient({
               </div>
             </div>
 
-            <div className="flex w-8 shrink-0 justify-center self-center">
+            <div className="flex w-6 shrink-0 justify-center self-center">
               <button
                 type="button"
                 aria-expanded={isExpanded}
@@ -560,7 +560,7 @@ export function ParcelsListClient({
                   e.stopPropagation();
                   toggleParcelExpanded(p.id);
                 }}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 text-slate-400 outline-none transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-[#2726F5]/40"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-200 text-slate-400 outline-none transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-[#2726F5]/40"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -578,15 +578,17 @@ export function ParcelsListClient({
           </div>
 
           <div className="mt-5 border-t border-slate-200 px-5 pt-4">
-            <div className={`flex w-full items-center gap-4 text-slate-400 ${showPaymentInfo ? "justify-between" : "justify-end"}`}>
+            <div className={`flex w-full min-w-0 items-center gap-3 ${showPaymentInfo ? "justify-between" : "justify-end"}`}>
             {listStatus === "awaiting_actual_weight" ? (
-              <div className="relative flex shrink-0 items-center ">
+              <div className="relative min-w-0 flex-1">
 
-                <span className="text-xs font-normal text-slate-700">ชั่งพัสดุที่เคาน์เตอร์ไปรษณีย์ไทย</span>
+                <span className="block text-xs font-normal leading-snug text-slate-700 line-clamp-2 break-words">
+                  ชั่งพัสดุที่เคาน์เตอร์ไปรษณีย์ไทย
+                </span>
 
                 {weightInfoParcelId === p.id ? (
                   <div
-                    className="absolute left-0 top-7 z-20 w-[280px] rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-lg"
+                    className="absolute left-0 top-7 z-20 w-[280px] max-w-[calc(100vw-2.5rem)] rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-lg"
                     onClick={(e) => e.stopPropagation()}
                   >
                     กรุณานำพัสดุไปที่สถานีไปรษณีย์เพื่อชั่งน้ำหนักจริง เมื่อระบบได้รับน้ำหนักจริงแล้วจะแสดงยอดที่ต้องชำระให้ทันที
@@ -597,23 +599,23 @@ export function ParcelsListClient({
               <Link
                 href={`/pay/${p.id}`}
                 onClick={(e) => e.stopPropagation()}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[#2726F5] px-4 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-indigo-700"
+                className="inline-flex min-w-0 max-w-full flex-1 items-center gap-1 rounded-md bg-[#2726F5] px-4 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-indigo-700 sm:flex-none sm:max-w-[calc(100%-7rem)]"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" aria-hidden>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" className="shrink-0" aria-hidden>
                   <path d="M3 7h18v10H3V7Zm0 4h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>
-                ชำระเงิน {formatBaht(getOutstandingAmount(p))} บาท
+                <span className="truncate">ชำระเงิน {formatBaht(getOutstandingAmount(p))} บาท</span>
               </Link>
             ) : p.isPaid ? (
-              <span className="shrink-0 rounded-full py-1 text-xs font-medium text-teal-500 flex items-center gap-1">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <span className="flex min-w-0 max-w-full flex-1 items-center gap-1 truncate rounded-full py-1 text-xs font-medium text-teal-500 sm:flex-none sm:max-w-[calc(100%-7rem)]">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" className="shrink-0">
                   <path d="M2.5 8a5.5 5.5 0 0 1 8.25-4.764.5.5 0 0 0 .5-.866A6.5 6.5 0 1 0 14.5 8a.5.5 0 0 0-1 0 5.5 5.5 0 1 1-11 0"/>
                   <path d="M15.354 3.354a.5.5 0 0 0-.708-.708L8 9.293 5.354 6.646a.5.5 0 1 0-.708.708l3 3a.5.5 0 0 0 .708 0z"/>
                 </svg>
-                ชำระเงินสำเร็จแล้ว
+                <span className="truncate">ชำระเงินสำเร็จแล้ว</span>
               </span>
             ) : null}
-            <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex shrink-0 items-center gap-4" onClick={(e) => e.stopPropagation()}>
               <Link
                 href={`/parcels/${p.id}`}
                 aria-label="ดูรายละเอียดพัสดุ"
