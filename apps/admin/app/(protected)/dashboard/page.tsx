@@ -152,12 +152,15 @@ export default async function DashboardPage() {
       totalMoney: sql<string>`coalesce(sum(${parcels.price}) filter (where ${confirmedPricePredicate}), 0)`,
       moneyToReceive: sql<string>`coalesce(sum(greatest(${parcels.price} - ${parcels.amountPaid}, 0)) filter (where ${confirmedPricePredicate}), 0)`,
       moneyCurrentlyHave: sql<string>`coalesce(sum(${parcels.amountPaid}), 0)`,
+      thaiPostCost: sql<string>`coalesce(sum(coalesce(${orders.finalcost}, ${orders.cost}, 0)) filter (where ${confirmedPricePredicate}), 0)`,
+      missingThaiPostCost: sql<number>`count(*) filter (where ${confirmedPricePredicate} and coalesce(${orders.finalcost}, ${orders.cost}) is null)`,
       awaitingPrice: sql<number>`count(*) filter (where ${parcels.status} = 'awaiting_actual_weight')`,
       inTransit: sql<number>`count(*) filter (where ${parcels.status} = 'in_transit')`,
       failedOrCanceled: sql<number>`count(*) filter (where ${parcels.status} in ('failed', 'canceled'))`,
       paid: sql<number>`count(*) filter (where ${parcels.isPaid} = true)`,
     })
-    .from(parcels);
+    .from(parcels)
+    .leftJoin(orders, eq(orders.parcelId, parcels.id));
 
   const overdueRows = await db
     .select({
@@ -266,12 +269,22 @@ export default async function DashboardPage() {
   const totalMoney = toNumber(summary?.totalMoney);
   const moneyToReceive = toNumber(summary?.moneyToReceive);
   const moneyCurrentlyHave = toNumber(summary?.moneyCurrentlyHave);
+  const thaiPostCost = toNumber(summary?.thaiPostCost);
+  const missingThaiPostCost = toNumber(summary?.missingThaiPostCost);
+  const accrualProfit = totalMoney - thaiPostCost;
+  const cashProfit = moneyCurrentlyHave - thaiPostCost;
   const exceptionCount = overdueUnpaid + awaitingPrice + failedOrCanceled;
+  const costDetail = missingThaiPostCost > 0
+    ? `${missingThaiPostCost.toLocaleString("en-US")} confirmed parcels missing postal cost`
+    : "Thailand Post finalcost/cost deducted";
 
   const moneyMetrics = [
     { label: "Total confirmed", value: totalMoney, detail: "All parcels with confirmed final price", tone: "neutral" },
     { label: "Outstanding receivable", value: moneyToReceive, detail: "เงินที่ควรได้รับ แต่ยังไม่ได้รับครบ", tone: "warning" },
     { label: "Collected in system", value: moneyCurrentlyHave, detail: "เงินที่รับแล้วตามสถานะ payment", tone: "success" },
+    { label: "Thailand Post cost", value: thaiPostCost, detail: costDetail, tone: missingThaiPostCost > 0 ? "warning" : "neutral" },
+    { label: "Accrual net profit", value: accrualProfit, detail: "Confirmed charges minus postal cost", tone: accrualProfit >= 0 ? "success" : "danger" },
+    { label: "Cash net profit", value: cashProfit, detail: "Collected cash minus postal cost", tone: cashProfit >= 0 ? "success" : "danger" },
   ];
 
   const metrics = [
@@ -299,7 +312,7 @@ export default async function DashboardPage() {
           </div>
           <span className="text-sm font-medium text-slate-500">Production totals</span>
         </div>
-        <div className="grid divide-y divide-slate-100 lg:grid-cols-3 lg:divide-x lg:divide-y-0">
+        <div className="grid gap-px bg-slate-100 md:grid-cols-2 lg:grid-cols-3">
           {moneyMetrics.map((metric) => (
             <div
               key={metric.label}
@@ -309,14 +322,22 @@ export default async function DashboardPage() {
                   ? "bg-amber-50/70"
                   : metric.tone === "success"
                     ? "bg-emerald-50/70"
-                    : "bg-white",
+                    : metric.tone === "danger"
+                      ? "bg-rose-50/70"
+                      : "bg-white",
               )}
             >
               <div className="flex items-start justify-between gap-3">
                 <p
                   className={cn(
                     "text-sm font-semibold",
-                    metric.tone === "warning" ? "text-amber-900" : metric.tone === "success" ? "text-emerald-900" : "text-slate-700",
+                    metric.tone === "warning"
+                      ? "text-amber-900"
+                      : metric.tone === "success"
+                        ? "text-emerald-900"
+                        : metric.tone === "danger"
+                          ? "text-rose-900"
+                          : "text-slate-700",
                   )}
                 >
                   {metric.label}
@@ -328,7 +349,9 @@ export default async function DashboardPage() {
                       ? "bg-amber-100 text-amber-950"
                       : metric.tone === "success"
                         ? "bg-emerald-100 text-emerald-950"
-                        : "bg-slate-100 text-slate-700",
+                        : metric.tone === "danger"
+                          ? "bg-rose-100 text-rose-950"
+                          : "bg-slate-100 text-slate-700",
                   )}
                 >
                   THB

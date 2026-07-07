@@ -75,7 +75,7 @@ type ParcelDetailResponse = {
 
 function getStatusLabel(status: string) {
   if (status === "draft") return "แบบร่าง";
-  if (status === "awaiting_actual_weight") return "รอลงทะเบียน/น้ำหนักจริง";
+  if (status === "awaiting_actual_weight") return "รอลงทะเบียน";
   if (status === "pending_payment") return "รอชำระเงิน";
   if (status === "registered") return "ลงทะเบียนแล้ว";
   if (status === "at_destination_post") return "ถึงปลายทาง/รอรับที่ไปรษณีย์";
@@ -303,7 +303,7 @@ export default function ParcelDetailPage() {
                 <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
                   <div className="min-w-0">
                     <p className="text-xs text-slate-400">หมายเลขพัสดุ</p>
-                    <p className="truncate text-2xl font-medium tracking-tight text-slate-900">{trackingNo}</p>
+                    <p className="truncate text-xl font-medium tracking-tight text-slate-900">{trackingNo}</p>
                   </div>
                   <span
                     className={`rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusBadgeClass(
@@ -330,7 +330,7 @@ export default function ParcelDetailPage() {
                       href={`/api/parcels/${parcel.id}/label.pdf`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex min-w-0 flex-1 items-center justify-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-700"
+                      className="inline-flex min-w-0 flex-1 items-center justify-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="bi bi-printer shrink-0" viewBox="0 0 16 16">
                         <path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1"/>

@@ -469,7 +469,7 @@ function ReviewInner() {
             className="w-full rounded-md bg-[#2726F5] px-6 py-3 text-base font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)] disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
           >
             {submitStep === "smartpost"
-              ? "กำลังลงทะเบียนกับ Smartpost…"
+              ? "กำลังลงทะเบียน"
               : submitStep === "draft"
                 ? "กำลังบันทึกออเดอร์…"
                 : submitStep === "navigating" || redirecting

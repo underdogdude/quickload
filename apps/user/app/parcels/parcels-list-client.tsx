@@ -44,7 +44,7 @@ function resolveListParcelStatus(p: ParcelRow): string {
 }
 
 function getStatusLabel(status: string) {
-  if (status === "awaiting_actual_weight") return "รอลงทะเบียน/น้ำหนักจริง";
+  if (status === "awaiting_actual_weight") return "รอลงทะเบียน";
   if (status === "pending_payment") return "รอการชำระเงิน";
   if (status === "registered") return "ลงทะเบียนแล้ว";
   if (status === "at_destination_post") return "ถึงปลายทาง/รอรับที่ไปรษณีย์";

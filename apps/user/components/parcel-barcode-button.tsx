@@ -69,7 +69,7 @@ export function ParcelBarcodeButton({ parcelCode, className = "" }: ParcelBarcod
         onClick={() => setOpen(true)}
         className={
           className ||
-          "inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50"
+          "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50"
         }
       >
         <BarcodeIcon />
