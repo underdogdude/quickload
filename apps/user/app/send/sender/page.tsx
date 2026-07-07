@@ -388,7 +388,7 @@ function SenderFormInner() {
             {locationError ? <p className="mt-1 text-sm text-red-600">{locationError}</p> : null}
 
             {listOpen && !locationSelected && (locationQuery.trim() || suggestLoading) ? (
-              <div className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+              <div className="absolute z-30 mt-1 max-h-44 w-full touch-pan-y overflow-y-auto overscroll-contain rounded-lg border border-slate-200 bg-white py-1 shadow-lg [-webkit-overflow-scrolling:touch]">
                 {suggestLoading && suggestions.length === 0 ? (
                   <p className="px-3 py-2 text-sm text-slate-500">{senderCopy.searching}</p>
                 ) : null}
@@ -400,7 +400,7 @@ function SenderFormInner() {
                     key={`${row.tambon}|${row.amphoe}|${row.province}|${row.zipcode}`}
                     type="button"
                     className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-slate-50 active:bg-slate-100"
-                    onPointerDown={(e) => { e.preventDefault(); onPickLocation(row); }}
+                    onClick={() => onPickLocation(row)}
                   >
                     <span className="text-sm font-medium text-slate-900">
                       {row.tambon}, {row.amphoe}, {row.province}, {row.zipcode}
