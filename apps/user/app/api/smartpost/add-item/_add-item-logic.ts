@@ -50,6 +50,13 @@ export function validateAddItemPayload(body: AddItemValidationInput): AddItemVal
   return { ok: true, weightGram };
 }
 
+export function normalizeSmartpostReferenceId(value?: string): string {
+  const referenceId = value?.trim();
+  if (!referenceId) return "";
+  if (!/^[A-Za-z0-9:_-]{3,120}$/.test(referenceId)) return "";
+  return referenceId;
+}
+
 /**
  * Determines whether the Smartpost HTTP response should be treated as success.
  * Smartpost returns HTTP 201 for success, but some configurations return HTTP 200

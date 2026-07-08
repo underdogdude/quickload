@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { validateAddItemPayload, isSmartpostSuccess, normalizeSuccessResponse } from "./_add-item-logic";
+import {
+  validateAddItemPayload,
+  isSmartpostSuccess,
+  normalizeSuccessResponse,
+  normalizeSmartpostReferenceId,
+} from "./_add-item-logic";
 
 const VALID_BASE = {
   senderId: "sender-1",
@@ -83,6 +88,26 @@ describe("validateAddItemPayload", () => {
     const result = validateAddItemPayload({ ...VALID_BASE, weightGram: "-500" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.status).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// normalizeSmartpostReferenceId
+// ---------------------------------------------------------------------------
+
+describe("normalizeSmartpostReferenceId", () => {
+  it("trims and accepts safe idempotency keys", () => {
+    expect(normalizeSmartpostReferenceId(" QL-abc_123:retry ")).toBe("QL-abc_123:retry");
+  });
+
+  it("rejects unsafe characters", () => {
+    expect(normalizeSmartpostReferenceId("QL-abc/123")).toBe("");
+    expect(normalizeSmartpostReferenceId("QL abc 123")).toBe("");
+  });
+
+  it("rejects short or overlong values", () => {
+    expect(normalizeSmartpostReferenceId("QL")).toBe("");
+    expect(normalizeSmartpostReferenceId(`QL-${"x".repeat(118)}`)).toBe("");
   });
 });
 

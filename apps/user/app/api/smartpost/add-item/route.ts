@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { requireLineSession } from "@/lib/require-user";
 import { getSendAccessBlockForUser, sendAccessBlockedResponse } from "@/lib/send-access-block";
 import { MIN_PARCEL_WEIGHT_GRAM, MAX_PARCEL_WEIGHT_GRAM } from "@/lib/parcel-dimensions";
+import { normalizeSmartpostReferenceId } from "./_add-item-logic";
 
 type AddItemBody = {
   senderId?: string;
@@ -13,6 +14,7 @@ type AddItemBody = {
   weightGram?: string;
   insuredValue?: string;
   extraInsurance?: boolean;
+  referenceId?: string;
 };
 
 type SmartpostLikeResponse = {
@@ -36,6 +38,10 @@ function normalizeSmartpostResponse(raw: unknown): SmartpostLikeResponse {
   return {};
 }
 
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 export async function POST(request: Request) {
   try {
     const session = await requireLineSession();
@@ -51,6 +57,7 @@ export async function POST(request: Request) {
     const weightGram = toPositiveNumber(body.weightGram);
     const insuredValue = Math.max(0, Number(body.insuredValue || 0));
     const insuranceRatePrice = body.extraInsurance ? insuredValue : 0;
+    const referenceId = normalizeSmartpostReferenceId(body.referenceId);
 
     if (!senderId || !recipientId || !weightGram) {
       return NextResponse.json({ ok: false, error: "senderId, recipientId and weightGram are required" }, { status: 400 });
@@ -106,6 +113,7 @@ export async function POST(request: Request) {
       productWeight: String(weightGram ?? ""),
       insuranceRatePrice: String(insuranceRatePrice ?? 0),
       items: "-",
+      ...(referenceId ? { referenceId } : {}),
     };
 
     const username = process.env.SMARTPOST_BASIC_AUTH_USERNAME?.trim() || "ssslineoa";
@@ -117,15 +125,42 @@ export async function POST(request: Request) {
     const addItemPath = process.env.SMARTPOST_ADD_ITEM_PATH?.trim() || "addItem";
     const endpoint = new URL(addItemPath, apiBaseUrl.endsWith("/") ? apiBaseUrl : `${apiBaseUrl}/`).toString();
 
-    const upstreamRes = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-      cache: "no-store",
-    });
+    const upstreamController = new AbortController();
+    const upstreamTimer = setTimeout(() => upstreamController.abort(), 25_000);
+    let upstreamRes: Response;
+    try {
+      upstreamRes = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${auth}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        cache: "no-store",
+        signal: upstreamController.signal,
+      });
+    } catch (error) {
+      if (!isAbortError(error)) throw error;
+      await recordSystemErrorEvent({
+        source: "user.api.smartpost.add-item",
+        error: new Error("Smartpost addItem upstream timeout"),
+        context: {
+          upstreamTimeoutMs: 25_000,
+          referenceId: referenceId || undefined,
+        },
+      });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "ระบบไปรษณีย์ไม่ตอบสนอง กรุณาลองใหม่อีกครั้ง",
+          retryable: true,
+          upstreamTimeoutMs: 25_000,
+        },
+        { status: 504 },
+      );
+    } finally {
+      clearTimeout(upstreamTimer);
+    }
 
     const rawText = await upstreamRes.text();
     let upstreamJson: unknown = rawText;

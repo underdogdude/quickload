@@ -84,6 +84,54 @@ const ZIPCODE_SURCHARGE_LIST = new Set([
   "83111",
 ]);
 
+const SMARTPOST_REFERENCE_STORAGE_PREFIX = "quickload:smartpost-reference:";
+
+function buildSmartpostReferenceStorageKey(input: {
+  senderId: string;
+  recipientId: string;
+  parcelType: string;
+  weightGram: string;
+  insuredValue: string;
+  extraInsurance: boolean;
+}) {
+  return `${SMARTPOST_REFERENCE_STORAGE_PREFIX}${[
+    input.senderId,
+    input.recipientId,
+    input.parcelType.trim(),
+    input.weightGram,
+    input.insuredValue || "0",
+    input.extraInsurance ? "1" : "0",
+  ].join("|")}`;
+}
+
+function createSmartpostReferenceId() {
+  const random =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `QL-${random}`;
+}
+
+function getSmartpostReferenceId(storageKey: string) {
+  try {
+    const existing = sessionStorage.getItem(storageKey);
+    if (existing) return existing;
+    const next = createSmartpostReferenceId();
+    sessionStorage.setItem(storageKey, next);
+    return next;
+  } catch {
+    return createSmartpostReferenceId();
+  }
+}
+
+function clearSmartpostReferenceId(storageKey: string) {
+  try {
+    sessionStorage.removeItem(storageKey);
+  } catch {
+    // Ignore unavailable sessionStorage.
+  }
+}
+
 function formatAddress(address: SenderAddress | RecipientAddress) {
   return `${address.addressLine}, ${address.tambon}, ${address.amphoe}, ${address.province}, ${address.zipcode}`;
 }
@@ -249,6 +297,15 @@ function ReviewInner() {
     try {
       // ── Step 1: Register with Smartpost (external API — 30 s timeout) ──────────
       setSubmitStep("smartpost");
+      const smartpostReferenceStorageKey = buildSmartpostReferenceStorageKey({
+        senderId,
+        recipientId,
+        parcelType,
+        weightGram,
+        insuredValue,
+        extraInsurance,
+      });
+      const smartpostReferenceId = getSmartpostReferenceId(smartpostReferenceStorageKey);
       const smartpostController = new AbortController();
       const smartpostTimer = setTimeout(() => smartpostController.abort(), 30_000);
       let addItemJson: { ok?: boolean; error?: string; data?: unknown };
@@ -256,7 +313,15 @@ function ReviewInner() {
         const addItemRes = await fetch("/api/smartpost/add-item", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ senderId, recipientId, parcelType, weightGram, insuredValue, extraInsurance }),
+          body: JSON.stringify({
+            senderId,
+            recipientId,
+            parcelType,
+            weightGram,
+            insuredValue,
+            extraInsurance,
+            referenceId: smartpostReferenceId,
+          }),
           signal: smartpostController.signal,
         });
         clearTimeout(smartpostTimer);
@@ -310,6 +375,7 @@ function ReviewInner() {
           return;
         }
         parcelId = json.data.id;
+        clearSmartpostReferenceId(smartpostReferenceStorageKey);
       } catch (e) {
         clearTimeout(draftTimer);
         if (e instanceof Error && e.name === "AbortError") {
@@ -519,4 +585,3 @@ export default function SendReviewPage() {
     </Suspense>
   );
 }
-
