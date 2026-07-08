@@ -1,5 +1,6 @@
 "use client";
 
+import type { RecipientAddress } from "@quickload/shared/types";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
@@ -9,6 +10,8 @@ import {
   buildAddressFormBackHref,
   isAddressFormFromAddresses,
 } from "@/lib/address-form-return";
+import { readAddressHandoff, saveAddressHandoff } from "@/lib/address-handoff-cache";
+import { pickFreshAddressForSend } from "@/lib/send-address-loader";
 import { recipientCopy } from "./strings";
 
 type ThaiAddressRow = {
@@ -52,6 +55,26 @@ function RecipientFormInner() {
 
   const normalizedPhone = normalizeThaiPhone(phone);
 
+  const hydrateAddressForm = useCallback((d: RecipientAddress) => {
+    setName(d.contactName);
+    setPhone(d.phone);
+    setAddressLine(d.addressLine);
+    setLocationSelected({
+      tambon: d.tambon,
+      amphoe: d.amphoe,
+      province: d.province,
+      zipcode: d.zipcode,
+    });
+    setLocationQuery(
+      formatSelectedAddress({
+        tambon: d.tambon,
+        amphoe: d.amphoe,
+        province: d.province,
+        zipcode: d.zipcode,
+      }),
+    );
+  }, []);
+
   useEffect(() => {
     if (!editId) {
       setLoadingRecord(false);
@@ -59,42 +82,43 @@ function RecipientFormInner() {
     }
     let cancelled = false;
     (async () => {
-      const res = await fetch(`/api/recipient-addresses/${editId}`, { cache: "no-store" });
-      if (res.status === 401) {
-        router.replace("/entry");
-        return;
-      }
-      const json = (await res.json()) as { ok?: boolean; data?: Record<string, unknown>; error?: string };
-      if (cancelled) return;
-      if (!res.ok || !json.ok || !json.data) {
-        setFormError(json.error ?? recipientCopy.errLoad);
+      const cached = readAddressHandoff("recipient", editId);
+      if (cached) {
+        hydrateAddressForm(cached);
         setLoadingRecord(false);
-        return;
       }
-      const d = json.data;
-      setName(String(d.contactName ?? ""));
-      setPhone(String(d.phone ?? ""));
-      setAddressLine(String(d.addressLine ?? ""));
-      setLocationSelected({
-        tambon: String(d.tambon ?? ""),
-        amphoe: String(d.amphoe ?? ""),
-        province: String(d.province ?? ""),
-        zipcode: String(d.zipcode ?? ""),
-      });
-      setLocationQuery(
-        formatSelectedAddress({
-          tambon: String(d.tambon ?? ""),
-          amphoe: String(d.amphoe ?? ""),
-          province: String(d.province ?? ""),
-          zipcode: String(d.zipcode ?? ""),
-        }),
-      );
-      setLoadingRecord(false);
+
+      try {
+        const res = await fetch(`/api/recipient-addresses/${editId}`, { cache: "no-store" });
+        if (res.status === 401) {
+          router.replace("/entry");
+          return;
+        }
+        const json = (await res.json()) as { ok?: boolean; data?: RecipientAddress; error?: string };
+        if (cancelled) return;
+        if (!res.ok || !json.ok || !json.data) {
+          if (!cached) {
+            setFormError(json.error ?? recipientCopy.errLoad);
+            setLoadingRecord(false);
+          }
+          return;
+        }
+        const freshAddress = pickFreshAddressForSend(cached, json.data);
+        if (freshAddress) {
+          hydrateAddressForm(freshAddress);
+        }
+        setLoadingRecord(false);
+      } catch {
+        if (!cancelled && !cached) {
+          setFormError(recipientCopy.errLoad);
+          setLoadingRecord(false);
+        }
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [editId, router]);
+  }, [editId, hydrateAddressForm, router]);
 
   const fetchSuggestions = useCallback(async (q: string) => {
     const trimmed = q.trim();
@@ -219,7 +243,7 @@ function RecipientFormInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const json = (await res.json()) as { ok?: boolean; data?: { id?: string }; error?: string };
+      const json = (await res.json()) as { ok?: boolean; data?: RecipientAddress; error?: string };
       if (res.status === 401) {
         router.replace("/entry");
         return;
@@ -227,6 +251,9 @@ function RecipientFormInner() {
       if (!res.ok || !json.ok || !json.data?.id) {
         setFormError(json.error ?? recipientCopy.errSave);
         return;
+      }
+      if (!fromAddresses) {
+        saveAddressHandoff("recipient", json.data);
       }
       const nextHref = buildAddressFormAfterSaveHref("recipient", json.data.id, searchParams);
       window.location.replace(nextHref);

@@ -16,6 +16,8 @@ import {
   resolveParcelSizePresetFromQuery,
 } from "@/lib/parcel-size-presets";
 import { MAX_PARCEL_NOTE_LENGTH, sanitizeParcelNote } from "@quickload/shared/parcel-note";
+import { clearAddressHandoff, readAddressHandoff } from "@/lib/address-handoff-cache";
+import { loadAddressByIdForSend, loadAddressListForSend, pickFreshAddressForSend } from "@/lib/send-address-loader";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -483,6 +485,8 @@ function SendParcelInner() {
   const [addressesLoading, setAddressesLoading] = useState(true);
   const [recipientAddresses, setRecipientAddresses] = useState<RecipientAddress[]>([]);
   const [recipientAddressesLoading, setRecipientAddressesLoading] = useState(true);
+  const [senderAddressLoadError, setSenderAddressLoadError] = useState<string | null>(null);
+  const [recipientAddressLoadError, setRecipientAddressLoadError] = useState<string | null>(null);
   const [showSenderSavedToast, setShowSenderSavedToast] = useState(senderSaved);
   const [showRecipientSavedToast, setShowRecipientSavedToast] = useState(recipientSaved);
   const [continuing, setContinuing] = useState(false);
@@ -743,27 +747,51 @@ function SendParcelInner() {
     let cancelled = false;
     (async () => {
       setAddressesLoading(true);
-      try {
-        if (senderIdParam) {
-          const res = await fetch(
-            `/api/sender-addresses/${encodeURIComponent(senderIdParam)}`,
-            { cache: "no-store" },
-          );
-          const json = (await res.json()) as { ok?: boolean; data?: SenderAddress };
-          if (cancelled) return;
-          if (res.ok && json.ok && json.data) setAddresses([json.data]);
-        } else {
-          const res = await fetch("/api/sender-addresses", { cache: "no-store" });
-          const json = (await res.json()) as { ok?: boolean; data?: SenderAddress[] };
-          if (cancelled) return;
-          if (res.ok && json.ok && Array.isArray(json.data)) setAddresses(json.data);
+      setSenderAddressLoadError(null);
+
+      if (senderIdParam) {
+        const cached = readAddressHandoff("sender", senderIdParam);
+        const hasCachedAddress = Boolean(cached);
+        if (cached) {
+          setAddresses([cached]);
+          setAddressesLoading(false);
         }
-      } finally {
-        if (!cancelled) setAddressesLoading(false);
+
+        const result = await loadAddressByIdForSend<SenderAddress>("sender", senderIdParam);
+        if (cancelled) return;
+        if (result.unauthorized) {
+          router.replace("/entry");
+          return;
+        }
+        const freshAddress = pickFreshAddressForSend(cached, result.address);
+        if (freshAddress) {
+          setAddresses([freshAddress]);
+          setSenderAddressLoadError(null);
+          if (cached && result.address && freshAddress === result.address) {
+            clearAddressHandoff("sender", senderIdParam);
+          }
+        } else if (!hasCachedAddress) {
+          setAddresses([]);
+          setSenderAddressLoadError(result.error);
+        }
+        setAddressesLoading(false);
+        return;
       }
+
+      const result = await loadAddressListForSend<SenderAddress>("sender");
+      if (cancelled) return;
+      if (result.unauthorized) {
+        router.replace("/entry");
+        return;
+      }
+      setAddresses(result.addresses);
+      setSenderAddressLoadError(result.error);
+      setAddressesLoading(false);
     })();
-    return () => { cancelled = true; };
-  }, [senderIdParam, navT]);
+    return () => {
+      cancelled = true;
+    };
+  }, [router, senderIdParam, navT]);
 
   useEffect(() => {
     if (!senderSaved && !recipientSaved) return;
@@ -783,27 +811,51 @@ function SendParcelInner() {
     let cancelled = false;
     (async () => {
       setRecipientAddressesLoading(true);
-      try {
-        if (recipientIdParam) {
-          const res = await fetch(
-            `/api/recipient-addresses/${encodeURIComponent(recipientIdParam)}`,
-            { cache: "no-store" },
-          );
-          const json = (await res.json()) as { ok?: boolean; data?: RecipientAddress };
-          if (cancelled) return;
-          if (res.ok && json.ok && json.data) setRecipientAddresses([json.data]);
-        } else {
-          const res = await fetch("/api/recipient-addresses", { cache: "no-store" });
-          const json = (await res.json()) as { ok?: boolean; data?: RecipientAddress[] };
-          if (cancelled) return;
-          if (res.ok && json.ok && Array.isArray(json.data)) setRecipientAddresses(json.data);
+      setRecipientAddressLoadError(null);
+
+      if (recipientIdParam) {
+        const cached = readAddressHandoff("recipient", recipientIdParam);
+        const hasCachedAddress = Boolean(cached);
+        if (cached) {
+          setRecipientAddresses([cached]);
+          setRecipientAddressesLoading(false);
         }
-      } finally {
-        if (!cancelled) setRecipientAddressesLoading(false);
+
+        const result = await loadAddressByIdForSend<RecipientAddress>("recipient", recipientIdParam);
+        if (cancelled) return;
+        if (result.unauthorized) {
+          router.replace("/entry");
+          return;
+        }
+        const freshAddress = pickFreshAddressForSend(cached, result.address);
+        if (freshAddress) {
+          setRecipientAddresses([freshAddress]);
+          setRecipientAddressLoadError(null);
+          if (cached && result.address && freshAddress === result.address) {
+            clearAddressHandoff("recipient", recipientIdParam);
+          }
+        } else if (!hasCachedAddress) {
+          setRecipientAddresses([]);
+          setRecipientAddressLoadError(result.error);
+        }
+        setRecipientAddressesLoading(false);
+        return;
       }
+
+      const result = await loadAddressListForSend<RecipientAddress>("recipient");
+      if (cancelled) return;
+      if (result.unauthorized) {
+        router.replace("/entry");
+        return;
+      }
+      setRecipientAddresses(result.addresses);
+      setRecipientAddressLoadError(result.error);
+      setRecipientAddressesLoading(false);
     })();
-    return () => { cancelled = true; };
-  }, [recipientIdParam, navT]);
+    return () => {
+      cancelled = true;
+    };
+  }, [router, recipientIdParam, navT]);
 
   const activeSender = useMemo(() => {
     if (senderIdParam) {
@@ -1205,12 +1257,22 @@ function SendParcelInner() {
           ))}
         </SendPickerSheet>
       ) : null}
-      {formError || showSenderSavedToast || showRecipientSavedToast ? (
+      {formError || senderAddressLoadError || recipientAddressLoadError || showSenderSavedToast || showRecipientSavedToast ? (
         <div className="pointer-events-none fixed inset-x-0 z-40 px-4" style={{ bottom: "calc(env(safe-area-inset-bottom) + 88px)" }}>
           <div className="mx-auto w-full max-w-lg space-y-2">
             {formError ? (
               <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800 shadow-sm">
                 {formError}
+              </div>
+            ) : null}
+            {senderAddressLoadError ? (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800 shadow-sm">
+                {senderAddressLoadError}
+              </div>
+            ) : null}
+            {recipientAddressLoadError ? (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800 shadow-sm">
+                {recipientAddressLoadError}
               </div>
             ) : null}
             {showSenderSavedToast ? (
