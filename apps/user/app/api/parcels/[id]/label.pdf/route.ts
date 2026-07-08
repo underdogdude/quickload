@@ -134,9 +134,10 @@ function formatProductInsuranceLabel(
   productPrice: string | null | undefined,
   insuranceRatePrice: string | null | undefined,
 ): string {
-  return resolveInsuranceFee(productPrice, insuranceRatePrice) > 0
-    ? "มีประกันราคาสินค้า"
-    : "-";
+  if (resolveInsuranceFee(productPrice, insuranceRatePrice) > 0) {
+    return "<< มีประกันราคาสินค้า >>";
+  }
+  return "-";
 }
 
 // ─── main label builder ───────────────────────────────────────────────────────
@@ -311,11 +312,11 @@ async function createParcelLabelPdf(input: {
   {
     drawCenteredText(
       page,
-      regular,
+      bold,
       input.productInsuranceLabel,
       cx + 10,
       53.8,
-      input.productInsuranceLabel === "-" ? 6.2 : 5.0,
+      input.productInsuranceLabel === "-" ? 6.2 : 4.5,
       BK,
     );
   }
