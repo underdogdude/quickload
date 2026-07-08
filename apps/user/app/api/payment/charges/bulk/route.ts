@@ -4,6 +4,7 @@ import {
   createBeamCharge,
   readBeamEnv,
   reconcilePendingPaymentFromBeamApi,
+  isPaymentReconcileable,
 } from "@quickload/shared/beam";
 import { recordSystemErrorEvent } from "@quickload/shared/internal-events";
 import {
@@ -84,7 +85,7 @@ async function expireBulkGroup(master: PaymentRow): Promise<void> {
 }
 
 async function reconcileBulkMaster(master: PaymentRow): Promise<PaymentRow> {
-  if (master.status !== "pending" || !master.providerChargeId) return master;
+  if (!isPaymentReconcileable(master.status) || !master.providerChargeId) return master;
   const sync = await reconcilePendingPaymentFromBeamApi(master.providerChargeId);
   if (!sync.synced) return master;
   try {

@@ -270,11 +270,18 @@ import { getDb, payments, parcels } from "./db";
 import { readBulkMasterMeta } from "./bulk-payment";
 import { parcelStatusAfterPaymentSucceeded } from "./parcel-display-status";
 
+/** Payment rows Beam may still finalize after our 10-minute lazy expiry. */
+export const PAYMENT_RECONCILEABLE_STATUSES = ["pending", "expired"] as const;
+
+export function isPaymentReconcileable(status: string): boolean {
+  return (PAYMENT_RECONCILEABLE_STATUSES as readonly string[]).includes(status);
+}
+
 /**
  * Idempotent state transition called by BOTH the webhook handler and the dev-simulate
  * endpoint. One DB transaction flips `payments.status` to 'succeeded' (only if currently
- * 'pending') and sets the parent parcel to `is_paid=true`, advancing `status` to
- * `registered` only when still awaiting weight / payment (never overwrites carrier progress).
+ * 'pending' or locally 'expired') and sets the parent parcel to `is_paid=true`, advancing
+ * `status` to `registered` only when still awaiting weight / payment (never overwrites carrier progress).
  *
  * Returns the paymentId that was updated, or null if nothing changed (e.g. already
  * succeeded, unknown chargeId). Callers should still return HTTP 200 on null.
@@ -291,7 +298,12 @@ export async function markPaymentSucceeded({
     const [masterRow] = await tx
       .select()
       .from(payments)
-      .where(and(eq(payments.providerChargeId, providerChargeId), eq(payments.status, "pending")))
+      .where(
+        and(
+          eq(payments.providerChargeId, providerChargeId),
+          inArray(payments.status, [...PAYMENT_RECONCILEABLE_STATUSES]),
+        ),
+      )
       .limit(1);
     if (!masterRow) return null;
 
@@ -307,7 +319,9 @@ export async function markPaymentSucceeded({
           rawWebhookPayload: rawWebhookPayload as any,
           updatedAt: paidAt,
         })
-        .where(and(inArray(payments.id, paymentIds), eq(payments.status, "pending")));
+        .where(
+          and(inArray(payments.id, paymentIds), inArray(payments.status, [...PAYMENT_RECONCILEABLE_STATUSES])),
+        );
 
       await tx
         .update(parcels)
@@ -335,7 +349,10 @@ export async function markPaymentSucceeded({
         updatedAt: new Date(),
       })
       .where(
-        and(eq(payments.providerChargeId, providerChargeId), eq(payments.status, "pending")),
+        and(
+          eq(payments.providerChargeId, providerChargeId),
+          inArray(payments.status, [...PAYMENT_RECONCILEABLE_STATUSES]),
+        ),
       )
       .returning({ id: payments.id, parcelId: payments.parcelId });
     const row = updated[0];
@@ -472,6 +489,9 @@ export type ReconcileBeamPaymentResult =
       parcelId: string;
     };
 
+/** Exported under a test-friendly alias so unit tests can exercise status mapping without mocking. */
+export { mapBeamApiChargeStatus as mapBeamApiChargeStatusForTest };
+
 function mapBeamApiChargeStatus(
   statusRaw: unknown,
 ): "pending" | "succeeded" | "failed" | "expired" | "canceled" | "unknown" {
@@ -494,7 +514,7 @@ function mapBeamApiChargeStatus(
 
 /**
  * Poll Beam for the current charge status and apply the same DB transitions as webhooks.
- * Safe to call on every client poll while payment row is pending.
+ * Safe to call on every client poll while payment row is pending or locally expired.
  */
 export async function reconcilePendingPaymentFromBeamApi(
   providerChargeId: string,

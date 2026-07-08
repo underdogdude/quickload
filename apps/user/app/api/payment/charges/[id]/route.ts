@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { reconcilePendingPaymentFromBeamApi } from "@quickload/shared/beam";
+import { reconcilePendingPaymentFromBeamApi, isPaymentReconcileable } from "@quickload/shared/beam";
 import { readBulkMasterMeta } from "@quickload/shared/bulk-payment";
 import { expireBulkPaymentGroup } from "@quickload/shared/bulk-payment-db";
 import { getDb, parcels, payments } from "@quickload/shared/db";
@@ -39,7 +39,7 @@ export async function GET(
 
     // Beam public webhook docs only guarantee charge.succeeded; failed PromptPay often
     // finalizes at Beam without a webhook → poll GET charge here while UI polls us.
-    if (paymentRow.status === "pending" && paymentRow.providerChargeId) {
+    if (isPaymentReconcileable(paymentRow.status) && paymentRow.providerChargeId) {
       const sync = await reconcilePendingPaymentFromBeamApi(paymentRow.providerChargeId);
       if (sync.synced) {
         try {

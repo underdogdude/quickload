@@ -7,6 +7,7 @@ import {
 import { getDb, parcels, payments } from "@quickload/shared/db";
 import {
   createBeamCharge,
+  isPaymentReconcileable,
   readBeamEnv,
   reconcilePendingPaymentFromBeamApi,
 } from "@quickload/shared/beam";
@@ -69,7 +70,7 @@ async function reconcilePaymentRow(paymentRow: PaymentRow): Promise<{
 }> {
   const db = getDb();
   let row = paymentRow;
-  if (row.status === "pending" && row.providerChargeId) {
+  if (isPaymentReconcileable(row.status) && row.providerChargeId) {
     const sync = await reconcilePendingPaymentFromBeamApi(row.providerChargeId);
     if (sync.synced) {
       try {
@@ -253,6 +254,54 @@ export async function POST(request: Request) {
     const bulkMaster = await findPendingBulkMasterForParcel(db, parcelId);
     if (bulkMaster) {
       await expireBulkPaymentGroup(db, bulkMaster);
+    }
+
+    // Step 3.5: before expiring the pending row, ask Beam if it already succeeded.
+    // Scenario: user authorizes SCB Easy → opens page again and rotates to PromptPay.
+    // Without this check, the SCB Easy row gets expired, Beam's webhook finds no
+    // pending row, and the money disappears from the system.
+    const [existingPending] = await db
+      .select({
+        id: payments.id,
+        providerChargeId: payments.providerChargeId,
+        rawCreateResponse: payments.rawCreateResponse,
+      })
+      .from(payments)
+      .where(and(eq(payments.parcelId, parcelId), eq(payments.status, "pending")))
+      .limit(1);
+
+    if (existingPending?.providerChargeId) {
+      try {
+        const preCheck = await reconcilePendingPaymentFromBeamApi(existingPending.providerChargeId);
+        if (preCheck.synced && preCheck.outcome === "succeeded") {
+          try {
+            const bulkMeta = readBulkMasterMeta(existingPending.rawCreateResponse);
+            if (bulkMeta) {
+              await sendBulkPaymentSuccessFlex(preCheck.paymentId);
+            } else {
+              await sendPaymentSuccessFlexForPayment(preCheck.paymentId, preCheck.parcelId);
+            }
+          } catch (lineErr) {
+            const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
+            console.warn("[payment.charges.create] line notify after pre-rotation check:", msg);
+          }
+          // Re-read fresh state and return the already-succeeded charge.
+          const [freshPayment] = await db.select().from(payments).where(eq(payments.id, existingPending.id)).limit(1);
+          const [freshParcel] = await db.select().from(parcels).where(eq(parcels.id, parcelId)).limit(1);
+          if (freshPayment && freshParcel) {
+            return NextResponse.json({
+              ok: true,
+              data: buildChargeData(freshParcel, freshPayment, "succeeded"),
+            });
+          }
+        }
+      } catch (preCheckErr) {
+        // Non-fatal: log and continue with normal rotation.
+        console.warn(
+          "[payment.charges.create] pre-rotation Beam check failed, continuing with rotation:",
+          preCheckErr instanceof Error ? preCheckErr.message : String(preCheckErr),
+        );
+      }
     }
 
     // Step 4: expire any existing pending rows for this parcel.
