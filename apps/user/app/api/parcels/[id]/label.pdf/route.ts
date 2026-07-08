@@ -1,4 +1,5 @@
 import { getDb, orders, parcels } from "@quickload/shared/db";
+import { resolveInsuranceFee } from "@quickload/shared/parcel-price-breakdown";
 import bwipjs from "bwip-js/node";
 import { and, eq } from "drizzle-orm";
 import { readFile } from "node:fs/promises";
@@ -59,12 +60,42 @@ function wrapText(text: string, maxChars: number, maxLines: number): string[] {
       cur = candidate;
     } else {
       if (cur) lines.push(cur);
-      cur = w.slice(0, maxChars);
+      // Never slice Thai words mid-grapheme — tone marks must stay with base consonants.
+      cur = w;
     }
   }
   if (cur && lines.length < maxLines) lines.push(cur);
-  return lines.length ? lines : [text.slice(0, maxChars)];
+  return lines.length ? lines : [text];
 }
+
+function drawCenteredText(
+  page: ReturnType<PDFDocument["addPage"]>,
+  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  text: string,
+  centerXMm: number,
+  topMm: number,
+  sizePt: number,
+  color: ReturnType<typeof rgb>,
+) {
+  const tw = font.widthOfTextAtSize(text, sizePt);
+  page.drawText(text, { x: mm(centerXMm) - tw / 2, y: y(topMm), size: sizePt, font, color });
+}
+
+function drawCenteredLines(
+  page: ReturnType<PDFDocument["addPage"]>,
+  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  lines: string[],
+  centerXMm: number,
+  topMm: number,
+  sizePt: number,
+  lineGapMm: number,
+  color: ReturnType<typeof rgb>,
+) {
+  lines.forEach((line, i) => {
+    drawCenteredText(page, font, line, centerXMm, topMm + i * lineGapMm, sizePt, color);
+  });
+}
+
 
 function resolvePublic(rel: string) {
   const norm = rel.replace(/^\/+/, "");
@@ -99,6 +130,15 @@ function formatPrintedAt() {
   });
 }
 
+function formatProductInsuranceLabel(
+  productPrice: string | null | undefined,
+  insuranceRatePrice: string | null | undefined,
+): string {
+  return resolveInsuranceFee(productPrice, insuranceRatePrice) > 0
+    ? "มีประกันราคาสินค้า"
+    : "-";
+}
+
 // ─── main label builder ───────────────────────────────────────────────────────
 async function createParcelLabelPdf(input: {
   trackingNumber: string;
@@ -111,6 +151,7 @@ async function createParcelLabelPdf(input: {
   recipientZipcode: string;
   weight: string;
   items: string;
+  productInsuranceLabel: string;
 }) {
   const [regularBuf, boldBuf, logoBuf, barcodeTopBuf, barcodeFootBuf] = await Promise.all([
     readPublic("fonts/Sarabun/Sarabun-Regular.ttf"),
@@ -268,23 +309,28 @@ async function createParcelLabelPdf(input: {
     page.drawText("Non COD", { x: mm(cx) + mm(cw) / 2 - tw / 2, y: y(47.5), size: 13.6, font: bold, color: BK });
   }
   {
-    const tw = bold.widthOfTextAtSize("-", 11.1);
-    page.drawText("-", { x: mm(cx) + mm(10) / 2 - tw / 2, y: y(53.3), size: 11.1, font: bold, color: BK });
+    drawCenteredText(
+      page,
+      regular,
+      input.productInsuranceLabel,
+      cx + 10,
+      53.8,
+      input.productInsuranceLabel === "-" ? 6.2 : 5.0,
+      BK,
+    );
   }
   {
     const tw = bold.widthOfTextAtSize("1", 11.1);
-    page.drawText("1", { x: mm(cx + 20) + mm(10) / 2 - tw / 2, y: y(53.3), size: 11.1, font: bold, color: BK });
+    page.drawText("1", { x: mm(cx + 20) + mm(10) / 2 - tw / 2, y: y(54.0), size: 11.1, font: bold, color: BK });
   }
 
-  const rightLines: [string, number][] = [
-    ["พัสดุชิ้นนี้มีคนรอรับอยู่ปลายทาง", 59.7],
-    ["หากพบว่ามีความเสียหายหรือชำรุด", 63.4],
-    ["กรุณาแจ้ง 081 487 8448", 67.1],
-    ["ก่อนนำจ่ายถึงผู้รับ", 70.8],
+  const rightNoticeBlocks: Array<{ lines: string[]; yStart: number; lineGap: number }> = [
+    { lines: ["หากพบว่ามีความเสียหายหรือชำรุด"], yStart: 62.5, lineGap: 3.0 },
+    { lines: ["กรุณาแจ้ง 081 487 8448"], yStart: 66.2, lineGap: 3.0 },
+    { lines: ["ก่อนนำจ่ายถึงผู้รับ"], yStart: 69.9, lineGap: 3.0 },
   ];
-  for (const [text, yy] of rightLines) {
-    const tw = regular.widthOfTextAtSize(text, 5.7);
-    page.drawText(text, { x: mm(cx) + mm(cw) / 2 - tw / 2, y: y(yy), size: 5.7, font: regular, color: BK });
+  for (const block of rightNoticeBlocks) {
+    drawCenteredLines(page, regular, block.lines, cx + cw / 2, block.yStart, 5.4, block.lineGap, BK);
   }
 
   // ── right-edge rotated fragile warning ────────────────────────────
@@ -359,6 +405,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       recipientZipcode: order?.cusZipcode?.trim() || "",
       weight: order?.productWeight?.trim() || (parcel.weightKg ? `${parcel.weightKg} kg` : "-"),
       items: order?.productInbox?.trim() || "-",
+      productInsuranceLabel: formatProductInsuranceLabel(
+        order?.productPrice,
+        order?.insuranceRatePrice,
+      ),
     });
 
     const filename = `parcel-label-${trackingNumber.replace(/[^\w-]+/g, "_")}.pdf`;
