@@ -139,12 +139,12 @@ describe("pickFreshAddressForSend", () => {
   });
 
   it("keeps handoff data when verification does not include a usable timestamp", () => {
-    const handoff = {
+    const handoff: SenderAddress = {
       ...sender,
       contactName: "Updated Sender",
       updatedAt: "2026-07-08T08:00:00.000Z",
     };
-    const staleVerification = {
+    const staleVerification: SenderAddress = {
       ...sender,
       contactName: "Old Sender",
       updatedAt: null,
