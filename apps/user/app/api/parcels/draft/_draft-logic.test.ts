@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateDraftPayload } from "./_draft-logic";
+import { resolveDraftIdempotency, validateDraftPayload } from "./_draft-logic";
 
 const VALID_SMARTPOST = {
   statuscode: "201",
@@ -213,5 +213,44 @@ describe("validateDraftPayload — Smartpost response validation", () => {
     };
     const result = validateDraftPayload({ ...VALID_BASE, smartpostAddItemResponse: smartpost });
     expect(result.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveDraftIdempotency (retry-safety for duplicate trackingId)
+// ---------------------------------------------------------------------------
+
+describe("resolveDraftIdempotency", () => {
+  it("returns 'create' when no parcel exists for this trackingId", () => {
+    const result = resolveDraftIdempotency(undefined, "user-1");
+    expect(result.kind).toBe("create");
+  });
+
+  it("returns 'replay' with the existing parcel when it belongs to the same user", () => {
+    const result = resolveDraftIdempotency(
+      { id: "parcel-1", trackingId: "SP001234", userId: "user-1" },
+      "user-1",
+    );
+    expect(result.kind).toBe("replay");
+    if (result.kind === "replay") {
+      expect(result.id).toBe("parcel-1");
+      expect(result.trackingId).toBe("SP001234");
+    }
+  });
+
+  it("returns 'conflict' when the existing parcel belongs to a different user", () => {
+    const result = resolveDraftIdempotency(
+      { id: "parcel-1", trackingId: "SP001234", userId: "user-2" },
+      "user-1",
+    );
+    expect(result.kind).toBe("conflict");
+  });
+
+  it("returns 'conflict' when the existing parcel has no owner", () => {
+    const result = resolveDraftIdempotency(
+      { id: "parcel-1", trackingId: "SP001234", userId: null },
+      "user-1",
+    );
+    expect(result.kind).toBe("conflict");
   });
 });

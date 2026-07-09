@@ -8,6 +8,7 @@ import {
   mapSmartpostInnerToOrderFields,
   parseSmartpostAddItemResponse,
 } from "@/lib/smartpost-add-item";
+import { resolveDraftIdempotency } from "./_draft-logic";
 import { createOrderSuccessFlexMessage } from "@/lib/line-flex";
 import { pushLineMessage } from "@/lib/line-messaging";
 import { parsePositiveCm, validateParcelDimensionsCm } from "@/lib/parcel-dimensions";
@@ -105,6 +106,37 @@ export async function POST(request: Request) {
     const parcelBarcode = smartpostFields.barcode?.trim() || null;
 
     const db = getDb();
+
+    // Idempotency guard: a client retry (e.g. the first request succeeded but
+    // the response never reached the client) re-submits the same Smartpost
+    // tracking code. Replay the original success instead of failing on the
+    // parcels_tracking_id_unique constraint.
+    const [existingByTracking] = await db
+      .select({ id: parcels.id, trackingId: parcels.trackingId, userId: parcels.userId })
+      .from(parcels)
+      .where(eq(parcels.trackingId, trackingId))
+      .limit(1);
+    const idempotency = resolveDraftIdempotency(existingByTracking, session.userId);
+    if (idempotency.kind === "replay") {
+      return NextResponse.json({
+        ok: true,
+        data: { id: idempotency.id, trackingId: idempotency.trackingId },
+      });
+    }
+    if (idempotency.kind === "conflict") {
+      // Should be impossible: carrier tracking codes are globally unique.
+      await recordSystemErrorEvent({
+        source: "user.api.parcels.draft.tracking_collision",
+        error: new Error(`trackingId ${trackingId} belongs to a different user`),
+        severity: "critical",
+        context: { trackingId, existingParcelId: existingByTracking?.id },
+      });
+      return NextResponse.json(
+        { ok: false, error: "เลขพัสดุนี้มีอยู่ในระบบแล้ว กรุณาติดต่อฝ่ายสนับสนุน" },
+        { status: 409 },
+      );
+    }
+
     const [sender] = await db
       .select()
       .from(senderAddresses)
@@ -126,65 +158,93 @@ export async function POST(request: Request) {
     const size = `${widthCm}x${lengthCm}x${heightCm}cm`;
     const weightKg = (weightGram / 1000).toFixed(3);
 
-    const inserted = await db
-      .insert(parcels)
-      .values({
-        trackingId,
-        barcode: parcelBarcode,
-        userId: session.userId,
-        destination,
-        weightKg,
-        size,
-        parcelType,
-        note,
-        // Payment starts only after Thailand Post webhook sends final price (actual weight at branch).
-        status: "awaiting_actual_weight",
-        price: null,
-        source: `send:${shippingMode}:${autoPrint ? "autoprint" : "manual"}`,
-      })
-      .returning();
-
-    const parcelRow = inserted[0];
-    if (!parcelRow?.id || !parcelRow.trackingId) {
-      return NextResponse.json({ ok: false, error: "Failed to create parcel" }, { status: 500 });
-    }
-
     const f = smartpostFields;
-    await db.insert(orders).values({
-      parcelId: parcelRow.id,
-      userId: session.userId,
-      statuscode: parsedSmartpost.statuscode,
-      message: parsedSmartpost.message,
-      smartpostTrackingcode: f.smartpostTrackingcode || null,
-      barcode: f.barcode || null,
-      serviceType: f.serviceType || null,
-      productInbox: f.productInbox || null,
-      productWeight: f.productWeight || null,
-      productPrice: f.productPrice || null,
-      shipperName: f.shipperName || null,
-      shipperAddress: f.shipperAddress || null,
-      shipperSubdistrict: f.shipperSubdistrict || null,
-      shipperDistrict: f.shipperDistrict || null,
-      shipperProvince: f.shipperProvince || null,
-      shipperZipcode: f.shipperZipcode || null,
-      shipperEmail: f.shipperEmail || null,
-      shipperMobile: f.shipperMobile || null,
-      cusName: f.cusName || null,
-      cusAdd: f.cusAdd || null,
-      cusSub: f.cusSub || null,
-      cusAmp: f.cusAmp || null,
-      cusProv: f.cusProv || null,
-      cusZipcode: f.cusZipcode || null,
-      cusTel: f.cusTel || null,
-      cusEmail: f.cusEmail || null,
-      customerCode: f.customerCode || null,
-      cost: f.cost.trim() ? f.cost : null,
-      finalcost: f.finalcost.trim() ? f.finalcost : null,
-      orderStatus: f.orderStatus || null,
-      items: f.items || null,
-      insuranceRatePrice: f.insuranceRatePrice || null,
-      referenceId: f.referenceId || null,
-    });
+
+    let parcelRow: typeof parcels.$inferSelect;
+    try {
+      parcelRow = await db.transaction(async (tx) => {
+        const inserted = await tx
+          .insert(parcels)
+          .values({
+            trackingId,
+            barcode: parcelBarcode,
+            userId: session.userId,
+            destination,
+            weightKg,
+            size,
+            parcelType,
+            note,
+            // Payment starts only after Thailand Post webhook sends final price (actual weight at branch).
+            status: "awaiting_actual_weight",
+            price: null,
+            source: `send:${shippingMode}:${autoPrint ? "autoprint" : "manual"}`,
+          })
+          .returning();
+
+        const row = inserted[0];
+        if (!row?.id || !row.trackingId) {
+          throw new Error("Failed to create parcel");
+        }
+
+        await tx.insert(orders).values({
+          parcelId: row.id,
+          userId: session.userId,
+          statuscode: parsedSmartpost.statuscode,
+          message: parsedSmartpost.message,
+          smartpostTrackingcode: f.smartpostTrackingcode || null,
+          barcode: f.barcode || null,
+          serviceType: f.serviceType || null,
+          productInbox: f.productInbox || null,
+          productWeight: f.productWeight || null,
+          productPrice: f.productPrice || null,
+          shipperName: f.shipperName || null,
+          shipperAddress: f.shipperAddress || null,
+          shipperSubdistrict: f.shipperSubdistrict || null,
+          shipperDistrict: f.shipperDistrict || null,
+          shipperProvince: f.shipperProvince || null,
+          shipperZipcode: f.shipperZipcode || null,
+          shipperEmail: f.shipperEmail || null,
+          shipperMobile: f.shipperMobile || null,
+          cusName: f.cusName || null,
+          cusAdd: f.cusAdd || null,
+          cusSub: f.cusSub || null,
+          cusAmp: f.cusAmp || null,
+          cusProv: f.cusProv || null,
+          cusZipcode: f.cusZipcode || null,
+          cusTel: f.cusTel || null,
+          cusEmail: f.cusEmail || null,
+          customerCode: f.customerCode || null,
+          cost: f.cost.trim() ? f.cost : null,
+          finalcost: f.finalcost.trim() ? f.finalcost : null,
+          orderStatus: f.orderStatus || null,
+          items: f.items || null,
+          insuranceRatePrice: f.insuranceRatePrice || null,
+          referenceId: f.referenceId || null,
+        });
+
+        return row;
+      });
+    } catch (err) {
+      const code = (err as { code?: string } | null)?.code;
+      if (code === "23505") {
+        // Lost the race: another request (or retry) inserted this trackingId
+        // between our pre-check and this insert. Replay its success instead
+        // of surfacing a 500 for a duplicate-key error.
+        const [race] = await db
+          .select({ id: parcels.id, trackingId: parcels.trackingId, userId: parcels.userId })
+          .from(parcels)
+          .where(eq(parcels.trackingId, trackingId))
+          .limit(1);
+        const raceDecision = resolveDraftIdempotency(race, session.userId);
+        if (raceDecision.kind === "replay") {
+          return NextResponse.json({
+            ok: true,
+            data: { id: raceDecision.id, trackingId: raceDecision.trackingId },
+          });
+        }
+      }
+      throw err;
+    }
 
     await recordInternalEvent("parcel.created", `parcel.created:${parcelRow.id}`, {
       parcelId: parcelRow.id,

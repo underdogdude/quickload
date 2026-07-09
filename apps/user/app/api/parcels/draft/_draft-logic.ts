@@ -32,6 +32,38 @@ export type DraftValidationResult =
   | { ok: true; trackingId: string; barcode: string | null }
   | { ok: false; error: string; status: 400 | 403 };
 
+export type ExistingParcelForTracking = {
+  id: string;
+  trackingId: string;
+  userId: string | null;
+};
+
+export type DraftIdempotencyDecision =
+  | { kind: "create" }
+  | { kind: "replay"; id: string; trackingId: string }
+  | { kind: "conflict" };
+
+/**
+ * Decides what to do when a parcel with the draft's trackingId already
+ * exists (checked either before insert, or after catching a unique-
+ * constraint race on insert).
+ *
+ * - No existing row: proceed with creating a new parcel.
+ * - Existing row owned by the same user: this is a client retry (e.g. the
+ *   first request succeeded but the response never reached the client) —
+ *   replay the original success instead of erroring or duplicating data.
+ * - Existing row owned by a different user: carrier tracking codes are
+ *   globally unique, so this should be impossible — treat as a conflict.
+ */
+export function resolveDraftIdempotency(
+  existing: ExistingParcelForTracking | undefined,
+  sessionUserId: string,
+): DraftIdempotencyDecision {
+  if (!existing) return { kind: "create" };
+  if (existing.userId !== sessionUserId) return { kind: "conflict" };
+  return { kind: "replay", id: existing.id, trackingId: existing.trackingId };
+}
+
 /**
  * Validates all parcel draft fields and extracts trackingId/barcode from the
  * Smartpost response. Returns an error descriptor or the extracted IDs.
