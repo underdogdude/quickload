@@ -66,6 +66,50 @@ export function isSmartpostSuccess(httpStatus: number, bodyStatuscode: string): 
   return httpStatus === 201 || bodyStatuscode === "201";
 }
 
+const RETRYABLE_SMARTPOST_STATUS_CODES = new Set(["408", "425", "429", "500", "502", "503", "504"]);
+
+export type SmartpostFailureClassification = {
+  retryable: boolean;
+  severity: "warning" | "critical";
+  clientStatus: number;
+  userFacingError: string;
+};
+
+export function isRetryableSmartpostFailure(
+  httpStatus: number,
+  bodyStatuscode: string,
+  message = "",
+): boolean {
+  const normalizedHttpStatus = String(httpStatus);
+  const normalizedBodyStatus = bodyStatuscode.trim();
+  if (RETRYABLE_SMARTPOST_STATUS_CODES.has(normalizedHttpStatus)) return true;
+  if (RETRYABLE_SMARTPOST_STATUS_CODES.has(normalizedBodyStatus)) return true;
+  return /timeout|temporar|unavailable|unexpected response|server/i.test(message);
+}
+
+export function classifySmartpostFailure(input: {
+  httpStatus: number;
+  bodyStatuscode: string;
+  message?: string;
+}): SmartpostFailureClassification {
+  const retryable = isRetryableSmartpostFailure(input.httpStatus, input.bodyStatuscode, input.message ?? "");
+  if (retryable) {
+    return {
+      retryable: true,
+      severity: "warning",
+      clientStatus: input.httpStatus === 504 ? 504 : 503,
+      userFacingError: "ขณะนี้ระบบไปรษณีย์ไทยไม่พร้อมให้บริการ กรุณาลองใหม่อีกครั้ง",
+    };
+  }
+
+  return {
+    retryable: false,
+    severity: "critical",
+    clientStatus: 502,
+    userFacingError: input.message?.trim() || `Smartpost error ${input.httpStatus}`,
+  };
+}
+
 /**
  * Normalizes the Smartpost response body to always include statuscode "201"
  * so that the downstream draft route can verify without re-reading HTTP status.

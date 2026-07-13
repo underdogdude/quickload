@@ -5,7 +5,12 @@ import { NextResponse } from "next/server";
 import { requireLineSession } from "@/lib/require-user";
 import { getSendAccessBlockForUser, sendAccessBlockedResponse } from "@/lib/send-access-block";
 import { MIN_PARCEL_WEIGHT_GRAM, MAX_PARCEL_WEIGHT_GRAM } from "@/lib/parcel-dimensions";
-import { normalizeSmartpostReferenceId } from "./_add-item-logic";
+import {
+  classifySmartpostFailure,
+  isSmartpostSuccess,
+  normalizeSmartpostReferenceId,
+  normalizeSuccessResponse,
+} from "./_add-item-logic";
 
 type AddItemBody = {
   senderId?: string;
@@ -140,23 +145,27 @@ export async function POST(request: Request) {
         signal: upstreamController.signal,
       });
     } catch (error) {
-      if (!isAbortError(error)) throw error;
+      const timedOut = isAbortError(error);
       await recordSystemErrorEvent({
         source: "user.api.smartpost.add-item",
-        error: new Error("Smartpost addItem upstream timeout"),
+        severity: "warning",
+        error: new Error(timedOut ? "Smartpost addItem upstream timeout" : "Smartpost addItem upstream request failed"),
         context: {
-          upstreamTimeoutMs: 25_000,
+          ...(timedOut ? { upstreamTimeoutMs: 25_000 } : {}),
           referenceId: referenceId || undefined,
+          cause: error instanceof Error ? error.message : String(error),
         },
       });
       return NextResponse.json(
         {
           ok: false,
-          error: "ระบบไปรษณีย์ไม่ตอบสนอง กรุณาลองใหม่อีกครั้ง",
+          error: timedOut
+            ? "ระบบไปรษณีย์ไม่ตอบสนอง กรุณาลองใหม่อีกครั้ง"
+            : "เชื่อมต่อระบบไปรษณีย์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
           retryable: true,
-          upstreamTimeoutMs: 25_000,
+          ...(timedOut ? { upstreamTimeoutMs: 25_000 } : {}),
         },
-        { status: 504 },
+        { status: timedOut ? 504 : 503 },
       );
     } finally {
       clearTimeout(upstreamTimer);
@@ -174,40 +183,42 @@ export async function POST(request: Request) {
     const smartpostStatus = String(normalized.statuscode ?? "");
     const smartpostMessage = normalized.message ?? "";
     // Treat HTTP 201 OR body statuscode "201" as success (handles both response shapes).
-    const isSmartpostSuccess = upstreamRes.status === 201 || smartpostStatus === "201";
+    const smartpostAccepted = isSmartpostSuccess(upstreamRes.status, smartpostStatus);
 
-    if (!isSmartpostSuccess) {
-      const userFacingError = smartpostMessage || `Smartpost error ${upstreamRes.status}`;
+    if (!smartpostAccepted) {
+      const failure = classifySmartpostFailure({
+        httpStatus: upstreamRes.status,
+        bodyStatuscode: smartpostStatus,
+        message: smartpostMessage,
+      });
       await recordSystemErrorEvent({
         source: "user.api.smartpost.add-item",
-        error: new Error(userFacingError),
+        severity: failure.severity,
+        error: new Error(smartpostMessage || `Smartpost error ${upstreamRes.status}`),
         context: {
           upstreamHttpStatus: upstreamRes.status,
           smartpostStatus,
           smartpostMessage,
+          retryable: failure.retryable,
         },
       });
       return NextResponse.json(
         {
           ok: false,
-          error: userFacingError,
+          error: failure.userFacingError,
+          retryable: failure.retryable,
           upstreamHttpStatus: upstreamRes.status,
           smartpostStatus,
           smartpostMessage,
-          endpoint,
-          details: upstreamJson,
         },
-        { status: 502 },
+        { status: failure.clientStatus },
       );
     }
 
     // Normalize: always include statuscode "201" so downstream (draft route, parser) can verify
     // without re-reading HTTP status. PHP success body may only have {"message":"Create successful"}.
     // statuscode is placed at the END of the spread so it always overrides the upstream body value.
-    const normalizedData =
-      typeof upstreamJson === "object" && upstreamJson !== null && !Array.isArray(upstreamJson)
-        ? { ...(upstreamJson as Record<string, unknown>), statuscode: "201" }
-        : { statuscode: "201", message: "Create successful" };
+    const normalizedData = normalizeSuccessResponse(upstreamJson);
 
     return NextResponse.json({ ok: true, data: normalizedData });
   } catch (e) {

@@ -14,14 +14,25 @@ export const runtime = "nodejs";
 
 // ─── units ────────────────────────────────────────────────────────────────────
 const PT_PER_MM = 72 / 25.4;
-const W_MM = 102;
-const H_MM = 76;
+/** ISO A6 landscape (148 × 105 mm). Layout coords below are scaled from the original 102 × 76 mm design. */
+const W_MM = 148;
+const H_MM = 105;
+const DESIGN_W_MM = 102;
+const DESIGN_H_MM = 76;
+const LAYOUT_SX = W_MM / DESIGN_W_MM;
+const LAYOUT_SY = H_MM / DESIGN_H_MM;
 const PW = W_MM * PT_PER_MM; // page width  in pt
 const PH = H_MM * PT_PER_MM; // page height in pt
 const mm = (v: number) => v * PT_PER_MM;
 
-// pdf-lib origin is bottom-left; we author in top-left coords
-const y = (topMm: number) => PH - mm(topMm);
+// pdf-lib origin is bottom-left; design coords are top-left on the original 102×76 mm artboard
+const y = (topMm: number) => PH - mm(topMm * LAYOUT_SY);
+const xPos = (leftMm: number) => mm(leftMm * LAYOUT_SX);
+const wScale = (widthMm: number) => mm(widthMm * LAYOUT_SX);
+const hScale = (heightMm: number) => mm(heightMm * LAYOUT_SY);
+/** Scale design-time point sizes to match the enlarged A6 artboard. */
+const FONT_SCALE = (LAYOUT_SX + LAYOUT_SY) / 2;
+const fontPt = (designPt: number) => designPt * FONT_SCALE;
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 function compact(parts: Array<string | null | undefined>) {
@@ -78,7 +89,7 @@ function drawCenteredText(
   color: ReturnType<typeof rgb>,
 ) {
   const tw = font.widthOfTextAtSize(text, sizePt);
-  page.drawText(text, { x: mm(centerXMm) - tw / 2, y: y(topMm), size: sizePt, font, color });
+  page.drawText(text, { x: xPos(centerXMm) - tw / 2, y: y(topMm), size: sizePt, font, color });
 }
 
 function drawCenteredLines(
@@ -181,10 +192,18 @@ async function createParcelLabelPdf(input: {
   const WHITE = rgb(1, 1, 1);
 
   const line = (x1: number, y1: number, x2: number, y2: number, thickness = 0.8) =>
-    page.drawLine({ start: { x: mm(x1), y: y(y1) }, end: { x: mm(x2), y: y(y2) }, thickness, color: BK });
+    page.drawLine({ start: { x: xPos(x1), y: y(y1) }, end: { x: xPos(x2), y: y(y2) }, thickness, color: BK });
 
   const rect = (xMm: number, yMm: number, wMm: number, hMm: number, thickness = 0.8) =>
-    page.drawRectangle({ x: mm(xMm), y: y(yMm) - mm(hMm), width: mm(wMm), height: mm(hMm), borderColor: BK, borderWidth: thickness, color: WHITE });
+    page.drawRectangle({
+      x: xPos(xMm),
+      y: y(yMm) - hScale(hMm),
+      width: wScale(wMm),
+      height: hScale(hMm),
+      borderColor: BK,
+      borderWidth: thickness,
+      color: WHITE,
+    });
 
   // Draw text — top-left baseline aligned
   const txt = (
@@ -195,10 +214,10 @@ async function createParcelLabelPdf(input: {
     opts?: { bold?: boolean; center?: boolean; centerWidthMm?: number },
   ) => {
     const font = opts?.bold ? bold : regular;
-    let drawX = mm(xMm);
+    let drawX = xPos(xMm);
     if (opts?.center && opts.centerWidthMm != null) {
       const textW = font.widthOfTextAtSize(str, sizePt);
-      drawX = mm(xMm) + (mm(opts.centerWidthMm) - textW) / 2;
+      drawX = xPos(xMm) + (wScale(opts.centerWidthMm) - textW) / 2;
     }
     page.drawText(str, { x: drawX, y: y(yMm), size: sizePt, font, color: BK });
   };
@@ -210,18 +229,24 @@ async function createParcelLabelPdf(input: {
   const logoH = 12;
   const logoW = logoH * (644 / 176); // ~43.9mm keeps aspect ratio
   const logoTopMm = (21 - logoH) / 2; // vertically centre in 21mm band
-  page.drawImage(logoImg, { x: mm(1.8), y: y(logoTopMm + logoH), width: mm(logoW), height: mm(logoH) });
+  page.drawImage(logoImg, { x: xPos(1.8), y: y(logoTopMm + logoH), width: wScale(logoW), height: hScale(logoH) });
 
-  // ── top barcode (starts after logo, fits within page 102mm) ──────
+  // ── top barcode (starts after logo, fits within page width) ──────
   const barcodeX = 47;          // start after logo (~1.8+43.9+1.5 gap)
   const barcodeY = 2.5;
-  const barcodeW = 52;          // 47+52=99mm — fits within 101.2mm border
+  const barcodeW = 52;          // 47+52=99mm — fits within border on original artboard
   const barcodeH = 10;
-  page.drawImage(barcodeTopImg, { x: mm(barcodeX), y: y(barcodeY) - mm(barcodeH), width: mm(barcodeW), height: mm(barcodeH) });
+  page.drawImage(barcodeTopImg, {
+    x: xPos(barcodeX),
+    y: y(barcodeY) - hScale(barcodeH),
+    width: wScale(barcodeW),
+    height: hScale(barcodeH),
+  });
   {
-    const tw = bold.widthOfTextAtSize(input.trackingNumber, 7);
-    const cx = mm(barcodeX) + mm(barcodeW) / 2 - tw / 2;
-    page.drawText(input.trackingNumber, { x: cx, y: y(barcodeY + barcodeH + 2.5), size: 7, font: bold, color: BK });
+    const trackingTextPt = fontPt(11);
+    const tw = bold.widthOfTextAtSize(input.trackingNumber, trackingTextPt);
+    const cx = xPos(barcodeX) + wScale(barcodeW) / 2 - tw / 2;
+    page.drawText(input.trackingNumber, { x: cx, y: y(barcodeY + barcodeH + 4.5), size: trackingTextPt, font: bold, color: BK });
   }
 
   // ── top/bottom separator ──────────────────────────────────────────
@@ -237,33 +262,33 @@ async function createParcelLabelPdf(input: {
   // font sizes: old SVG used mm values; 1mm ≈ 2.835pt
   const senderLabel = `ผู้ส่ง : ${input.senderName}`;
   {
-    const tw = regular.widthOfTextAtSize(senderLabel, 7.4);
-    page.drawText(senderLabel, { x: mm(32.2) - tw / 2, y: y(25.5), size: 7.4, font: regular, color: BK });
+    const tw = regular.widthOfTextAtSize(senderLabel, fontPt(7.4));
+    page.drawText(senderLabel, { x: xPos(32.2) - tw / 2, y: y(25.5), size: fontPt(7.4), font: regular, color: BK });
   }
   const senderLines = wrapText(input.senderAddress, 44, 2);
   senderLines.forEach((l, i) => {
-    const tw = regular.widthOfTextAtSize(l, 6.2);
-    page.drawText(l, { x: mm(32.2) - tw / 2, y: y(29.2 + i * 3.1), size: 6.2, font: regular, color: BK });
+    const tw = regular.widthOfTextAtSize(l, fontPt(6.2));
+    page.drawText(l, { x: xPos(32.2) - tw / 2, y: y(29.2 + i * 3.1), size: fontPt(6.2), font: regular, color: BK });
   });
   {
-    const tw = bold.widthOfTextAtSize(input.senderPhone, 8.5);
-    page.drawText(input.senderPhone, { x: mm(32.2) - tw / 2, y: y(37), size: 8.5, font: bold, color: BK });
+    const tw = bold.widthOfTextAtSize(input.senderPhone, fontPt(8.5));
+    page.drawText(input.senderPhone, { x: xPos(32.2) - tw / 2, y: y(37), size: fontPt(8.5), font: bold, color: BK });
   }
 
   // ── recipient block ───────────────────────────────────────────────
   const recipientLabel = `ผู้รับ : ${input.recipientName}`;
   {
-    const tw = regular.widthOfTextAtSize(recipientLabel, 7.4);
-    page.drawText(recipientLabel, { x: mm(32.2) - tw / 2, y: y(43.6), size: 7.4, font: regular, color: BK });
+    const tw = regular.widthOfTextAtSize(recipientLabel, fontPt(7.4));
+    page.drawText(recipientLabel, { x: xPos(32.2) - tw / 2, y: y(43.6), size: fontPt(7.4), font: regular, color: BK });
   }
-  const recipientLines = wrapText(input.recipientAddress, 66, 3);
+  const recipientLines = wrapText(input.recipientAddress, 44, 3);
   recipientLines.forEach((l, i) => {
-    const tw = regular.widthOfTextAtSize(l, 5.0);
-    page.drawText(l, { x: mm(32.2) - tw / 2, y: y(46.9 + i * 2.6), size: 5.0, font: regular, color: BK });
+    const tw = regular.widthOfTextAtSize(l, fontPt(6.2));
+    page.drawText(l, { x: xPos(32.2) - tw / 2, y: y(46.9 + i * 3.1), size: fontPt(6.2), font: regular, color: BK });
   });
   {
-    const tw = bold.widthOfTextAtSize(input.recipientPhone, 8.6);
-    page.drawText(input.recipientPhone, { x: mm(32.2) - tw / 2, y: y(56), size: 8.6, font: bold, color: BK });
+    const tw = bold.widthOfTextAtSize(input.recipientPhone, fontPt(8.6));
+    page.drawText(input.recipientPhone, { x: xPos(32.2) - tw / 2, y: y(56), size: fontPt(8.6), font: bold, color: BK });
   }
 
   // ── zip digit boxes ───────────────────────────────────────────────
@@ -272,18 +297,23 @@ async function createParcelLabelPdf(input: {
     const dx = 8.6 + i * 9.7;
     rect(dx, 57.6, 8.5, 7.5, 1);
     if (digit) {
-      const tw = bold.widthOfTextAtSize(digit, 13.6);
-      page.drawText(digit, { x: mm(dx) + mm(8.5) / 2 - tw / 2, y: y(63.2), size: 13.6, font: bold, color: BK });
+      const tw = bold.widthOfTextAtSize(digit, fontPt(13.6));
+      page.drawText(digit, { x: xPos(dx) + wScale(8.5) / 2 - tw / 2, y: y(63.2), size: fontPt(13.6), font: bold, color: BK });
     }
   });
 
   // ── footer ────────────────────────────────────────────────────────
-  txt(`Printed : ${formatPrintedAt()}`, 5.2, 71.5, 5.0);
-  page.drawImage(barcodeFootImg, { x: mm(33.2), y: y(69.2) - mm(2.4), width: mm(28), height: mm(2.4) });
+  txt(`Printed : ${formatPrintedAt()}`, 5.2, 71.5, fontPt(5.0));
+  page.drawImage(barcodeFootImg, {
+    x: xPos(33.2),
+    y: y(69.2) - hScale(2.4),
+    width: wScale(28),
+    height: hScale(2.4),
+  });
   {
     const itemsText = input.items.replace(/\s+/g, " ").trim() || "-";
-    const tw = regular.widthOfTextAtSize(itemsText, 3);
-    page.drawText(itemsText, { x: mm(47.2) - tw / 2, y: y(73.5), size: 3, font: regular, color: BK });
+    const tw = regular.widthOfTextAtSize(itemsText, fontPt(3));
+    page.drawText(itemsText, { x: xPos(47.2) - tw / 2, y: y(73.5), size: fontPt(3), font: regular, color: BK });
   }
 
   // ── right service box ─────────────────────────────────────────────
@@ -302,12 +332,12 @@ async function createParcelLabelPdf(input: {
     ["ชำระค่าฝากส่งตามที่ ปณท กำหนด", 38.8],
   ];
   for (const [text, yy] of cLines) {
-    const tw = regular.widthOfTextAtSize(text, 5.4);
-    page.drawText(text, { x: mm(cx) + mm(cw) / 2 - tw / 2, y: y(yy), size: 5.4, font: regular, color: BK });
+    const tw = regular.widthOfTextAtSize(text, fontPt(5.4));
+    page.drawText(text, { x: xPos(cx) + wScale(cw) / 2 - tw / 2, y: y(yy), size: fontPt(5.4), font: regular, color: BK });
   }
   {
-    const tw = bold.widthOfTextAtSize("Non COD", 13.6);
-    page.drawText("Non COD", { x: mm(cx) + mm(cw) / 2 - tw / 2, y: y(47.5), size: 13.6, font: bold, color: BK });
+    const tw = bold.widthOfTextAtSize("Non COD", fontPt(13.6));
+    page.drawText("Non COD", { x: xPos(cx) + wScale(cw) / 2 - tw / 2, y: y(47.5), size: fontPt(13.6), font: bold, color: BK });
   }
   {
     drawCenteredText(
@@ -316,13 +346,13 @@ async function createParcelLabelPdf(input: {
       input.productInsuranceLabel,
       cx + 10,
       53.8,
-      input.productInsuranceLabel === "-" ? 6.2 : 4.5,
+      input.productInsuranceLabel === "-" ? fontPt(6.2) : fontPt(4.5),
       BK,
     );
   }
   {
-    const tw = bold.widthOfTextAtSize("1", 11.1);
-    page.drawText("1", { x: mm(cx + 20) + mm(10) / 2 - tw / 2, y: y(54.0), size: 11.1, font: bold, color: BK });
+    const tw = bold.widthOfTextAtSize("1", fontPt(11.1));
+    page.drawText("1", { x: xPos(cx + 20) + wScale(10) / 2 - tw / 2, y: y(54.0), size: fontPt(11.1), font: bold, color: BK });
   }
 
   const rightNoticeBlocks: Array<{ lines: string[]; yStart: number; lineGap: number }> = [
@@ -331,7 +361,7 @@ async function createParcelLabelPdf(input: {
     { lines: ["ก่อนนำจ่ายถึงผู้รับ"], yStart: 69.9, lineGap: 3.0 },
   ];
   for (const block of rightNoticeBlocks) {
-    drawCenteredLines(page, regular, block.lines, cx + cw / 2, block.yStart, 5.4, block.lineGap, BK);
+    drawCenteredLines(page, regular, block.lines, cx + cw / 2, block.yStart, fontPt(5.4), block.lineGap, BK);
   }
 
   // ── right-edge rotated fragile warning ────────────────────────────
@@ -340,9 +370,9 @@ async function createParcelLabelPdf(input: {
   // y = top starting point of the text (top of content area = 21mm from top → PH-mm(21))
   const fragile = "<< ข้างในนี้มีของสำคัญของใครบางคนอยู่ โปรดส่งต่ออย่างเบามือ >>";
   page.drawText(fragile, {
-    x: mm(98),
-    y: PH - mm(22),
-    size: 4.5,
+    x: xPos(98),
+    y: y(22),
+    size: fontPt(4.5),
     font: regular,
     color: BK,
     rotate: degrees(-90),

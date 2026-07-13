@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   validateAddItemPayload,
+  classifySmartpostFailure,
   isSmartpostSuccess,
+  isRetryableSmartpostFailure,
   normalizeSuccessResponse,
   normalizeSmartpostReferenceId,
 } from "./_add-item-logic";
@@ -141,6 +143,60 @@ describe("isSmartpostSuccess", () => {
     // HTTP error takes precedence... but actually body "201" makes it success
     // This documents the actual behavior: body "201" wins regardless of HTTP status
     expect(isSmartpostSuccess(400, "201")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Smartpost failure classification
+// ---------------------------------------------------------------------------
+
+describe("isRetryableSmartpostFailure", () => {
+  it("treats HTTP 503 as retryable even when body status is empty", () => {
+    expect(isRetryableSmartpostFailure(503, "", "")).toBe(true);
+  });
+
+  it("treats body statuscode 503 as retryable", () => {
+    expect(isRetryableSmartpostFailure(200, "503", "Unexpected response from the server.")).toBe(true);
+  });
+
+  it("treats unexpected server response messages as retryable", () => {
+    expect(isRetryableSmartpostFailure(200, "", "Error, Please contact your support.(2)Unexpected response from the server.")).toBe(true);
+  });
+
+  it("does not treat ordinary validation-style errors as retryable", () => {
+    expect(isRetryableSmartpostFailure(400, "400", "Invalid zipcode")).toBe(false);
+  });
+});
+
+describe("classifySmartpostFailure", () => {
+  it("downgrades the reported Smartpost 503 outage to warning and retryable response", () => {
+    const result = classifySmartpostFailure({
+      httpStatus: 503,
+      bodyStatuscode: "503",
+      message: "Error, Please contact your support.(2)Unexpected response from the server.",
+    });
+
+    expect(result).toEqual({
+      retryable: true,
+      severity: "warning",
+      clientStatus: 503,
+      userFacingError: "ขณะนี้ระบบไปรษณีย์ไทยไม่พร้อมให้บริการ กรุณาลองใหม่อีกครั้ง",
+    });
+  });
+
+  it("keeps non-retryable upstream rejects critical", () => {
+    const result = classifySmartpostFailure({
+      httpStatus: 400,
+      bodyStatuscode: "400",
+      message: "Invalid recipient phone",
+    });
+
+    expect(result).toEqual({
+      retryable: false,
+      severity: "critical",
+      clientStatus: 502,
+      userFacingError: "Invalid recipient phone",
+    });
   });
 });
 
