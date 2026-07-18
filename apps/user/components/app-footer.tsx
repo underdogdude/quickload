@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { APP_RELEASE_DATE, APP_VERSION, formatAppReleaseLabel } from "@/lib/app-release";
 
 export function AppFooter() {
@@ -6,6 +7,12 @@ export function AppFooter() {
       className="mx-auto w-full max-w-lg px-6 pb-6 pt-10 text-center"
       aria-label="Application information"
     >
+      <Link
+        href="/help"
+        className="mb-4 inline-flex min-h-11 items-center justify-center rounded-lg px-3 text-sm font-medium text-[#2726F5] underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-[#2726F5] focus:ring-offset-2"
+      >
+        ช่วยเหลือ
+      </Link>
       <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
         Powered by SSS
       </p>

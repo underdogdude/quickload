@@ -46,9 +46,9 @@ for (const kind of ["sender", "recipient"] as const) {
 
     const list = page.locator(".touch-pan-y").first();
     await expect(list).toBeVisible();
-    await expect(page.getByRole("button", { name: /บางรัก 1, บางรัก, กรุงเทพมหานคร, 10500/ })).toBeVisible();
+    await expect(page.getByRole("option", { name: /บางรัก 1, บางรัก, กรุงเทพมหานคร, 10500/ })).toBeVisible();
 
-    const firstRow = page.getByRole("button", { name: /บางรัก 1, บางรัก, กรุงเทพมหานคร, 10500/ });
+    const firstRow = page.getByRole("option", { name: /บางรัก 1, บางรัก, กรุงเทพมหานคร, 10500/ });
     const box = await firstRow.boundingBox();
     if (!box) throw new Error("Location suggestion row is not measurable");
 

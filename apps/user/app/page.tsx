@@ -7,9 +7,9 @@ import { SendParcelPromoCard } from "./send-parcel-promo-card";
 const quickMenus = [
   { href: "/parcels", label: "พัสดุของฉัน", iconSrc: "/parcel.png" },
   { href: "/payment", label: "ยอดชำระ", iconSrc: "/bill.png" },
+  { href: "/price-check", label: "เช็กราคา", iconSrc: "/price-check.png" },
   { href: "/addresses", label: "สมุดที่อยู่", iconSrc: "/address.png" },
   { href: "/manual", label: "คู่มือการใช้งาน", iconSrc: "/manual.png" },
-  { href: "/help", label: "ช่วยเหลือ", iconSrc: "/faq.png" },
 ];
 const firstRowMenus = quickMenus.slice(0, 2);
 const secondRowMenus = quickMenus.slice(2);
@@ -82,7 +82,12 @@ export default async function HomePage() {
                 prefetch
                 className="rounded-lg bg-white px-2 py-3 text-center shadow-sm ring-1 ring-slate-200 transition hover:border-[#2726F5] hover:bg-[#2726F5]/5"
               >
-                <img src={menu.iconSrc} alt="" className="mx-auto h-10 w-10 object-contain" aria-hidden />
+                <img
+                  src={menu.iconSrc}
+                  alt=""
+                  className={`mx-auto object-contain ${menu.href === "/price-check" ? "h-12 w-12" : "h-10 w-10"}`}
+                  aria-hidden
+                />
                 <p className="mt-2 text-[15px] font-medium text-slate-700">{menu.label}</p>
               </Link>
             ))}

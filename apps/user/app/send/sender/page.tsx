@@ -3,7 +3,12 @@
 import type { SenderAddress } from "@quickload/shared/types";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import {
+  formatThaiLocation,
+  ThaiLocationCombobox,
+  type ThaiLocationRow,
+} from "@/components/thai-location-combobox";
 import { normalizeThaiPhone, isValidThaiPhone } from "@/lib/thai-phone";
 import {
   buildAddressFormAfterSaveHref,
@@ -13,17 +18,6 @@ import {
 import { readAddressHandoff, saveAddressHandoff } from "@/lib/address-handoff-cache";
 import { pickFreshAddressForSend } from "@/lib/send-address-loader";
 import { senderCopy } from "./strings";
-
-type ThaiAddressRow = {
-  tambon: string;
-  amphoe: string;
-  province: string;
-  zipcode: string;
-};
-
-function formatSelectedAddress(row: ThaiAddressRow) {
-  return `${row.tambon}, ${row.amphoe}, ${row.province}, ${row.zipcode}`;
-}
 
 function SenderFormInner() {
   const router = useRouter();
@@ -36,12 +30,8 @@ function SenderFormInner() {
   const [phone, setPhone] = useState("");
   const [addressLine, setAddressLine] = useState("");
   const [locationQuery, setLocationQuery] = useState("");
-  const [locationSelected, setLocationSelected] = useState<ThaiAddressRow | null>(null);
+  const [locationSelected, setLocationSelected] = useState<ThaiLocationRow | null>(null);
   const [primaryAccount, setPrimaryAccount] = useState(false);
-
-  const [suggestions, setSuggestions] = useState<ThaiAddressRow[]>([]);
-  const [suggestLoading, setSuggestLoading] = useState(false);
-  const [listOpen, setListOpen] = useState(false);
 
   const [nameError, setNameError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
@@ -50,9 +40,6 @@ function SenderFormInner() {
   const [formError, setFormError] = useState<string | null>(null);
   const [loadingRecord, setLoadingRecord] = useState(Boolean(editId));
   const [saving, setSaving] = useState(false);
-
-  const comboRef = useRef<HTMLDivElement | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const normalizedPhone = normalizeThaiPhone(phone);
 
@@ -66,7 +53,7 @@ function SenderFormInner() {
       province: d.province,
       zipcode: d.zipcode,
     });
-    setLocationQuery(formatSelectedAddress({
+    setLocationQuery(formatThaiLocation({
       tambon: d.tambon,
       amphoe: d.amphoe,
       province: d.province,
@@ -120,66 +107,15 @@ function SenderFormInner() {
     };
   }, [editId, hydrateAddressForm, router]);
 
-  const fetchSuggestions = useCallback(async (q: string) => {
-    const trimmed = q.trim();
-    if (!trimmed) {
-      setSuggestions([]);
-      return;
-    }
-    setSuggestLoading(true);
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 12000);
-    try {
-      const res = await fetch(`/api/thai-address?q=${encodeURIComponent(trimmed)}&limit=30`, {
-        signal: controller.signal,
-      });
-      const json = (await res.json()) as { ok?: boolean; data?: ThaiAddressRow[] };
-      if (!res.ok || !json.ok || !Array.isArray(json.data)) {
-        setSuggestions([]);
-        return;
-      }
-      setSuggestions(json.data);
-    } catch {
-      setSuggestions([]);
-    } finally {
-      clearTimeout(t);
-      setSuggestLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    function onDocPointerDown(e: PointerEvent) {
-      if (comboRef.current && !comboRef.current.contains(e.target as Node)) {
-        setListOpen(false);
-      }
-    }
-    document.addEventListener("pointerdown", onDocPointerDown);
-    return () => document.removeEventListener("pointerdown", onDocPointerDown);
-  }, []);
-
-  useEffect(() => {
-    if (!listOpen || locationSelected) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      void fetchSuggestions(locationQuery);
-    }, 280);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [locationQuery, listOpen, locationSelected, fetchSuggestions]);
-
   function onLocationChange(value: string) {
     setLocationQuery(value);
     setLocationSelected(null);
     setLocationError(null);
-    setListOpen(true);
   }
 
-  function onPickLocation(row: ThaiAddressRow) {
+  function onPickLocation(row: ThaiLocationRow) {
     setLocationSelected(row);
-    setLocationQuery(formatSelectedAddress(row));
-    setSuggestions([]);
-    setListOpen(false);
+    setLocationQuery(formatThaiLocation(row));
     setLocationError(null);
   }
 
@@ -377,66 +313,26 @@ function SenderFormInner() {
             {addressError ? <p className="mt-1 text-sm text-red-600">{addressError}</p> : null}
           </div>
 
-          <div ref={comboRef} className="relative">
-            <label htmlFor="sender-location-search" className="text-sm font-semibold text-slate-800">
-              {senderCopy.labelLocation}
-            </label>
-            <p className="mt-0.5 text-xs text-slate-500">{senderCopy.hintLocation}</p>
-            <input
-              id="sender-location-search"
-              name="location"
-              value={locationQuery}
-              onChange={(e) => onLocationChange(e.target.value)}
-              onFocus={() => { if (!locationSelected) setListOpen(true); }}
-              autoComplete="off"
-              className={`${inputClass} ${locationSelected ? "border-emerald-500 focus:border-emerald-500 focus:ring-emerald-500" : ""}`}
-              placeholder={senderCopy.placeholderLocation}
-              disabled={saving}
-              readOnly={Boolean(locationSelected)}
-            />
-            {locationSelected ? (
-              <div className="mt-1.5 flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
-                  <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5" aria-hidden>
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 0 1 0 1.414l-8 8a1 1 0 0 1-1.414 0l-4-4a1 1 0 0 1 1.414-1.414L8 12.586l7.293-7.293a1 1 0 0 1 1.414 0Z" clipRule="evenodd" />
-                  </svg>
-                  เลือกแล้ว
-                </span>
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => { setLocationSelected(null); setLocationQuery(""); setListOpen(false); setLocationError(null); }}
-                  className="text-xs text-[#2726F5] underline underline-offset-2 disabled:opacity-50"
-                >
-                  เปลี่ยน
-                </button>
-              </div>
-            ) : null}
-            {locationError ? <p className="mt-1 text-sm text-red-600">{locationError}</p> : null}
-
-            {listOpen && !locationSelected && (locationQuery.trim() || suggestLoading) ? (
-              <div className="absolute z-30 mt-1 max-h-44 w-full touch-pan-y overflow-y-auto overscroll-contain rounded-lg border border-slate-200 bg-white py-1 shadow-lg [-webkit-overflow-scrolling:touch]">
-                {suggestLoading && suggestions.length === 0 ? (
-                  <p className="px-3 py-2 text-sm text-slate-500">{senderCopy.searching}</p>
-                ) : null}
-                {!suggestLoading && suggestions.length === 0 && locationQuery.trim() ? (
-                  <p className="px-3 py-2 text-sm text-slate-500">{senderCopy.noResults}</p>
-                ) : null}
-                {suggestions.map((row) => (
-                  <button
-                    key={`${row.tambon}|${row.amphoe}|${row.province}|${row.zipcode}`}
-                    type="button"
-                    className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-slate-50 active:bg-slate-100"
-                    onClick={() => onPickLocation(row)}
-                  >
-                    <span className="text-sm font-medium text-slate-900">
-                      {row.tambon}, {row.amphoe}, {row.province}, {row.zipcode}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
+          <ThaiLocationCombobox
+            id="sender-location-search"
+            name="location"
+            label={senderCopy.labelLocation}
+            hint={senderCopy.hintLocation}
+            placeholder={senderCopy.placeholderLocation}
+            query={locationQuery}
+            selected={locationSelected}
+            onQueryChange={onLocationChange}
+            onSelect={onPickLocation}
+            onClear={() => {
+              setLocationSelected(null);
+              setLocationQuery("");
+              setLocationError(null);
+            }}
+            copy={{ searching: senderCopy.searching, noResults: senderCopy.noResults }}
+            disabled={saving}
+            error={locationError}
+            inputClassName={inputClass}
+          />
 
           <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3">
             <input

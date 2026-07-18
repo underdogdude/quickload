@@ -13,6 +13,7 @@ const ROUTES = [
   "/addresses",
   "/payment",
   "/send",
+  "/price-check",
   "/help",
   "/manual",
 ] as const;
