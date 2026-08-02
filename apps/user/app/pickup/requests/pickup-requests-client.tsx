@@ -62,7 +62,7 @@ export function PickupRequestsClient() {
   }, [loadRequests]);
 
   return (
-    <main className="pickup-surface min-h-screen bg-slate-100 pb-24">
+    <main className="pickup-surface pickup-requests-surface min-h-screen bg-slate-100 pb-24">
       <section className="bg-[#0802b8] px-6 pb-12 pt-8 text-white">
         <div className="mx-auto w-full max-w-lg">
           <Link

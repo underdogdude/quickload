@@ -10,7 +10,7 @@ import {
   statusLabel,
 } from "@/app/admin-ui";
 import { getDb } from "@quickload/shared/db";
-import { orders, parcels, thaiPostWebhookEvents, users } from "@quickload/shared/db/schema";
+import { ishipPickupRequests, orders, parcels, thaiPostWebhookEvents, users } from "@quickload/shared/db/schema";
 import { count, desc, eq, or, sql } from "drizzle-orm";
 import Image from "next/image";
 import Link from "next/link";
@@ -162,6 +162,30 @@ export default async function DashboardPage() {
     .from(parcels)
     .leftJoin(orders, eq(orders.parcelId, parcels.id));
 
+  const pickupTodayPredicate = sql`timezone('Asia/Bangkok', ${ishipPickupRequests.createdAt})::date = timezone('Asia/Bangkok', now())::date`;
+  const pickupCompletedTodayPredicate = sql`${ishipPickupRequests.status} = 'picked_up'
+    and timezone('Asia/Bangkok', coalesce(${ishipPickupRequests.closedAt}, ${ishipPickupRequests.updatedAt}))::date = timezone('Asia/Bangkok', now())::date`;
+  const pickupCancelledTodayPredicate = sql`${ishipPickupRequests.status} = 'cancelled'
+    and timezone('Asia/Bangkok', coalesce(${ishipPickupRequests.cancelledAt}, ${ishipPickupRequests.updatedAt}))::date = timezone('Asia/Bangkok', now())::date`;
+  const pickupNeedsReviewPredicate = sql`${ishipPickupRequests.status} = 'unknown'
+    or (${ishipPickupRequests.status} = 'submitting' and ${ishipPickupRequests.createdAt} < now() - interval '5 minutes')
+    or (${ishipPickupRequests.status} = 'failed' and ${pickupTodayPredicate})`;
+
+  const [pickupSummary] = await db
+    .select({
+      requestedToday: sql<number>`count(*) filter (where ${pickupTodayPredicate})`,
+      parcelsToday: sql<number>`coalesce(sum(${ishipPickupRequests.parcelCount}) filter (where ${pickupTodayPredicate}), 0)`,
+      awaitingCourier: sql<number>`count(*) filter (where ${ishipPickupRequests.status} = 'requested')`,
+      awaitingCourierParcels: sql<number>`coalesce(sum(${ishipPickupRequests.parcelCount}) filter (where ${ishipPickupRequests.status} = 'requested'), 0)`,
+      assigned: sql<number>`count(*) filter (where ${ishipPickupRequests.status} = 'assigned')`,
+      assignedParcels: sql<number>`coalesce(sum(${ishipPickupRequests.parcelCount}) filter (where ${ishipPickupRequests.status} = 'assigned'), 0)`,
+      pickedUpToday: sql<number>`count(*) filter (where ${pickupCompletedTodayPredicate})`,
+      pickedUpParcelsToday: sql<number>`coalesce(sum(${ishipPickupRequests.parcelCount}) filter (where ${pickupCompletedTodayPredicate}), 0)`,
+      needsReview: sql<number>`count(*) filter (where ${pickupNeedsReviewPredicate})`,
+      cancelledToday: sql<number>`count(*) filter (where ${pickupCancelledTodayPredicate})`,
+    })
+    .from(ishipPickupRequests);
+
   const overdueRows = await db
     .select({
       id: parcels.id,
@@ -278,6 +302,45 @@ export default async function DashboardPage() {
     ? `${missingThaiPostCost.toLocaleString("en-US")} confirmed parcels missing postal cost`
     : "Thailand Post finalcost/cost deducted";
 
+  const pickupMetrics = [
+    {
+      label: "Requests today",
+      value: toNumber(pickupSummary?.requestedToday),
+      detail: `${toNumber(pickupSummary?.parcelsToday).toLocaleString("en-US")} parcels booked`,
+      tone: "neutral",
+    },
+    {
+      label: "Awaiting courier",
+      value: toNumber(pickupSummary?.awaitingCourier),
+      detail: `${toNumber(pickupSummary?.awaitingCourierParcels).toLocaleString("en-US")} parcels waiting`,
+      tone: "warning",
+    },
+    {
+      label: "Courier assigned",
+      value: toNumber(pickupSummary?.assigned),
+      detail: `${toNumber(pickupSummary?.assignedParcels).toLocaleString("en-US")} parcels in active pickups`,
+      tone: "info",
+    },
+    {
+      label: "Picked up today",
+      value: toNumber(pickupSummary?.pickedUpToday),
+      detail: `${toNumber(pickupSummary?.pickedUpParcelsToday).toLocaleString("en-US")} parcels collected`,
+      tone: "success",
+    },
+    {
+      label: "Needs review",
+      value: toNumber(pickupSummary?.needsReview),
+      detail: "Unknown, failed today, or stalled submission",
+      tone: "danger",
+    },
+    {
+      label: "Cancelled today",
+      value: toNumber(pickupSummary?.cancelledToday),
+      detail: "Cancelled pickup requests",
+      tone: "neutral",
+    },
+  ];
+
   const moneyMetrics = [
     { label: "Total confirmed", value: totalMoney, detail: "All parcels with confirmed final price", tone: "neutral" },
     { label: "Outstanding receivable", value: moneyToReceive, detail: "เงินที่ควรได้รับ แต่ยังไม่ได้รับครบ", tone: "warning" },
@@ -303,6 +366,56 @@ export default async function DashboardPage() {
         description="Production parcel flow, payment state, and carrier exceptions. ค้างชำระ means payment is still incomplete after Thailand Post has confirmed actual weight and final price."
         action={<PrimaryLink href="/parcels">Open parcels</PrimaryLink>}
       />
+
+      <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="flex flex-col gap-1 border-b border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-slate-950">iShip pickup operations</h2>
+            <p className="mt-1 text-sm text-slate-600">Live Thailand Post courier-request workload and exceptions.</p>
+          </div>
+          <span className="text-sm font-medium text-slate-500">Bangkok time</span>
+        </div>
+        <div className="grid gap-px bg-slate-100 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {pickupMetrics.map((metric) => (
+            <div
+              key={metric.label}
+              className={cn(
+                "min-w-0 p-4",
+                metric.tone === "warning"
+                  ? "bg-amber-50/70"
+                  : metric.tone === "info"
+                    ? "bg-sky-50/70"
+                    : metric.tone === "success"
+                      ? "bg-emerald-50/70"
+                      : metric.tone === "danger" && metric.value > 0
+                        ? "bg-rose-50/70"
+                        : "bg-white",
+              )}
+            >
+              <p
+                className={cn(
+                  "text-sm font-semibold",
+                  metric.tone === "warning"
+                    ? "text-amber-900"
+                    : metric.tone === "info"
+                      ? "text-sky-900"
+                      : metric.tone === "success"
+                        ? "text-emerald-900"
+                        : metric.tone === "danger" && metric.value > 0
+                          ? "text-rose-900"
+                          : "text-slate-700",
+                )}
+              >
+                {metric.label}
+              </p>
+              <p className="mt-3 text-3xl font-semibold tabular-nums tracking-normal text-slate-950">
+                {metric.value.toLocaleString("en-US")}
+              </p>
+              <p className="mt-2 text-xs leading-5 text-slate-500">{metric.detail}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="flex flex-col gap-1 border-b border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:items-end sm:justify-between">

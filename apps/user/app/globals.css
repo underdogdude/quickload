@@ -43,6 +43,13 @@ body {
   font-family: "Kanit", "Noto Sans Thai", "Noto Sans", sans-serif;
 }
 
+/* API values on pickup request cards can contain identifiers, phone-number lists,
+   and provider text without spaces. Keep every value inside the mobile layout. */
+.pickup-requests-surface {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pickup-surface *,
   .pickup-child-route,

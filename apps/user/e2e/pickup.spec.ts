@@ -555,6 +555,8 @@ test("an accepted pickup stays successful while local persistence is syncing", a
 });
 
 test("pickup requests use a circular header action and keep cancellation in the overflow menu", async ({ page }) => {
+  const longStaffInfoName =
+    "ปณศ.ปากเกร็ด|0889878326,0889878327,0889878328,0889878329";
   await mockPickupApis(page, [
     {
       id: "pickup-history-1",
@@ -569,8 +571,8 @@ test("pickup requests use a circular header action and keep cancellation in the 
       status: "assigned",
       ticketPickupId: "TP20260721001",
       providerMessage: "เรียกรถเข้ารับสำเร็จ",
-      staffInfoName: "สมชาย ใจดี",
-      staffInfoPhone: "0819876543",
+      staffInfoName: longStaffInfoName,
+      staffInfoPhone: null,
       timeoutAtText: "วันนี้ 11:00 ~ 13:00",
       ticketMessage: "กรุณาเตรียมพัสดุให้พร้อม",
       failureMessage: null,
@@ -638,7 +640,18 @@ test("pickup requests use a circular header action and keep cancellation in the 
       .map((column) => Number.parseFloat(column)),
   );
   expect(Math.abs(requestDetailColumns[0] - requestDetailColumns[1])).toBeLessThan(1);
-  await expect(history.getByText("สมชาย ใจดี · 0819876543")).toBeVisible();
+  const staffInfo = history.getByText(longStaffInfoName, { exact: true });
+  await expect(staffInfo).toBeVisible();
+  const staffInfoLayout = await staffInfo.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    clientHeight: element.clientHeight,
+    lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
+  }));
+  expect(staffInfoLayout.scrollWidth).toBeLessThanOrEqual(
+    staffInfoLayout.clientWidth + 1,
+  );
+  expect(staffInfoLayout.clientHeight).toBeGreaterThan(staffInfoLayout.lineHeight);
   const staffHeading = history.getByText("พนักงานเข้ารับ", { exact: true });
   const pickupInfoHeading = history.getByText("ข้อมูลการเข้ารับ", {
     exact: true,
