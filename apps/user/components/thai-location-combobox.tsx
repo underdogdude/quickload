@@ -53,7 +53,7 @@ export function ThaiLocationCombobox({
   disabled = false,
   error,
   required = false,
-  inputClassName = "mt-1 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none placeholder:text-slate-500 focus:border-[#2726F5] focus:ring-1 focus:ring-[#2726F5]",
+  inputClassName = "mt-1 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none placeholder:text-slate-500 focus:border-[#0802b8] focus:ring-1 focus:ring-[#0802b8]",
 }: ThaiLocationComboboxProps) {
   const [suggestions, setSuggestions] = useState<ThaiLocationRow[]>([]);
   const [suggestLoading, setSuggestLoading] = useState(false);
@@ -239,7 +239,7 @@ export function ThaiLocationCombobox({
               setActiveIndex(-1);
               window.requestAnimationFrame(() => inputRef.current?.focus());
             }}
-            className="rounded px-1 text-xs text-[#2726F5] underline underline-offset-2 focus:outline-none focus:ring-2 focus:ring-[#2726F5] focus:ring-offset-2 disabled:opacity-50"
+            className="rounded px-1 text-xs text-[#0802b8] underline underline-offset-2 focus:outline-none focus:ring-2 focus:ring-[#0802b8] focus:ring-offset-2 disabled:opacity-50"
           >
             {copy.change ?? "เปลี่ยน"}
           </button>
@@ -275,7 +275,7 @@ export function ThaiLocationCombobox({
               role="option"
               aria-selected={index === activeIndex}
               className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left focus:outline-none ${
-                index === activeIndex ? "bg-[#2726F5]/10" : "hover:bg-slate-50 active:bg-slate-100"
+                index === activeIndex ? "bg-[#0802b8]/10" : "hover:bg-slate-50 active:bg-slate-100"
               }`}
               onPointerMove={(event) => {
                 if (event.pointerType === "mouse") setActiveIndex(index);

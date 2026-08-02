@@ -274,7 +274,7 @@ export default function ParcelDetailPage() {
 
   return (
     <main className="min-h-screen bg-slate-100 pb-28">
-      <section className="bg-[#2726F5] px-6 pb-14 pt-10 text-white">
+      <section className="bg-[#0802b8] px-6 pb-14 pt-10 text-white">
         <div className="mx-auto w-full max-w-lg">
           <button
             type="button"
@@ -317,7 +317,7 @@ export default function ParcelDetailPage() {
                   {parcel.status === "pending_payment" && !parcel.isPaid && parcel.thaiPostPriceConfirmedAt ? (
                     <Link
                       href={`/pay/${parcel.id}`}
-                      className="inline-flex w-full shrink-0 items-center gap-1 rounded-md bg-[#2726F5] px-4 py-4 text-sm font-medium text-white shadow-sm transition justify-center hover:bg-indigo-700"
+                      className="inline-flex w-full shrink-0 items-center gap-1 rounded-md bg-[#0802b8] px-4 py-4 text-sm font-medium text-white shadow-sm transition justify-center hover:bg-indigo-700"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" aria-hidden>
                         <path d="M3 7h18v10H3V7Zm0 4h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />

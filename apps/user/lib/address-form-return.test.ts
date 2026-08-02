@@ -4,6 +4,7 @@ import {
   buildAddressFormBackHref,
   buildAddressFormHref,
   isAddressFormFromAddresses,
+  isAddressFormFromPickup,
 } from "./address-form-return";
 
 function params(input: Record<string, string>) {
@@ -89,8 +90,20 @@ describe("address-form-return", () => {
     expect(href.startsWith("/addresses?tab=sender&saved=1&_t=")).toBe(true);
   });
 
+  it("returns to pickup after adding or editing a pickup address", () => {
+    expect(buildAddressFormBackHref("sender", params({ from: "pickup" }))).toBe("/pickup");
+    expect(buildAddressFormBackHref("sender", params({ from: "pickup", id: "sender-1" }))).toBe(
+      "/pickup?senderId=sender-1",
+    );
+    expect(
+      buildAddressFormAfterSaveHref("sender", "sender-2", params({ from: "pickup" })),
+    ).toBe("/pickup?senderId=sender-2");
+    expect(isAddressFormFromPickup(params({ from: "pickup" }))).toBe(true);
+  });
+
   it("ignores unknown from values", () => {
     expect(isAddressFormFromAddresses(params({ from: "evil" }))).toBe(false);
+    expect(isAddressFormFromPickup(params({ from: "evil" }))).toBe(false);
     expect(buildAddressFormBackHref("sender", params({ from: "evil" }))).toBe("/send");
   });
 });

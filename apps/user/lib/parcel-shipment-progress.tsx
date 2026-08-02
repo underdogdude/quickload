@@ -279,7 +279,7 @@ export function ThaiPostWebhookHistoryCard({
         className={`text-center ${framed ? "border-b border-slate-100/80 bg-gradient-to-b from-slate-50/70 to-white" : "rounded-md border border-slate-200/90 bg-gradient-to-b from-slate-50/80 to-white shadow-[0_1px_3px_rgba(15,23,42,0.05)]"} ${compact ? "px-4 py-5" : "px-4 py-5"}`}
       >
         <p className="text-sm font-medium text-slate-700">โปรดนำพัสดุไปลงทะเบียนที่สาขาไปรษณีย์ไทยใกล้บ้านคุณ</p>
-        <a href="https://postbase.thailandpost.co.th/th/service-point" target="_blank" rel="noopener" className="text-[#2726F5] underline text-xs">ค้นหาสาขาไปรษณีย์ไทยใกล้บ้าน</a>
+        <a href="https://postbase.thailandpost.co.th/th/service-point" target="_blank" rel="noopener" className="text-[#0802b8] underline text-xs">ค้นหาสาขาไปรษณีย์ไทยใกล้บ้าน</a>
       </div>
     ) : (
       <>
@@ -308,14 +308,14 @@ export function ThaiPostWebhookHistoryCard({
                     <div
                       className={`relative z-10 flex h-3 w-3 items-center justify-center rounded-full mt-1 ${accent.dot} ${
                         isLatest
-                          ? "bg-[#2726F5]"
+                          ? "bg-[#0802b8]"
                           : "shadow-[0_0_0_2px_white] ring-1 ring-slate-200 bg-white"
                       }`}
                       aria-hidden
                     />
                     {idx < chronological.length - 1 ? (
                       <div
-                        className="absolute left-1/2 top-4 z-0 h-[calc(100%+1.25rem)] -translate-x-1/2 border-l border-dashed border-[#2726F5]/40 h-full"
+                        className="absolute left-1/2 top-4 z-0 h-[calc(100%+1.25rem)] -translate-x-1/2 border-l border-dashed border-[#0802b8]/40 h-full"
                         aria-hidden
                       />
                     ) : null}
@@ -540,7 +540,7 @@ export function ParcelShipmentProgressTimeline({
             : current
               ? failed
                 ? "border-rose-500 bg-rose-500 text-white"
-                : "border-[#2726F5] bg-[#2726F5] text-white"
+                : "border-[#0802b8] bg-[#0802b8] text-white"
               : "border-slate-200 bg-white text-slate-400";
 
           return (

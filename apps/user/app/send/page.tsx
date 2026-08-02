@@ -16,8 +16,14 @@ import {
   resolveParcelSizePresetFromQuery,
 } from "@/lib/parcel-size-presets";
 import { MAX_PARCEL_NOTE_LENGTH, sanitizeParcelNote } from "@quickload/shared/parcel-note";
+import {
+  calculateParcelInsuranceFee,
+  PARCEL_TYPE_OPTIONS,
+  type ParcelTypeOption,
+} from "@/lib/parcel-registration";
 import { clearAddressHandoff, readAddressHandoff } from "@/lib/address-handoff-cache";
 import { loadAddressByIdForSend, loadAddressListForSend, pickFreshAddressForSend } from "@/lib/send-address-loader";
+import { createParcelOrderAttemptId } from "@/lib/parcel-order-client";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -39,20 +45,6 @@ function initialCustomDimensions(get: (key: string) => string | null): CustomDim
   return { widthCm: "", lengthCm: "", heightCm: "" };
 }
 
-const PARCEL_TYPE_OPTIONS = [
-  "เอกสาร",
-  "เสื้อผ้าเครื่องประดับ",
-  "เครื่องสำอาง/ความงาม",
-  "อุปกรณ์อิเล็กทรอนิค",
-  "อาหาร",
-  "ผลไม้",
-  "เครื่องมือช่าง",
-  "สุขภาพ",
-  "ต้นไม้",
-  "อื่นๆ",
-] as const;
-type ParcelTypeOption = (typeof PARCEL_TYPE_OPTIONS)[number];
-
 function clampNote(value: string): string {
   return sanitizeParcelNote(value) ?? "";
 }
@@ -73,16 +65,16 @@ function SendStepDot({ complete, kind, hasError = false }: { complete: boolean; 
         hasError
           ? "border-rose-500 bg-rose-50"
           : complete
-            ? "border-[#2726F5] bg-[#2726F5]"
+            ? "border-[#0802b8] bg-[#0802b8]"
             : incompleteRecipient
               ? "border-slate-300 bg-[#ECECEC]"
-              : "border-[#2726F5] bg-white"
+              : "border-[#0802b8] bg-white"
       }`}
     >
       {complete ? (
         <span className="text-xs font-bold text-white">✓</span>
       ) : kind === "sender" ? (
-        <div className="h-3 w-3 rounded-full bg-[#2726F5]" />
+        <div className="h-3 w-3 rounded-full bg-[#0802b8]" />
       ) : null}
     </div>
   );
@@ -159,7 +151,7 @@ function SendAddressStepContent({
             {selected!.addressLine}, {selected!.tambon}, {selected!.amphoe}, {selected!.province},{" "}
             {selected!.zipcode}
           </p>
-          <Link href={selected!.editHref} className="inline-block text-xs font-medium text-[#2726F5]">
+          <Link href={selected!.editHref} className="inline-block text-xs font-medium text-[#0802b8]">
             แก้ไข
           </Link>
         </div>
@@ -233,8 +225,8 @@ function SendAddressStepsCard({
 }
 
 function AddressBookIcon({ muted = false }: { muted?: boolean }) {
-  const stroke = muted ? "#CBD5E1" : "#2726F5";
-  const fill = muted ? "#CBD5E1" : "#2726F5";
+  const stroke = muted ? "#CBD5E1" : "#0802b8";
+  const fill = muted ? "#CBD5E1" : "#0802b8";
   return (
     <svg viewBox="0 -0.5 25 25" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" aria-hidden>
       <path
@@ -490,20 +482,15 @@ function SendParcelInner() {
   const [showSenderSavedToast, setShowSenderSavedToast] = useState(senderSaved);
   const [showRecipientSavedToast, setShowRecipientSavedToast] = useState(recipientSaved);
   const [continuing, setContinuing] = useState(false);
+  const [orderAttemptId] = useState(() => createParcelOrderAttemptId());
 
   function onlyNumber(value: string) {
     return value.replace(/\D/g, "");
   }
 
-  function calculateInsuranceFee(productPrice: number) {
-    if (productPrice <= 2000) return 0;
-    return Math.ceil(productPrice / 5000) * 10 + 25;
-  }
-
   const insuranceFee = useMemo(() => {
     const productPrice = Number(insuredValue || 0);
-    if (!Number.isFinite(productPrice) || productPrice <= 0) return 0;
-    return calculateInsuranceFee(productPrice);
+    return calculateParcelInsuranceFee(productPrice);
   }, [insuredValue]);
 
   function showParcelFormError(message: string) {
@@ -648,6 +635,7 @@ function SendParcelInner() {
     })();
 
     const params = new URLSearchParams({
+      orderAttemptId,
       senderId: activeSender.id,
       recipientId: activeRecipient.id,
       shippingMode,
@@ -666,7 +654,7 @@ function SendParcelInner() {
   }
 
   function ParcelTypeIcon({ type }: { type: ParcelTypeOption }) {
-    const cls = "h-4 w-4 text-[#2726F5]";
+    const cls = "h-4 w-4 text-[#0802b8]";
     if (type === "เอกสาร") {
       return (
         <svg viewBox="0 0 24 24" fill="none" className={cls} aria-hidden>
@@ -983,7 +971,7 @@ function SendParcelInner() {
 
   return (
     <main className="min-h-screen bg-slate-100 pb-36">
-      <section className="bg-[#2726F5] px-6 pb-20 pt-8 text-white">
+      <section className="bg-[#0802b8] px-6 pb-20 pt-8 text-white">
         <div className="mx-auto w-full max-w-lg">
           <Link
             href="/"
@@ -1098,7 +1086,7 @@ function SendParcelInner() {
                       ? formatParcelSizePresetOptionLabel(selectedParcelSizePreset)
                       : "เลือกขนาดพัสดุ"}
                   </span>
-                  <span className="shrink-0 text-base text-[#2726F5]">▾</span>
+                  <span className="shrink-0 text-base text-[#0802b8]">▾</span>
                 </button>
 
                 {showCustomDimensionFields ? (
@@ -1150,7 +1138,7 @@ function SendParcelInner() {
                   <span className="flex items-center gap-2 text-sm text-slate-700">
                     <ParcelTypeIcon type={parcelType} />
                     {parcelType}
-                    <span className="text-base text-[#2726F5]">▾</span>
+                    <span className="text-base text-[#0802b8]">▾</span>
                   </span>
                 </button>
               </div>
@@ -1179,7 +1167,7 @@ function SendParcelInner() {
               <span className="text-sm font-medium text-slate-900">ซื้อประกันเพิ่ม</span>
               <span
                 className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${
-                  extraInsurance ? "bg-[#2726F5]" : "bg-slate-300"
+                  extraInsurance ? "bg-[#0802b8]" : "bg-slate-300"
                 }`}
               >
                 <span
@@ -1228,7 +1216,7 @@ function SendParcelInner() {
               type="button"
               onClick={() => selectParcelSizePreset(preset.id)}
               className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm ${
-                parcelSizePresetId === preset.id ? "bg-[#2726F5]/10 text-[#2726F5]" : "text-slate-700 hover:bg-slate-50"
+                parcelSizePresetId === preset.id ? "bg-[#0802b8]/10 text-[#0802b8]" : "text-slate-700 hover:bg-slate-50"
               }`}
             >
               <span>{formatParcelSizePresetOptionLabel(preset)}</span>
@@ -1248,7 +1236,7 @@ function SendParcelInner() {
                 setParcelTypeOpen(false);
               }}
               className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
-                parcelType === option ? "bg-[#2726F5]/10 text-[#2726F5]" : "text-slate-700 hover:bg-slate-50"
+                parcelType === option ? "bg-[#0802b8]/10 text-[#0802b8]" : "text-slate-700 hover:bg-slate-50"
               }`}
             >
               <ParcelTypeIcon type={option} />
@@ -1294,7 +1282,7 @@ function SendParcelInner() {
             type="button"
             onClick={validateAndContinue}
             disabled={continuing}
-            className="w-full rounded-md bg-[#2726F5] px-6 py-3 text-base font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)] disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
+            className="w-full rounded-md bg-[#0802b8] px-6 py-3 text-base font-semibold text-white shadow-[0_6px_14px_rgba(8,2,184,0.35)] disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
           >
             {continuing ? "กำลังดำเนินการ..." : "ยืนยัน"}
           </button>

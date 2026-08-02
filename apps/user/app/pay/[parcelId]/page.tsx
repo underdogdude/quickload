@@ -375,7 +375,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
 
   return (
     <main className="min-h-screen bg-slate-100 pb-12">
-      <section className="bg-[#2726F5] px-6 pb-14 pt-10 text-white">
+      <section className="bg-[#0802b8] px-6 pb-14 pt-10 text-white">
         <div className="mx-auto w-full max-w-lg">
           <button
             type="button"
@@ -415,7 +415,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
             ) : charge?.status === "pending" ? (
               <div className="flex flex-col items-center gap-3">
                 <p className="text-sm font-medium text-slate-500">ยอดที่ต้องชำระ</p>
-                <p className="text-4xl font-semibold leading-none text-[#2726F5]">
+                <p className="text-4xl font-semibold leading-none text-[#0802b8]">
                   ฿ {formatTHB(charge.outstanding.outstanding)}
                 </p>
                 {charge.outstanding.totalOwed > charge.outstanding.outstanding ? (
@@ -512,7 +512,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                       <button
                         type="button"
                         onClick={() => openBankApp(charge.redirectUrl!)}
-                        className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[#2726F5] px-4 py-3 text-sm font-semibold text-white shadow-sm"
+                        className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[#0802b8] px-4 py-3 text-sm font-semibold text-white shadow-sm"
                       >
                         เปิดแอป {methodLabelTh(charge.paymentMethod)}
                       </button>
@@ -524,7 +524,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                       type="button"
                       onClick={() => void switchToPromptPay()}
                       disabled={loading || switching !== null}
-                      className="mt-3 text-sm font-medium text-[#2726F5] underline disabled:opacity-50"
+                      className="mt-3 text-sm font-medium text-[#0802b8] underline disabled:opacity-50"
                     >
                       เปลี่ยนไปชำระด้วยพร้อมเพย์
                     </button>
@@ -571,7 +571,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                   type="button"
                   onClick={() => createCharge()}
                   disabled={loading}
-                  className="mt-2 inline-flex items-center gap-2 rounded-full bg-[#2726F5] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                  className="mt-2 inline-flex items-center gap-2 rounded-full bg-[#0802b8] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
                 >
                   {loading && (
                     <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
@@ -581,7 +581,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 <button
                   type="button"
                   onClick={() => router.push(`/parcels/${encodeURIComponent(parcelId)}`)}
-                  className="text-sm font-medium text-[#2726F5] underline"
+                  className="text-sm font-medium text-[#0802b8] underline"
                 >
                   ดูรายละเอียดพัสดุ
                 </button>
@@ -599,7 +599,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                   type="button"
                   onClick={() => createCharge()}
                   disabled={loading}
-                  className="mt-2 inline-flex items-center gap-2 rounded-full bg-[#2726F5] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                  className="mt-2 inline-flex items-center gap-2 rounded-full bg-[#0802b8] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
                 >
                   {loading && (
                     <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
@@ -609,7 +609,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 <button
                   type="button"
                   onClick={() => router.push(`/parcels/${encodeURIComponent(parcelId)}`)}
-                  className="text-sm font-medium text-[#2726F5] underline"
+                  className="text-sm font-medium text-[#0802b8] underline"
                 >
                   ดูรายละเอียดพัสดุ
                 </button>
@@ -627,7 +627,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                   type="button"
                   onClick={() => createCharge()}
                   disabled={loading}
-                  className="mt-2 inline-flex items-center gap-2 rounded-full bg-[#2726F5] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                  className="mt-2 inline-flex items-center gap-2 rounded-full bg-[#0802b8] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
                 >
                   {loading && (
                     <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
@@ -637,7 +637,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                 <button
                   type="button"
                   onClick={() => router.push(`/parcels/${encodeURIComponent(parcelId)}`)}
-                  className="text-sm font-medium text-[#2726F5] underline"
+                  className="text-sm font-medium text-[#0802b8] underline"
                 >
                   ดูรายละเอียดพัสดุ
                 </button>
@@ -663,7 +663,7 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                       aria-label={m.labelTh}
                       className={`flex flex-col items-center justify-center rounded-md border px-3 py-3 transition disabled:opacity-50 ${
                         selected
-                          ? "border-[#2726F5] bg-indigo-50 ring-1 ring-[#2726F5]/20"
+                          ? "border-[#0802b8] bg-indigo-50 ring-1 ring-[#0802b8]/20"
                           : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100"
                       }`}
                     >
@@ -675,9 +675,9 @@ export default function PayPage({ params }: { params: { parcelId: string } }) {
                         className="h-14 w-14 rounded-lg object-contain"
                       />
                       {switching === m.id ? (
-                        <span className="mt-2 text-[11px] text-[#2726F5]">กำลังเปิดแอป...</span>
+                        <span className="mt-2 text-[11px] text-[#0802b8]">กำลังเปิดแอป...</span>
                       ) : selected ? (
-                        <span className="mt-2 text-[11px] font-medium text-[#2726F5]">
+                        <span className="mt-2 text-[11px] font-medium text-[#0802b8]">
                           กำลังใช้งาน
                         </span>
                       ) : (

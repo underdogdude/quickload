@@ -12,6 +12,7 @@ const ROUTES = [
   "/parcels",
   "/addresses",
   "/payment",
+  "/profile",
   "/send",
   "/price-check",
   "/help",

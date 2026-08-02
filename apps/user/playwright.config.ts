@@ -30,6 +30,7 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 120_000,
     env: {
+      NEXT_DIST_DIR: ".next-e2e",
       NEXT_PUBLIC_DEV_SKIP_LINE_AUTH: "true",
       IRON_SESSION_PASSWORD: "test-password-must-be-at-least-32-characters-long",
     },

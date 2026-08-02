@@ -13,7 +13,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 const SELECT_CLASS =
-  "w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none transition focus:border-[#2726F5]";
+  "w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none transition focus:border-[#0802b8]";
 
 type BirthDateFieldProps = {
   value: string;

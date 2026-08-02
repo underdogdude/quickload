@@ -15,6 +15,7 @@ export async function POST() {
   session.userId = "e2e-user-id";
   session.displayName = "E2E Test User";
   session.pictureUrl = null;
+  session.phone = "0812345678";
   session.profileCompleted = true;
   await session.save();
 

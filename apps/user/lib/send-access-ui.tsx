@@ -160,7 +160,7 @@ export function SendAccessBlockedModal() {
           <Link
             href="/payment"
             onClick={handleClose}
-            className="inline-flex items-center justify-center rounded-lg bg-[#2726F5] px-4 py-3 text-sm font-semibold text-white"
+            className="inline-flex items-center justify-center rounded-lg bg-[#0802b8] px-4 py-3 text-sm font-semibold text-white"
           >
             ไปชำระเงิน
           </Link>
@@ -188,7 +188,7 @@ function SendAccessBlockedPage() {
         <div className="mt-6 flex flex-col gap-2">
           <Link
             href="/payment"
-            className="inline-flex items-center justify-center rounded-lg bg-[#2726F5] px-4 py-3 text-sm font-semibold text-white"
+            className="inline-flex items-center justify-center rounded-lg bg-[#0802b8] px-4 py-3 text-sm font-semibold text-white"
           >
             ไปชำระเงิน
           </Link>

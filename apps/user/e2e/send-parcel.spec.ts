@@ -124,7 +124,9 @@ test("Flow 7: selecting box preset shows label and hides manual inputs", async (
   await page.getByRole("button", { name: "เลือกขนาดพัสดุ" }).click();
   await page.getByRole("button", { name: /กล่องไปรษณีย์.*\(B\)/i }).click();
 
-  await expect(page.getByRole("button", { name: /กล่องไปรษณีย์.*\(B\)/i })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "เลือกขนาดพัสดุ" }).getByText(/กล่องไปรษณีย์.*\(B\)/i),
+  ).toBeVisible();
   await expect(page.getByPlaceholder("กว้าง(ซม.)")).not.toBeVisible();
   await expect(page.getByPlaceholder("ยาว(ซม.)")).not.toBeVisible();
   await expect(page.getByPlaceholder("สูง(ซม.)")).not.toBeVisible();
@@ -133,11 +135,32 @@ test("Flow 7: selecting box preset shows label and hides manual inputs", async (
 test("Flow 7: continuing without selecting parcel size shows inline error", async ({ page }) => {
   await setupE2EPage(page);
   await gotoSendPage(page);
+  await page.route("**/api/recipient-addresses/recipient-1", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          id: "recipient-1",
+          contactName: "สมหญิง รักดี",
+          phone: "0987654321",
+          addressLine: "456 ถนนสุขุมวิท",
+          tambon: "คลองเตย",
+          amphoe: "คลองเตย",
+          province: "กรุงเทพมหานคร",
+          zipcode: "10110",
+        },
+      }),
+    }),
+  );
+  await page.goto("/send?recipientId=recipient-1");
+  await expect(page.getByRole("link", { name: /สมหญิง รักดี/ })).toBeVisible();
 
   await page.getByPlaceholder("0").fill("500");
   await page.getByPlaceholder("0").blur();
 
-  await page.getByRole("button", { name: /ดำเนินการต่อ|ถัดไป|continue/i }).click();
+  await page.getByRole("button", { name: "ยืนยัน" }).click();
 
   await expect(page.getByText(/กรุณาเลือกขนาดพัสดุ/i)).toBeVisible({ timeout: 5000 });
 });

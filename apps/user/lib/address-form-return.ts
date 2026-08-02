@@ -1,4 +1,5 @@
 export const ADDRESS_FORM_FROM_ADDRESSES = "addresses";
+export const ADDRESS_FORM_FROM_PICKUP = "pickup";
 
 export type AddressFormKind = "sender" | "recipient";
 
@@ -24,6 +25,10 @@ const SEND_RETURN_PARAM_KEYS = [
 
 export function isAddressFormFromAddresses(params: SearchParamLike): boolean {
   return params.get("from") === ADDRESS_FORM_FROM_ADDRESSES;
+}
+
+export function isAddressFormFromPickup(params: SearchParamLike): boolean {
+  return params.get("from") === ADDRESS_FORM_FROM_PICKUP;
 }
 
 export function addressBookTabFromParams(params: SearchParamLike, kind: AddressFormKind): AddressFormKind {
@@ -52,6 +57,10 @@ export function buildAddressFormBackHref(kind: AddressFormKind, params: SearchPa
     const tab = addressBookTabFromParams(params, kind);
     return `/addresses?tab=${tab}`;
   }
+  if (kind === "sender" && isAddressFormFromPickup(params)) {
+    const senderId = params.get("id");
+    return senderId ? `/pickup?senderId=${encodeURIComponent(senderId)}` : "/pickup";
+  }
   return "/send";
 }
 
@@ -63,6 +72,9 @@ export function buildAddressFormAfterSaveHref(
   if (isAddressFormFromAddresses(params)) {
     const tab = addressBookTabFromParams(params, kind);
     return `/addresses?tab=${tab}&saved=1&_t=${Date.now()}`;
+  }
+  if (kind === "sender" && isAddressFormFromPickup(params)) {
+    return `/pickup?senderId=${encodeURIComponent(savedId)}`;
   }
   const usp = new URLSearchParams();
   for (const key of SEND_RETURN_PARAM_KEYS) {

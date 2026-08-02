@@ -7,6 +7,7 @@ import {
   jsonb,
   numeric,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -203,6 +204,105 @@ export const recipientAddresses = pgTable("recipient_addresses", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }),
 });
+
+export const ishipPickupRequests = pgTable(
+  "iship_pickup_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    inputSource: text("input_source").notNull(),
+    senderAddressId: uuid("sender_address_id").references(() => senderAddresses.id, {
+      onDelete: "set null",
+    }),
+    contactName: text("contact_name").notNull(),
+    contactPhone: text("contact_phone").notNull(),
+    pickupAddressLine: text("pickup_address_line").notNull(),
+    pickupTambon: text("pickup_tambon").notNull(),
+    pickupAmphoe: text("pickup_amphoe").notNull(),
+    pickupProvince: text("pickup_province").notNull(),
+    pickupZipcode: text("pickup_zipcode").notNull(),
+    pickupAddressFull: text("pickup_address_full").notNull(),
+    parcelCount: integer("parcel_count").notNull(),
+    heaviestWeightKg: numeric("heaviest_weight_kg", { precision: 10, scale: 3 }).notNull(),
+    courierCode: text("courier_code").notNull(),
+    remark: text("remark").notNull().default(""),
+    status: text("status").notNull().default("submitting"),
+    ishipTicketPickupId: text("iship_ticket_pickup_id"),
+    ishipRecordId: text("iship_record_id"),
+    ishipStatusCode: text("iship_status_code"),
+    ishipStatusText: text("iship_status_text"),
+    providerMessage: text("provider_message"),
+    staffInfoName: text("staff_info_name"),
+    staffInfoPhone: text("staff_info_phone"),
+    timeoutAtText: text("timeout_at_text"),
+    ticketMessage: text("ticket_message"),
+    failureCode: text("failure_code"),
+    failureMessage: text("failure_message"),
+    ishipRequestJson: jsonb("iship_request_json"),
+    ishipResponseJson: jsonb("iship_response_json"),
+    ishipCancelResponseJson: jsonb("iship_cancel_response_json"),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelledBy: uuid("cancelled_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdempotencyIdx: uniqueIndex("iship_pickup_requests_user_idempotency_idx").on(
+      table.userId,
+      table.idempotencyKey,
+    ),
+    ticketIdx: uniqueIndex("iship_pickup_requests_ticket_idx").on(table.ishipTicketPickupId),
+    userCreatedIdx: index("iship_pickup_requests_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+    statusIdx: index("iship_pickup_requests_status_idx").on(table.status),
+  }),
+);
+
+export const ishipPickupRequestParcels = pgTable(
+  "iship_pickup_request_parcels",
+  {
+    pickupRequestId: uuid("pickup_request_id")
+      .notNull()
+      .references(() => ishipPickupRequests.id, { onDelete: "cascade" }),
+    parcelId: uuid("parcel_id")
+      .notNull()
+      .references(() => parcels.id, { onDelete: "cascade" }),
+    trackingCode: text("tracking_code").notNull(),
+    barcode: text("barcode"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.pickupRequestId, table.parcelId] }),
+    parcelIdx: index("iship_pickup_request_parcels_parcel_idx").on(table.parcelId),
+  }),
+);
+
+export const ishipPickupWebhookLogs = pgTable(
+  "iship_pickup_webhook_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ticketPickupId: text("ticket_pickup_id"),
+    pickupRequestId: uuid("pickup_request_id").references(() => ishipPickupRequests.id, {
+      onDelete: "set null",
+    }),
+    authenticated: boolean("authenticated").notNull().default(false),
+    processed: boolean("processed").notNull().default(false),
+    outcome: text("outcome"),
+    rawPayload: jsonb("raw_payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ticketIdx: index("iship_pickup_webhook_logs_ticket_idx").on(table.ticketPickupId),
+    requestIdx: index("iship_pickup_webhook_logs_request_idx").on(table.pickupRequestId),
+  }),
+);
 
 /**
  * Shipping price tiers.

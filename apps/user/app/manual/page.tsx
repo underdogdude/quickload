@@ -27,7 +27,7 @@ const steps = [
 export default function ManualPage() {
   return (
     <main className="min-h-screen bg-slate-100 pb-28">
-      <section className="bg-[#2726F5] px-6 pb-14 pt-10 text-white">
+      <section className="bg-[#0802b8] px-6 pb-14 pt-10 text-white">
         <div className="mx-auto w-full max-w-lg">
           <Link
             href="/"

@@ -14,6 +14,7 @@ export type CurrentUserSnapshot = {
   pictureUrl: string | null;
   firstName: string | null;
   lastName: string | null;
+  phone: string | null;
   profileCompleted: boolean;
 };
 
@@ -34,6 +35,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUserSnapshot> => {
       pictureUrl: null,
       firstName: null,
       lastName: null,
+      phone: null,
       profileCompleted: false,
     };
   }
@@ -42,6 +44,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUserSnapshot> => {
   let pictureUrl = session.pictureUrl ?? null;
   let firstName: string | null = null;
   let lastName: string | null = null;
+  let phone = session.phone ?? null;
 
   if (session.userId) {
     try {
@@ -52,6 +55,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUserSnapshot> => {
           pictureUrl: users.pictureUrl,
           firstName: users.firstName,
           lastName: users.lastName,
+          phone: users.phone,
         })
         .from(users)
         .where(eq(users.id, session.userId))
@@ -62,6 +66,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUserSnapshot> => {
         pictureUrl = pictureUrl ?? row.pictureUrl;
         firstName = row.firstName ?? null;
         lastName = row.lastName ?? null;
+        phone = row.phone ?? phone;
       }
     } catch {
       /* Don't fail the shell render if the DB is momentarily unreachable. */
@@ -76,6 +81,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUserSnapshot> => {
     pictureUrl,
     firstName,
     lastName,
+    phone,
     profileCompleted: Boolean(session.profileCompleted),
   };
 });

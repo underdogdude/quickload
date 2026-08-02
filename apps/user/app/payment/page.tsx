@@ -113,8 +113,17 @@ function parcelStatusBadgeClass(status: string): string {
   return "border-slate-200 bg-slate-50 text-slate-800";
 }
 
-export default function PaymentPage() {
-  const [tab, setTab] = useState<"outstanding" | "history">("outstanding");
+export default function PaymentPage({
+  searchParams,
+}: {
+  searchParams?: { tab?: string | string[] };
+}) {
+  const requestedTab = Array.isArray(searchParams?.tab)
+    ? searchParams?.tab[0]
+    : searchParams?.tab;
+  const [tab, setTab] = useState<"outstanding" | "history">(
+    requestedTab === "history" ? "history" : "outstanding",
+  );
 
   const [outstandingLoading, setOutstandingLoading] = useState(true);
   const [outstandingError, setOutstandingError] = useState<string | null>(null);
@@ -188,8 +197,16 @@ export default function PaymentPage() {
 
   return (
     <main className="min-h-screen bg-slate-100 pb-28">
-      <section className="bg-[#2726F5] px-6 pb-14 pt-10 text-white">
+      <section className="bg-[#0802b8] px-6 pb-14 pt-10 text-white">
         <div className="mx-auto w-full max-w-lg">
+          <Link
+            href="/"
+            className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white/95 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-[#0802b8]"
+            aria-label="กลับไปหน้าแรก"
+          >
+            <span aria-hidden>←</span>
+            <span>กลับ</span>
+          </Link>
           <h1 className="text-3xl font-bold leading-none">ชำระเงิน</h1>
           <p className="mt-1 text-sm text-white/80">ตรวจสอบยอดคงค้างและสถานะการชำระเงิน</p>
         </div>
@@ -209,7 +226,7 @@ export default function PaymentPage() {
                 type="button"
                 onClick={() => setTab("outstanding")}
                 className={`rounded-full px-3 py-2.5 text-md font-medium transition ${
-                  tab === "outstanding" ? "bg-[#2726F5] text-white" : "text-slate-500"
+                  tab === "outstanding" ? "bg-[#0802b8] text-white" : "text-slate-500"
                 }`}
               >
                 ค้างชำระ
@@ -218,7 +235,7 @@ export default function PaymentPage() {
                 type="button"
                 onClick={() => setTab("history")}
                 className={`rounded-full px-3 py-2.5 text-md font-medium transition ${
-                  tab === "history" ? "bg-[#2726F5] text-white" : "text-slate-500"
+                  tab === "history" ? "bg-[#0802b8] text-white" : "text-slate-500"
                 }`}
               >
                 ประวัติการชำระ
@@ -271,7 +288,7 @@ export default function PaymentPage() {
                     {items.length > 0 ? (
                       <Link
                         href={buildPayAllHref(items)}
-                        className="mt-4 flex w-full items-center justify-center gap-2.5 rounded-xl bg-[#2726F5] px-4 py-3.5 text-[15px] font-semibold leading-snug text-white shadow-[0_8px_22px_rgba(39,38,245,0.30)] transition hover:bg-[#1f1ed4] active:scale-[0.99]"
+                        className="mt-4 flex w-full items-center justify-center gap-2.5 rounded-xl bg-[#0802b8] px-4 py-3.5 text-[15px] font-semibold leading-snug text-white shadow-[0_8px_22px_rgba(8,2,184,0.30)] transition hover:bg-[#060190] active:scale-[0.99]"
                       >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -344,11 +361,11 @@ export default function PaymentPage() {
                         </ul>
                         <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
                           <span className="text-sm font-medium text-slate-700">ยอดต้องชำระ</span>
-                          <span className="text-xl font-medium text-[#2726F5]">฿ {formatTHB(it.outstanding)}</span>
+                          <span className="text-xl font-medium text-[#0802b8]">฿ {formatTHB(it.outstanding)}</span>
                         </div>
                         <Link
                           href={`/pay/${encodeURIComponent(it.parcelId)}`}
-                          className="my-4 flex w-full items-center justify-center gap-2 rounded-md border border-[#2726F5] bg-transparent px-4 py-2 text-sm font-medium text-[#2726F5] transition hover:bg-[#2726F5]/5"
+                          className="my-4 flex w-full items-center justify-center gap-2 rounded-md border border-[#0802b8] bg-transparent px-4 py-2 text-sm font-medium text-[#0802b8] transition hover:bg-[#0802b8]/5"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" aria-hidden>
                             <path d="M3 7h18v10H3V7Zm0 4h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -404,7 +421,7 @@ export default function PaymentPage() {
                 >
                   ดูรายการพัสดุ
                 </Link>
-                <SendLink className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#2726F5] bg-transparent px-4 py-2.5 text-sm font-medium text-[#2726F5] transition hover:bg-[#2726F5]/5 active:bg-[#2726F5]/10">
+                <SendLink className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#0802b8] bg-transparent px-4 py-2.5 text-sm font-medium text-[#0802b8] transition hover:bg-[#0802b8]/5 active:bg-[#0802b8]/10">
                   <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" aria-hidden className="shrink-0">
                     <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
                   </svg>
@@ -496,7 +513,7 @@ export default function PaymentPage() {
                 >
                   ดูรายการพัสดุ
                 </Link>
-                <SendLink className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#2726F5] bg-transparent px-4 py-2.5 text-sm font-medium text-[#2726F5] transition hover:bg-[#2726F5]/5 active:bg-[#2726F5]/10">
+                <SendLink className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#0802b8] bg-transparent px-4 py-2.5 text-sm font-medium text-[#0802b8] transition hover:bg-[#0802b8]/5 active:bg-[#0802b8]/10">
                   <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" aria-hidden className="shrink-0">
                     <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
                   </svg>

@@ -96,7 +96,7 @@ export function ParcelBarcodeButton({ parcelCode, className = "" }: ParcelBarcod
             <p className="mt-3 text-xs text-slate-600">เลขพัสดุ: {code || "—"}</p>
             <button
               type="button"
-              className="mt-4 w-full rounded-lg bg-[#2726F5] px-4 py-2 text-sm font-medium text-white"
+              className="mt-4 w-full rounded-lg bg-[#0802b8] px-4 py-2 text-sm font-medium text-white"
               onClick={() => setOpen(false)}
             >
               ปิด

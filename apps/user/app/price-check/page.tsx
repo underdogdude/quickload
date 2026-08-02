@@ -26,7 +26,7 @@ const SYSTEM_PRICE_NOTE =
   "*ราคานี้เป็นราคาประมาณ ราคาจริงจะแสดงเมื่อลูกค้าอัปเดตน้ำหนักที่แท้จริง ณ สาขาไปรษณีย์";
 
 const inputClass =
-  "mt-1 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none placeholder:text-slate-500 focus:border-[#2726F5] focus:ring-1 focus:ring-[#2726F5] disabled:bg-slate-100 disabled:text-slate-500";
+  "mt-1 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none placeholder:text-slate-500 focus:border-[#0802b8] focus:ring-1 focus:ring-[#0802b8] disabled:bg-slate-100 disabled:text-slate-500";
 
 function digitsOnly(value: string) {
   return value.replace(/\D/g, "");
@@ -153,17 +153,17 @@ export default function PriceCheckPage() {
 
   return (
     <main className="min-h-screen bg-slate-100 pb-28">
-      <section className="bg-[#2726F5] px-6 pb-20 pt-8 text-white">
+      <section className="bg-[#0802b8] px-6 pb-20 pt-8 text-white">
         <div className="mx-auto w-full max-w-lg">
           <Link
             href="/"
-            className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white/95 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-[#2726F5]"
+            className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white/95 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-[#0802b8]"
             aria-label="กลับไปหน้าแรก"
           >
             <span aria-hidden>←</span>
             <span>กลับ</span>
           </Link>
-          <h1 className="text-3xl font-bold leading-tight">เช็กราคา</h1>
+          <h1 className="text-3xl font-bold leading-tight">เช็คราคา</h1>
           <p className="mt-0.5 text-sm text-white/85">ประเมินค่าจัดส่งก่อนสร้างรายการพัสดุ</p>
         </div>
       </section>
@@ -308,7 +308,7 @@ export default function PriceCheckPage() {
                       aria-describedby={errors.dimensions ? "price-dimensions-error" : undefined}
                       placeholder="0"
                       disabled={calculating}
-                      className={`mt-1 w-full rounded-lg border bg-white px-2 py-3 text-center text-base text-slate-900 outline-none placeholder:text-slate-500 focus:border-[#2726F5] focus:ring-1 focus:ring-[#2726F5] disabled:bg-slate-100 ${
+                      className={`mt-1 w-full rounded-lg border bg-white px-2 py-3 text-center text-base text-slate-900 outline-none placeholder:text-slate-500 focus:border-[#0802b8] focus:ring-1 focus:ring-[#0802b8] disabled:bg-slate-100 ${
                         errors.dimensions ? "border-red-500 ring-1 ring-red-500/20" : "border-slate-300"
                       }`}
                     />
@@ -331,7 +331,7 @@ export default function PriceCheckPage() {
             <button
               type="submit"
               disabled={calculating}
-              className="inline-flex w-full items-center justify-center rounded-lg bg-[#2726F5] px-5 py-3 text-base font-semibold text-white transition hover:bg-[#1f1ed0] focus:outline-none focus:ring-2 focus:ring-[#2726F5] focus:ring-offset-2 active:bg-[#1918b8] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center rounded-lg bg-[#0802b8] px-5 py-3 text-base font-semibold text-white transition hover:bg-[#060190] focus:outline-none focus:ring-2 focus:ring-[#0802b8] focus:ring-offset-2 active:bg-[#05017a] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {calculating ? "กำลังคำนวณ..." : "คำนวณราคา"}
             </button>
@@ -356,7 +356,7 @@ export default function PriceCheckPage() {
                   ) : null}
                   <div className="flex items-end justify-between gap-4 border-t border-slate-200 pt-3">
                     <dt className="font-medium text-slate-700">ราคารวมโดยประมาณ</dt>
-                    <dd className="text-xl font-bold text-[#2726F5]">{formatBaht(result.estimatedTotal)}</dd>
+                    <dd className="text-xl font-bold text-[#0802b8]">{formatBaht(result.estimatedTotal)}</dd>
                   </div>
                 </dl>
                 <p className="mt-3 text-xs leading-relaxed text-slate-600">{SYSTEM_PRICE_NOTE}</p>

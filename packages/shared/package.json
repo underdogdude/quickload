@@ -48,13 +48,15 @@
     "db:backfill:wbseed-history": "node ./scripts/backfill-wbseed-status-history.mjs",
     "db:apply:payment-stack": "pnpm db:apply:payments && pnpm db:apply:penalty-columns && pnpm db:apply:amount-paid-trigger && pnpm db:apply:one-pending-idx",
     "db:reset:parcels": "node ./scripts/reset-parcels-orders-sql.mjs",
+    "db:reset:test-user": "node ./scripts/reset-test-user.mjs",
     "db:seed:thaipost-demo": "node ./scripts/seed-thaipost-status-demo.mjs",
     "db:seed:thaipost-demo:list-users": "node ./scripts/seed-thaipost-status-demo.mjs --list-users",
     "db:apply:one-pending-idx": "node ./scripts/apply-sql.mjs ./sql/20260426_payments_one_pending_per_parcel.sql",
     "db:apply:redirect-url": "node ./scripts/apply-sql.mjs ./sql/20260614_payments_redirect_url.sql",
     "db:apply:parcels-note": "node ./scripts/apply-sql.mjs ./sql/20260617_parcels_note.sql",
     "db:apply:parcels-note-50": "node ./scripts/apply-sql.mjs ./sql/20260617_parcels_note_length_50.sql",
-    "db:apply:internal-events": "node ./scripts/apply-sql.mjs ./sql/20260702_internal_events.sql"
+    "db:apply:internal-events": "node ./scripts/apply-sql.mjs ./sql/20260702_internal_events.sql",
+    "db:apply:iship-pickup": "node ./scripts/apply-sql.mjs ./sql/20260720_iship_pickup.sql"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",

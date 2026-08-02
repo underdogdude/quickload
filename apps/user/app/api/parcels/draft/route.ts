@@ -13,7 +13,6 @@ import { createOrderSuccessFlexMessage } from "@/lib/line-flex";
 import { pushLineMessage } from "@/lib/line-messaging";
 import { parsePositiveCm, validateParcelDimensionsCm } from "@/lib/parcel-dimensions";
 import { requireLineSession } from "@/lib/require-user";
-import { getSendAccessBlockForUser, sendAccessBlockedResponse } from "@/lib/send-access-block";
 import { createFlexToken } from "@/lib/flex-token";
 import { resolvePublicBaseUrl } from "@/lib/public-base-url";
 
@@ -28,6 +27,7 @@ type CreateBody = {
   heightCm?: string;
   parcelType?: string;
   note?: string;
+  referenceId?: string;
   /** Required: raw JSON from Smartpost addItem after HTTP 201 / statuscode 201. */
   smartpostAddItemResponse: unknown;
 };
@@ -43,9 +43,6 @@ export async function POST(request: Request) {
   try {
     const session = await requireLineSession();
 
-    const sendBlock = await getSendAccessBlockForUser(session.userId);
-    if (sendBlock.blocked) return sendAccessBlockedResponse();
-
     const body = (await request.json()) as CreateBody;
 
     const senderId = body.senderId?.trim();
@@ -54,6 +51,11 @@ export async function POST(request: Request) {
     const shippingMode = body.shippingMode === "pickup" ? "pickup" : "branch";
     const autoPrint = Boolean(body.autoPrint);
     const note = sanitizeParcelNote(body.note);
+    const requestReferenceId = /^[A-Za-z0-9:_-]{3,120}$/.test(
+      body.referenceId?.trim() || "",
+    )
+      ? body.referenceId!.trim()
+      : "";
 
     const weightGram = toPositiveNumber(body.weightGram);
     const widthCm = parsePositiveCm(body.widthCm);
@@ -219,7 +221,7 @@ export async function POST(request: Request) {
           orderStatus: f.orderStatus || null,
           items: f.items || null,
           insuranceRatePrice: f.insuranceRatePrice || null,
-          referenceId: f.referenceId || null,
+          referenceId: f.referenceId || requestReferenceId || null,
         });
 
         return row;

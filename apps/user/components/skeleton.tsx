@@ -73,7 +73,7 @@ type PageShellSkeletonProps = {
 export function PageShellSkeleton({ rows = 4, renderRow, topCard }: PageShellSkeletonProps) {
   return (
     <main className="min-h-screen bg-slate-100 pb-28">
-      <section className="bg-[#2726F5] px-6 pb-14 pt-10 text-white">
+      <section className="bg-[#0802b8] px-6 pb-14 pt-10 text-white">
         <div className="mx-auto w-full max-w-lg">
           <Skeleton className="h-8 w-40 bg-white/30" />
           <Skeleton className="mt-2 h-4 w-56 bg-white/20" />

@@ -8,7 +8,6 @@ import { BottomNav, BottomNavSpacer } from "./bottom-nav";
 import { LoggedInShell } from "./logged-in-shell";
 import { NavigationFeedback } from "./navigation-feedback";
 import { RoutePrefetcher } from "./route-prefetcher";
-import { UserHeader } from "./user-header";
 
 export const metadata: Metadata = {
   title: "Quickload",
@@ -18,7 +17,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#2726F5",
+  themeColor: "#0802b8",
   colorScheme: "light",
   width: "device-width",
   initialScale: 1,
@@ -38,7 +37,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <NavigationFeedback />
         {user.loggedIn ? (
           <LoggedInShell>
-            <UserHeader displayName={user.displayName} pictureUrl={user.pictureUrl} />
             <div>
               {children}
               <BottomNavSpacer />

@@ -199,7 +199,7 @@ export default function EntryPage() {
   const isError = status === "error";
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#2726F5] to-[#5655ff] px-6 py-12 text-white">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#0802b8] to-[#2e28d4] px-6 py-12 text-white">
       <div className="flex flex-col items-center text-center">
         <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
           {/* eslint-disable-next-line @next/next/no-img-element -- local asset, no optimization needed here */}
@@ -235,7 +235,7 @@ export default function EntryPage() {
             <button
               type="button"
               onClick={() => setAttempt((n) => n + 1)}
-              className="mt-2 rounded-xl bg-white px-5 py-2 text-sm font-medium text-[#2726F5] shadow-sm transition hover:bg-white/90"
+              className="mt-2 rounded-xl bg-white px-5 py-2 text-sm font-medium text-[#0802b8] shadow-sm transition hover:bg-white/90"
             >
               ลองใหม่อีกครั้ง
             </button>

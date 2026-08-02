@@ -159,7 +159,7 @@ export function createOrderSuccessFlexMessage(input: OrderSuccessFlexInput): {
     footerButtons.push({
       type: "button",
       style: "primary",
-      color: "#2726F5",
+      color: "#0802b8",
       action: {
         type: "uri",
         label: "ติดตามพัสดุ",
@@ -273,7 +273,7 @@ export function createPaymentDueFlexMessage(input: PaymentDueFlexInput): {
                 type: "text",
                 text: `฿ ${amount}`,
                 size: "lg",
-                color: "#2726F5",
+                color: "#0802b8",
                 weight: "bold",
                 align: "end",
                 flex: 5,
@@ -291,7 +291,7 @@ export function createPaymentDueFlexMessage(input: PaymentDueFlexInput): {
           {
             type: "button",
             style: "primary",
-            color: "#2726F5",
+            color: "#0802b8",
             action: {
               type: "uri",
               label: "ชำระเงิน",
@@ -396,7 +396,7 @@ export function createPaymentQrFlexMessage(input: PaymentQrFlexInput): {
               type: "text",
               text: `฿ ${amount}`,
               size: "lg",
-              color: "#2726F5",
+              color: "#0802b8",
               weight: "bold",
               align: "end",
               flex: 5,
@@ -426,7 +426,7 @@ export function createPaymentQrFlexMessage(input: PaymentQrFlexInput): {
         {
           type: "button",
           style: "primary",
-          color: "#2726F5",
+          color: "#0802b8",
           action: {
             type: "uri",
             label: "เปิดหน้าชำระเงิน",
@@ -867,7 +867,7 @@ function createPaymentReminderFlexMessage(
                 type: "text",
                 text: `฿ ${amount}`,
                 size: "lg",
-                color: "#2726F5",
+                color: "#0802b8",
                 weight: "bold",
                 align: "end",
                 flex: 5,
@@ -885,7 +885,7 @@ function createPaymentReminderFlexMessage(
           {
             type: "button",
             style: "primary",
-            color: "#2726F5",
+            color: "#0802b8",
             action: { type: "uri", label: "ชำระเงิน", uri: input.payUrl },
           },
         ],

@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { getDb, recipientAddresses, senderAddresses } from "@quickload/shared/db";
+import { getDb, orders, recipientAddresses, senderAddresses } from "@quickload/shared/db";
 import { recordSystemErrorEvent } from "@quickload/shared/internal-events";
 import { NextResponse } from "next/server";
 import { requireLineSession } from "@/lib/require-user";
@@ -47,14 +47,76 @@ function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
 }
 
+function replayStoredSmartpostOrder(order: typeof orders.$inferSelect) {
+  return {
+    statuscode: "201",
+    message: order.message || "Create successful",
+    data: {
+      smartpostTrackingcode: order.smartpostTrackingcode || "",
+      barcode: order.barcode || "",
+      serviceType: order.serviceType || "",
+      productInbox: order.productInbox || "",
+      productWeight: order.productWeight || "",
+      productPrice: order.productPrice || "",
+      shipperName: order.shipperName || "",
+      shipperAddress: order.shipperAddress || "",
+      shipperSubdistrict: order.shipperSubdistrict || "",
+      shipperDistrict: order.shipperDistrict || "",
+      shipperProvince: order.shipperProvince || "",
+      shipperZipcode: order.shipperZipcode || "",
+      shipperEmail: order.shipperEmail || "",
+      shipperMobile: order.shipperMobile || "",
+      cusName: order.cusName || "",
+      cusAdd: order.cusAdd || "",
+      cusSub: order.cusSub || "",
+      cusAmp: order.cusAmp || "",
+      cusProv: order.cusProv || "",
+      cusZipcode: order.cusZipcode || "",
+      cusTel: order.cusTel || "",
+      cusEmail: order.cusEmail || "",
+      customerCode: order.customerCode || "",
+      cost: order.cost || "",
+      finalcost: order.finalcost || "",
+      orderStatus: order.orderStatus || "",
+      items: order.items || "",
+      insuranceRatePrice: order.insuranceRatePrice || "",
+      referenceId: order.referenceId || "",
+    },
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const session = await requireLineSession();
+    const body = (await request.json()) as AddItemBody;
+    const referenceId = normalizeSmartpostReferenceId(body.referenceId);
+    const db = getDb();
+
+    // A browser can lose the success response after the order is already
+    // committed. Replay that exact order before access checks or another
+    // provider call so pressing confirm again cannot create a second parcel.
+    if (referenceId) {
+      const [existingOrder] = await db
+        .select()
+        .from(orders)
+        .where(
+          and(
+            eq(orders.userId, session.userId),
+            eq(orders.referenceId, referenceId),
+          ),
+        )
+        .limit(1);
+      if (existingOrder) {
+        return NextResponse.json({
+          ok: true,
+          data: replayStoredSmartpostOrder(existingOrder),
+          replayed: true,
+        });
+      }
+    }
 
     const sendBlock = await getSendAccessBlockForUser(session.userId);
     if (sendBlock.blocked) return sendAccessBlockedResponse();
-
-    const body = (await request.json()) as AddItemBody;
 
     const senderId = body.senderId?.trim();
     const recipientId = body.recipientId?.trim();
@@ -62,7 +124,6 @@ export async function POST(request: Request) {
     const weightGram = toPositiveNumber(body.weightGram);
     const insuredValue = Math.max(0, Number(body.insuredValue || 0));
     const insuranceRatePrice = body.extraInsurance ? insuredValue : 0;
-    const referenceId = normalizeSmartpostReferenceId(body.referenceId);
 
     if (!senderId || !recipientId || !weightGram) {
       return NextResponse.json({ ok: false, error: "senderId, recipientId and weightGram are required" }, { status: 400 });
@@ -80,7 +141,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const db = getDb();
     const [sender] = await db
       .select()
       .from(senderAddresses)

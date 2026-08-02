@@ -9,7 +9,7 @@ export function AppFooter() {
     >
       <Link
         href="/help"
-        className="mb-4 inline-flex min-h-11 items-center justify-center rounded-lg px-3 text-sm font-medium text-[#2726F5] underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-[#2726F5] focus:ring-offset-2"
+        className="mb-4 inline-flex min-h-11 items-center justify-center rounded-lg px-3 text-sm font-medium text-[#0802b8] underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-[#0802b8] focus:ring-offset-2"
       >
         ช่วยเหลือ
       </Link>

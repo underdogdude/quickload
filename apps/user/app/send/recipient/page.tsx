@@ -201,13 +201,13 @@ function RecipientFormInner() {
   }
 
   const inputClass =
-    "mt-1 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none placeholder:text-slate-400 focus:border-[#2726F5] focus:ring-1 focus:ring-[#2726F5]";
+    "mt-1 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none placeholder:text-slate-400 focus:border-[#0802b8] focus:ring-1 focus:ring-[#0802b8]";
   const title = editId ? recipientCopy.titleEdit : recipientCopy.title;
 
   if (loadingRecord) {
     return (
       <main className="min-h-screen bg-slate-100 pb-8">
-        <section className="bg-[#2726F5] px-6 pb-16 pt-10 text-white">
+        <section className="bg-[#0802b8] px-6 pb-16 pt-10 text-white">
           <div className="mx-auto w-full max-w-lg">
             <h1 className="text-3xl font-bold">{title}</h1>
           </div>
@@ -221,7 +221,7 @@ function RecipientFormInner() {
 
   return (
     <main className="min-h-screen bg-slate-100 pb-8">
-      <section className="bg-[#2726F5] px-6 pb-20 pt-8 text-white">
+      <section className="bg-[#0802b8] px-6 pb-20 pt-8 text-white">
         <div className="mx-auto w-full max-w-lg">
           <Link
             href={backHref}
@@ -325,7 +325,7 @@ function RecipientFormInner() {
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex flex-1 items-center justify-center rounded-full bg-[#2726F5] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f1ed0] disabled:opacity-60 sm:flex-none"
+              className="inline-flex flex-1 items-center justify-center rounded-full bg-[#0802b8] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#060190] disabled:opacity-60 sm:flex-none"
             >
               {saving ? recipientCopy.saving : recipientCopy.save}
             </button>

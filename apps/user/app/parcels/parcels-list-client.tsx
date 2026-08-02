@@ -432,7 +432,7 @@ export function ParcelsListClient({
               onClick={() => setActiveStatus("all")}
               className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${
                 activeStatus === "all"
-                  ? "bg-[#2726F5] text-white"
+                  ? "bg-[#0802b8] text-white"
                   : "border border-slate-300 bg-white text-slate-700"
               }`}
             >
@@ -445,7 +445,7 @@ export function ParcelsListClient({
                 onClick={() => setActiveStatus(status)}
                 className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${
                   activeStatus === status
-                    ? "bg-[#2726F5] text-white"
+                    ? "bg-[#0802b8] text-white"
                     : "border border-slate-300 bg-white text-slate-700"
                 }`}
               >
@@ -560,7 +560,7 @@ export function ParcelsListClient({
                   e.stopPropagation();
                   toggleParcelExpanded(p.id);
                 }}
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-200 text-slate-400 outline-none transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-[#2726F5]/40"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-200 text-slate-400 outline-none transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-[#0802b8]/40"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -599,7 +599,7 @@ export function ParcelsListClient({
               <Link
                 href={`/pay/${p.id}`}
                 onClick={(e) => e.stopPropagation()}
-                className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md bg-[#2726F5] px-4 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-indigo-700 sm:flex-none sm:max-w-[calc(100%-7rem)]"
+                className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md bg-[#0802b8] px-4 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-indigo-700 sm:flex-none sm:max-w-[calc(100%-7rem)]"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" className="shrink-0" aria-hidden>
                   <path d="M3 7h18v10H3V7Zm0 4h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -677,7 +677,7 @@ export function ParcelsListClient({
               />
               <Link
                 href={`/parcels/${p.id}`}
-                className="mt-3 inline-flex text-xs font-medium underline text-[#2726F5] hover:underline"
+                className="mt-3 inline-flex text-xs font-medium underline text-[#0802b8] hover:underline"
               >
                 เปิดหน้ารายละเอียดพัสดุ
               </Link>
@@ -705,7 +705,7 @@ export function ParcelsListClient({
             <>
               <p className="text-sm font-medium text-slate-700">ยังไม่มีพัสดุ</p>
               <p className="mt-1 text-xs text-slate-500">เริ่มสร้างรายการส่งพัสดุใหม่ได้ที่หน้าส่งพัสดุ</p>
-              <SendLink className="mt-3 inline-flex rounded-full bg-[#2726F5] px-4 py-2 text-xs font-medium text-white">
+              <SendLink className="mt-3 inline-flex rounded-full bg-[#0802b8] px-4 py-2 text-xs font-medium text-white">
                 ไปหน้าส่งพัสดุ
               </SendLink>
             </>
@@ -757,7 +757,7 @@ export function ParcelsListClient({
             <p className="mt-3 text-xs text-slate-600">เลขพัสดุ: {placeholderModal.parcelCode || "—"}</p>
             <button
               type="button"
-              className="mt-4 w-full rounded-lg bg-[#2726F5] px-4 py-2 text-sm font-medium text-white"
+              className="mt-4 w-full rounded-lg bg-[#0802b8] px-4 py-2 text-sm font-medium text-white"
               onClick={() => setPlaceholderModal(null)}
             >
               ปิด

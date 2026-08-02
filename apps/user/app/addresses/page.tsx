@@ -50,7 +50,16 @@ function buildSendBaseHref(params: Record<string, string>): string {
   return q ? `/send?${q}` : "/send";
 }
 
-function buildRowHref(id: string, rowTab: TabKey, params: Record<string, string>, fromSend: boolean): string {
+function buildRowHref(
+  id: string,
+  rowTab: TabKey,
+  params: Record<string, string>,
+  fromSend: boolean,
+  fromPickup: boolean,
+): string {
+  if (fromPickup && rowTab === "sender") {
+    return `/pickup?senderId=${encodeURIComponent(id)}`;
+  }
   if (!fromSend) {
     return buildAddressFormHref(rowTab, { id, fromAddresses: true, tab: rowTab });
   }
@@ -114,7 +123,9 @@ export default async function AddressBookPage({ searchParams }: PageProps) {
     redirect("/entry");
   }
 
-  const tab: TabKey = asString(searchParams.tab) === "recipient" ? "recipient" : "sender";
+  const fromPickup = asString(searchParams.from) === "pickup";
+  const tab: TabKey =
+    !fromPickup && asString(searchParams.tab) === "recipient" ? "recipient" : "sender";
   const fromSend = asString(searchParams.from) === "send";
 
   const passthrough: Record<string, string> = {
@@ -140,18 +151,28 @@ export default async function AddressBookPage({ searchParams }: PageProps) {
   const emptyText = tab === "sender" ? "ยังไม่มีข้อมูลผู้ส่ง" : "ยังไม่มีข้อมูลผู้รับ";
   // When the user came from /send (address-book picker), a new address should
   // also return to /send after save — not back to /addresses.
-  const addHref = fromSend
-    ? (tab === "sender" ? "/send/sender" : "/send/recipient")
-    : buildAddressFormHref(tab, { fromAddresses: true, tab });
+  const addHref = fromPickup
+    ? "/send/sender?from=pickup"
+    : fromSend
+      ? (tab === "sender" ? "/send/sender" : "/send/recipient")
+      : buildAddressFormHref(tab, { fromAddresses: true, tab });
   const selectedId = tab === "sender" ? selectedSenderId : selectedRecipientId;
 
   return (
     <main className="min-h-screen bg-slate-100 pb-24">
       <AddressSavedToast />
-      <section className="bg-[#2726F5] px-6 pb-6 pt-8 text-white">
+      <section className="bg-[#0802b8] px-6 pb-6 pt-8 text-white">
         <div className="mx-auto w-full max-w-lg">
           <Link
-            href={fromSend ? sendBaseHref : "/"}
+            href={
+              fromPickup
+                ? selectedSenderId
+                  ? `/pickup?senderId=${encodeURIComponent(selectedSenderId)}`
+                  : "/pickup"
+                : fromSend
+                  ? sendBaseHref
+                  : "/"
+            }
             className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white/95"
           >
             <span aria-hidden>←</span>
@@ -164,26 +185,28 @@ export default async function AddressBookPage({ searchParams }: PageProps) {
 
       <section className="px-6 py-4">
         <div className="mx-auto w-full max-w-lg space-y-4">
-          <div className="rounded-full bg-white p-1.5 shadow-sm ring-1 ring-slate-200">
-            <div className="grid grid-cols-2 gap-1">
-              <Link
-                href={buildTabHref("sender", searchParams)}
-                className={`rounded-full px-3 py-2 text-center text-md font-medium transition ${
-                  tab === "sender" ? "bg-[#2726F5] text-white" : "text-slate-500"
-                }`}
-              >
-                ผู้ส่ง
-              </Link>
-              <Link
-                href={buildTabHref("recipient", searchParams)}
-                className={`rounded-full px-3 py-2 text-center text-md font-medium transition ${
-                  tab === "recipient" ? "bg-[#2726F5] text-white" : "text-slate-500"
-                }`}
-              >
-                ผู้รับ
-              </Link>
+          {!fromPickup ? (
+            <div className="rounded-full bg-white p-1.5 shadow-sm ring-1 ring-slate-200">
+              <div className="grid grid-cols-2 gap-1">
+                <Link
+                  href={buildTabHref("sender", searchParams)}
+                  className={`rounded-full px-3 py-2 text-center text-md font-medium transition ${
+                    tab === "sender" ? "bg-[#0802b8] text-white" : "text-slate-500"
+                  }`}
+                >
+                  ผู้ส่ง
+                </Link>
+                <Link
+                  href={buildTabHref("recipient", searchParams)}
+                  className={`rounded-full px-3 py-2 text-center text-md font-medium transition ${
+                    tab === "recipient" ? "bg-[#0802b8] text-white" : "text-slate-500"
+                  }`}
+                >
+                  ผู้รับ
+                </Link>
+              </div>
             </div>
-          </div>
+          ) : null}
 
           {error ? (
             <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">
@@ -196,7 +219,7 @@ export default async function AddressBookPage({ searchParams }: PageProps) {
               <p className="text-sm text-slate-600">{emptyText}</p>
               <Link
                 href={addHref}
-                className="mt-3 inline-flex rounded-full bg-[#2726F5] px-4 py-2 text-xs font-medium text-white"
+                className="mt-3 inline-flex rounded-full bg-[#0802b8] px-4 py-2 text-xs font-medium text-white"
               >
                 เพิ่มข้อมูล
               </Link>
@@ -205,7 +228,7 @@ export default async function AddressBookPage({ searchParams }: PageProps) {
             <div className="space-y-3">
               {activeRows.map((row) => {
                 const selected = selectedId === row.id;
-                const href = buildRowHref(row.id, tab, passthrough, fromSend);
+                const href = buildRowHref(row.id, tab, passthrough, fromSend, fromPickup);
                 return (
                   <Link
                     key={row.id}
@@ -227,8 +250,8 @@ export default async function AddressBookPage({ searchParams }: PageProps) {
                         </span>
                       ) : null}
                     </div>
-                    <p className="mt-2 text-xs font-medium text-[#2726F5]">
-                      {fromSend ? "เลือกที่อยู่นี้" : "แก้ไขข้อมูล"}
+                    <p className="mt-2 text-xs font-medium text-[#0802b8]">
+                      {fromSend || fromPickup ? "เลือกที่อยู่นี้" : "แก้ไขข้อมูล"}
                     </p>
                   </Link>
                 );

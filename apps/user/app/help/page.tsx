@@ -93,7 +93,7 @@ function FaqAccordion() {
 export default function HelpPage() {
   return (
     <main className="min-h-screen bg-slate-100 pb-28">
-      <section className="bg-[#2726F5] px-6 pb-14 pt-10 text-white">
+      <section className="bg-[#0802b8] px-6 pb-14 pt-10 text-white">
         <div className="mx-auto w-full max-w-lg">
           <Link
             href="/"
@@ -118,12 +118,12 @@ export default function HelpPage() {
                 href={CUSTOMER_SERVICE_LINE_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-medium text-[#2726F5] underline-offset-2 hover:underline"
+                className="font-medium text-[#0802b8] underline-offset-2 hover:underline"
               >
                 LINE QUICKLOAD
               </a>{" "}
               ไลน์นี้ได้เลย หรือโทร{" "}
-              <a href={`tel:${CUSTOMER_SERVICE_PHONE_TEL}`} className="font-medium text-[#2726F5] underline-offset-2 hover:underline">
+              <a href={`tel:${CUSTOMER_SERVICE_PHONE_TEL}`} className="font-medium text-[#0802b8] underline-offset-2 hover:underline">
                 {CUSTOMER_SERVICE_PHONE}
               </a>
             </p>
@@ -164,7 +164,7 @@ export default function HelpPage() {
 
           <p className="px-1 text-center text-xs text-slate-500">
             ดูขั้นตอนการใช้งานเพิ่มเติมได้ที่{" "}
-            <Link href="/manual" className="font-medium text-[#2726F5] underline-offset-2 hover:underline">
+            <Link href="/manual" className="font-medium text-[#0802b8] underline-offset-2 hover:underline">
               คู่มือการใช้งาน
             </Link>
           </p>

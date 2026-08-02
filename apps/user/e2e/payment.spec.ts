@@ -143,6 +143,18 @@ test("/payment page renders outstanding balance section", async ({ page }) => {
   );
 
   await page.goto("/payment");
+  await expect(page.getByRole("link", { name: "กลับไปหน้าแรก" })).toHaveText("←กลับ");
   await expect(page.getByRole("heading", { name: "ชำระเงิน" })).toBeVisible();
   await expect(page.getByText(/ยอดค้างชำระทั้งหมด/i)).toBeVisible();
+});
+
+test("/parcels page renders the shared back button", async ({ page }) => {
+  await setupE2EPage(page);
+  await loginAsTestUser(page);
+  await mockSendAccessAllowed(page);
+  await mockMe(page, { firstName: "สมชาย", lastName: "ใจดี", phone: "0812345678" });
+
+  await page.goto("/parcels");
+  await expect(page.getByRole("link", { name: "กลับไปหน้าแรก" })).toHaveText("←กลับ");
+  await expect(page.getByRole("heading", { name: "พัสดุของฉัน" })).toBeVisible();
 });

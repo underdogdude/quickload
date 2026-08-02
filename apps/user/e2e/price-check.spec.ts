@@ -69,7 +69,7 @@ test("homepage exposes price check and keeps Help in the footer", async ({ page 
   await setupPriceCheck(page);
   await page.goto("/");
 
-  const priceLink = page.getByRole("link", { name: "เช็กราคา" });
+  const priceLink = page.getByRole("link", { name: "เช็คราคา" });
   await expect(priceLink).toHaveAttribute("href", "/price-check");
   await expect(priceLink.locator("img")).toHaveAttribute("src", "/price-check.png");
   await expect(page.getByRole("link", { name: "ช่วยเหลือ" })).toHaveAttribute("href", "/help");

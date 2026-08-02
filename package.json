@@ -15,6 +15,7 @@
     "db:sender": "pnpm --filter @quickload/shared db:apply:sender",
     "db:recipient": "pnpm --filter @quickload/shared db:apply:recipient",
     "db:apply:payment-stack": "pnpm --filter @quickload/shared db:apply:payment-stack",
+    "db:reset:test-user": "pnpm --filter @quickload/shared db:reset:test-user",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
     "supabase:status": "supabase status",

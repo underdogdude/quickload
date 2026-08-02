@@ -2,135 +2,16 @@
 
 import type { RecipientAddress, SenderAddress } from "@quickload/shared/types";
 import { ReviewOrderSummarySkeleton } from "@/components/skeleton";
+import { createParcelOrder } from "@/lib/parcel-order-client";
 import { validateParcelDimensionsFromStrings, validateWeightGram } from "@/lib/parcel-dimensions";
+import {
+  calculateParcelInsuranceFee,
+  calculateRemoteAreaSurcharge,
+} from "@/lib/parcel-registration";
 import { isValidThaiPhone } from "@/lib/thai-phone";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
-
-const ZIPCODE_SURCHARGE_LIST = new Set([
-  "20120",
-  "23170",
-  "81150",
-  "81210",
-  "82160",
-  "83000",
-  "83100",
-  "83110",
-  "83120",
-  "83130",
-  "83150",
-  "84140",
-  "84280",
-  "84310",
-  "84320",
-  "84330",
-  "84360",
-  "57170",
-  "57180",
-  "57260",
-  "58000",
-  "58110",
-  "58120",
-  "58130",
-  "58140",
-  "58150",
-  "63150",
-  "63170",
-  "71180",
-  "71240",
-  "94000",
-  "94110",
-  "94120",
-  "94130",
-  "94140",
-  "94150",
-  "94160",
-  "94170",
-  "94180",
-  "94190",
-  "94220",
-  "94230",
-  "95000",
-  "95110",
-  "95120",
-  "95130",
-  "95140",
-  "95150",
-  "95160",
-  "95170",
-  "96000",
-  "96110",
-  "96120",
-  "96130",
-  "96140",
-  "96150",
-  "96160",
-  "96170",
-  "96180",
-  "96190",
-  "96210",
-  "96220",
-  "83001",
-  "94001",
-  "95001",
-  "50250",
-  "50310",
-  "50350",
-  "55130",
-  "55220",
-  "57310",
-  "57340",
-  "83111",
-]);
-
-const SMARTPOST_REFERENCE_STORAGE_PREFIX = "quickload:smartpost-reference:";
-
-function buildSmartpostReferenceStorageKey(input: {
-  senderId: string;
-  recipientId: string;
-  parcelType: string;
-  weightGram: string;
-  insuredValue: string;
-  extraInsurance: boolean;
-}) {
-  return `${SMARTPOST_REFERENCE_STORAGE_PREFIX}${[
-    input.senderId,
-    input.recipientId,
-    input.parcelType.trim(),
-    input.weightGram,
-    input.insuredValue || "0",
-    input.extraInsurance ? "1" : "0",
-  ].join("|")}`;
-}
-
-function createSmartpostReferenceId() {
-  const random =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  return `QL-${random}`;
-}
-
-function getSmartpostReferenceId(storageKey: string) {
-  try {
-    const existing = sessionStorage.getItem(storageKey);
-    if (existing) return existing;
-    const next = createSmartpostReferenceId();
-    sessionStorage.setItem(storageKey, next);
-    return next;
-  } catch {
-    return createSmartpostReferenceId();
-  }
-}
-
-function clearSmartpostReferenceId(storageKey: string) {
-  try {
-    sessionStorage.removeItem(storageKey);
-  } catch {
-    // Ignore unavailable sessionStorage.
-  }
-}
 
 function formatAddress(address: SenderAddress | RecipientAddress) {
   return `${address.addressLine}, ${address.tambon}, ${address.amphoe}, ${address.province}, ${address.zipcode}`;
@@ -148,6 +29,7 @@ function ReviewInner() {
   const searchParams = useSearchParams();
 
   const senderId = searchParams.get("senderId") ?? "";
+  const orderAttemptId = searchParams.get("orderAttemptId") ?? "";
   const recipientId = searchParams.get("recipientId") ?? "";
   const shippingMode = searchParams.get("shippingMode") === "pickup" ? "pickup" : "branch";
   const autoPrint = searchParams.get("autoPrint") === "1";
@@ -172,21 +54,15 @@ function ReviewInner() {
   const [baseEstimatedPrice, setBaseEstimatedPrice] = useState(0);
   const [orderCreatedAt] = useState(() => new Date());
 
-  function calculateInsuranceFee(productPrice: number) {
-    if (productPrice <= 2000) return 0;
-    return Math.ceil(productPrice / 5000) * 10 + 25;
-  }
-
   const insuranceFee = useMemo(() => {
     if (!extraInsurance) return 0;
     const price = Number(insuredValue || 0);
-    if (!Number.isFinite(price) || price <= 0) return 0;
-    return calculateInsuranceFee(price);
+    return calculateParcelInsuranceFee(price);
   }, [extraInsurance, insuredValue]);
   const zipcodeSurcharge = useMemo(() => {
     const zip = recipient?.zipcode?.trim();
     if (!zip) return 0;
-    return ZIPCODE_SURCHARGE_LIST.has(zip) ? 20 : 0;
+    return calculateRemoteAreaSurcharge(zip);
   }, [recipient?.zipcode]);
 
   const phoneBlockMessage = useMemo(() => {
@@ -295,109 +171,44 @@ function ReviewInner() {
     setSubmitStep(null);
 
     try {
-      // ── Step 1: Register with Smartpost (external API — 30 s timeout) ──────────
-      setSubmitStep("smartpost");
-      const smartpostReferenceStorageKey = buildSmartpostReferenceStorageKey({
-        senderId,
-        recipientId,
-        parcelType,
-        weightGram,
-        insuredValue,
-        extraInsurance,
-      });
-      const smartpostReferenceId = getSmartpostReferenceId(smartpostReferenceStorageKey);
-      const smartpostController = new AbortController();
-      const smartpostTimer = setTimeout(() => smartpostController.abort(), 30_000);
-      let addItemJson: { ok?: boolean; error?: string; data?: unknown };
-      try {
-        const addItemRes = await fetch("/api/smartpost/add-item", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            senderId,
-            recipientId,
-            parcelType,
-            weightGram,
-            insuredValue,
-            extraInsurance,
-            referenceId: smartpostReferenceId,
-          }),
-          signal: smartpostController.signal,
-        });
-        clearTimeout(smartpostTimer);
-        addItemJson = (await addItemRes.json()) as { ok?: boolean; error?: string; data?: unknown };
-        if (!addItemRes.ok || !addItemJson.ok) {
-          setError(addItemJson.error ?? "ส่งคำสั่งซื้อไป Smartpost ไม่สำเร็จ");
-          return;
-        }
-      } catch (e) {
-        clearTimeout(smartpostTimer);
-        if (e instanceof Error && e.name === "AbortError") {
-          setError("ระบบ Smartpost ไม่ตอบสนอง (timeout 30 วิ) กรุณาลองใหม่อีกครั้ง");
-        } else {
-          setError("เชื่อมต่อ Smartpost ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
-        }
-        return;
-      }
-
-      // ── Step 2: Save order to database (20 s timeout) ─────────────────────────
-      setSubmitStep("draft");
-      const draftController = new AbortController();
-      const draftTimer = setTimeout(() => draftController.abort(), 20_000);
-      let parcelId: string;
-      try {
-        const res = await fetch("/api/parcels/draft", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            senderId,
-            recipientId,
-            shippingMode,
-            autoPrint,
-            weightGram,
-            widthCm,
-            lengthCm,
-            heightCm,
-            parcelType,
-            note,
-            smartpostAddItemResponse: addItemJson.data,
-          }),
-          signal: draftController.signal,
-        });
-        clearTimeout(draftTimer);
-        const json = (await res.json()) as {
-          ok?: boolean;
-          data?: { id?: string; trackingId?: string };
-          error?: string;
-        };
-        if (!res.ok || !json.ok || !json.data?.id) {
-          setError(json.error ?? "สร้างออเดอร์ไม่สำเร็จ");
-          return;
-        }
-        parcelId = json.data.id;
-        clearSmartpostReferenceId(smartpostReferenceStorageKey);
-      } catch (e) {
-        clearTimeout(draftTimer);
-        if (e instanceof Error && e.name === "AbortError") {
-          setError("เซิร์ฟเวอร์ไม่ตอบสนอง (timeout 20 วิ) กรุณาลองใหม่อีกครั้ง");
-        } else {
-          setError("สร้างออเดอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
-        }
-        return;
-      }
+      const created = await createParcelOrder(
+        {
+          senderId,
+          recipientId,
+          shippingMode,
+          autoPrint,
+          parcelType,
+          weightGram,
+          widthCm,
+          lengthCm,
+          heightCm,
+          note,
+          insuredValue,
+          extraInsurance,
+        },
+        {
+          onProgress: (step) =>
+            setSubmitStep(step === "registering" ? "smartpost" : "draft"),
+          attemptId: orderAttemptId || undefined,
+        },
+      );
 
       // ── Step 3: Navigate to parcel detail ──────────────────────────────────────
       // Store the ID first so a "ดูออเดอร์" fallback appears if navigation fails
       // on a slow Android connection.
-      setCreatedParcelId(parcelId);
+      setCreatedParcelId(created.id);
       setSubmitStep("navigating");
       setRedirecting(true);
       // Hard nav: on Android LINE in-app browser, soft nav can fail to load the
       // new page chunks when the connection is slow. A full page load guarantees
       // the server renders the parcel page fresh with the updated session.
-      window.location.replace(`/parcels/${parcelId}`);
-    } catch {
-      setError("เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่อีกครั้ง");
+      window.location.replace(`/parcels/${created.id}`);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่อีกครั้ง",
+      );
     } finally {
       // Only clear submitting if we didn't reach the navigation step.
       if (!redirecting) {
@@ -409,7 +220,7 @@ function ReviewInner() {
 
   return (
     <main className="min-h-screen bg-slate-100 pb-36">
-      <section className="bg-[#2726F5] px-6 pb-14 pt-10 text-white">
+      <section className="bg-[#0802b8] px-6 pb-14 pt-10 text-white">
         <div className="mx-auto w-full max-w-lg">
           <Link
             href={`/send?${searchParams.toString()}`}
@@ -523,7 +334,7 @@ function ReviewInner() {
           {createdParcelId && !redirecting ? (
             <a
               href={`/parcels/${createdParcelId}`}
-              className="flex w-full items-center justify-center rounded-md border border-[#2726F5] bg-white px-6 py-3 text-base font-semibold text-[#2726F5]"
+              className="flex w-full items-center justify-center rounded-md border border-[#0802b8] bg-white px-6 py-3 text-base font-semibold text-[#0802b8]"
             >
               ดูออเดอร์ที่สร้างแล้ว →
             </a>
@@ -532,7 +343,7 @@ function ReviewInner() {
             type="button"
             disabled={loading || submitting || redirecting || !sender || !recipient || Boolean(phoneBlockMessage)}
             onClick={onConfirmCreateOrder}
-            className="w-full rounded-md bg-[#2726F5] px-6 py-3 text-base font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)] disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
+            className="w-full rounded-md bg-[#0802b8] px-6 py-3 text-base font-semibold text-white shadow-[0_6px_14px_rgba(8,2,184,0.35)] disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
           >
             {submitStep === "smartpost"
               ? "กำลังลงทะเบียน"
@@ -551,7 +362,7 @@ function ReviewInner() {
 function ReviewPageShell({ children }: { children: ReactNode }) {
   return (
     <main className="min-h-screen bg-slate-100 pb-36">
-      <section className="bg-[#2726F5] px-6 pb-14 pt-10 text-white">
+      <section className="bg-[#0802b8] px-6 pb-14 pt-10 text-white">
         <div className="mx-auto w-full max-w-lg">
           <div className="mb-3 h-8 w-24 animate-pulse rounded-full bg-white/20" />
           <div className="h-9 w-48 animate-pulse rounded-md bg-white/20" />

@@ -2,6 +2,14 @@ export type ParcelStatus = "registered" | "in_transit" | "delivered" | "failed";
 export type ParcelSize = "S" | "M" | "L" | "XL";
 export type NotificationType = "pickup_confirmed" | "pickup_reminder" | "parcel_status";
 export type AdminRole = "staff" | "superadmin";
+export type IshipPickupStatus =
+  | "submitting"
+  | "requested"
+  | "assigned"
+  | "picked_up"
+  | "cancelled"
+  | "failed"
+  | "unknown";
 
 export interface User {
   id: string;
@@ -48,6 +56,27 @@ export interface PickupSlot {
   bookedCount: number;
   isActive: boolean;
   createdAt: string;
+}
+
+export interface IshipPickupRequest {
+  id: string;
+  userId: string;
+  inputSource: "manual" | "system";
+  contactName: string;
+  contactPhone: string;
+  pickupAddressFull: string;
+  parcelCount: number;
+  heaviestWeightKg: string;
+  remark: string;
+  status: IshipPickupStatus;
+  ticketPickupId: string | null;
+  providerMessage: string | null;
+  staffInfoName: string | null;
+  staffInfoPhone: string | null;
+  timeoutAtText: string | null;
+  ticketMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface NotificationLogEntry {

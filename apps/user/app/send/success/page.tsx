@@ -204,7 +204,7 @@ function SuccessInner() {
 
   return (
     <main className="min-h-screen bg-slate-100 pb-40 print:pb-0">
-      <section className="relative bg-[#2726F5] px-5 pb-24 pt-8 text-white print:hidden">
+      <section className="relative bg-[#0802b8] px-5 pb-24 pt-8 text-white print:hidden">
         <Link
           href="/"
           aria-label="กลับหน้าหลัก"
@@ -318,18 +318,18 @@ function SuccessInner() {
           {fromPayment && parcelId ? (
             <Link
               href={`/parcels/${encodeURIComponent(parcelId)}`}
-              className="flex-1 rounded-full bg-[#2726F5] py-3 text-center text-sm font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)]"
+              className="flex-1 rounded-full bg-[#0802b8] py-3 text-center text-sm font-semibold text-white shadow-[0_6px_14px_rgba(8,2,184,0.35)]"
             >
               ติดตามพัสดุ
             </Link>
           ) : (
-            <SendLink className="flex-1 rounded-full bg-[#2726F5] py-3 text-center text-sm font-semibold text-white shadow-[0_6px_14px_rgba(39,38,245,0.35)]">
+            <SendLink className="flex-1 rounded-full bg-[#0802b8] py-3 text-center text-sm font-semibold text-white shadow-[0_6px_14px_rgba(8,2,184,0.35)]">
               จัดส่งเพิ่มเติม
             </SendLink>
           )}
           <Link
             href="/parcels"
-            className="flex-1 rounded-full border-2 border-[#2726F5] bg-white py-3 text-center text-sm font-semibold text-[#2726F5]"
+            className="flex-1 rounded-full border-2 border-[#0802b8] bg-white py-3 text-center text-sm font-semibold text-[#0802b8]"
           >
             พัสดุของฉัน
           </Link>
