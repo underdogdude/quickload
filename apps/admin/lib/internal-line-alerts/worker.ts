@@ -1,12 +1,23 @@
 import { and, asc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { readBulkMasterMeta } from "@quickload/shared/bulk-payment";
-import { getDb, internalEvents, orders, parcels, payments, users } from "@quickload/shared/db";
+import {
+  getDb,
+  internalEvents,
+  ishipPickupRequestParcels,
+  ishipPickupRequests,
+  orders,
+  parcels,
+  payments,
+  users,
+} from "@quickload/shared/db";
+import type { PickupLifecycleAction } from "@quickload/shared/internal-events";
 import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
 import { sendInternalLineAlert } from "./send";
 import {
   criticalErrorTemplate,
   parcelCreatedTemplate,
   paymentReceivedTemplate,
+  pickupLifecycleTemplate,
   userRegisteredTemplate,
 } from "./templates";
 
@@ -31,6 +42,22 @@ function asBoolean(value: unknown): boolean {
 function asNumber(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+const PICKUP_LIFECYCLE_ACTIONS = new Set<PickupLifecycleAction>([
+  "requested",
+  "request_failed",
+  "request_unknown",
+  "assigned",
+  "picked_up",
+  "cancelled",
+  "cancel_failed",
+  "cancel_sync_failed",
+]);
+
+function asPickupLifecycleAction(value: unknown): PickupLifecycleAction | null {
+  const action = asString(value) as PickupLifecycleAction | null;
+  return action && PICKUP_LIFECYCLE_ACTIONS.has(action) ? action : null;
 }
 
 function nextAttemptAfter(attemptCount: number): Date {
@@ -174,6 +201,75 @@ async function renderParcelCreated(row: InternalEventRow): Promise<string> {
   });
 }
 
+async function renderPickupLifecycle(row: InternalEventRow): Promise<string> {
+  const payload = asObject(row.payload);
+  const pickupRequestId =
+    asString(payload.pickupRequestId) ?? row.eventKey.replace(/^pickup\.lifecycle:/, "").split(":")[0];
+  const action = asPickupLifecycleAction(payload.action);
+  if (!action) {
+    return criticalErrorTemplate({
+      source: "admin.internal-line-alerts",
+      severity: "warning",
+      message: `Invalid pickup lifecycle action: ${String(payload.action ?? "missing")}`,
+      eventKey: row.eventKey,
+    });
+  }
+
+  const [pickup] = await getDb()
+    .select({
+      id: ishipPickupRequests.id,
+      ticketPickupId: ishipPickupRequests.ishipTicketPickupId,
+      contactName: ishipPickupRequests.contactName,
+      contactPhone: ishipPickupRequests.contactPhone,
+      parcelCount: ishipPickupRequests.parcelCount,
+      pickupAddressFull: ishipPickupRequests.pickupAddressFull,
+      staffInfoName: ishipPickupRequests.staffInfoName,
+      staffInfoPhone: ishipPickupRequests.staffInfoPhone,
+      timeoutAtText: ishipPickupRequests.timeoutAtText,
+      ticketMessage: ishipPickupRequests.ticketMessage,
+      providerMessage: ishipPickupRequests.providerMessage,
+      failureCode: ishipPickupRequests.failureCode,
+      failureMessage: ishipPickupRequests.failureMessage,
+    })
+    .from(ishipPickupRequests)
+    .where(eq(ishipPickupRequests.id, pickupRequestId))
+    .limit(1);
+
+  const pickupParcels = pickup
+    ? await getDb()
+        .select({
+          trackingCode: ishipPickupRequestParcels.trackingCode,
+          barcode: ishipPickupRequestParcels.barcode,
+        })
+        .from(ishipPickupRequestParcels)
+        .where(eq(ishipPickupRequestParcels.pickupRequestId, pickupRequestId))
+    : [];
+
+  const source = asString(payload.source);
+  const normalizedSource =
+    source === "customer" || source === "provider" || source === "quickload" ? source : null;
+
+  return pickupLifecycleTemplate({
+    action,
+    source: normalizedSource,
+    pickupRequestId,
+    ticketPickupId: pickup?.ticketPickupId ?? asString(payload.ticketPickupId),
+    contactName: pickup?.contactName ?? asString(payload.contactName),
+    contactPhone: pickup?.contactPhone ?? asString(payload.contactPhone),
+    parcelCount: pickup?.parcelCount ?? asNumber(payload.parcelCount),
+    trackingCodes: pickupParcels.map((parcel) => parcel.barcode ?? parcel.trackingCode),
+    pickupAddress: pickup?.pickupAddressFull ?? asString(payload.pickupAddress),
+    staffInfoName: pickup?.staffInfoName ?? asString(payload.staffInfoName),
+    staffInfoPhone: pickup?.staffInfoPhone ?? asString(payload.staffInfoPhone),
+    timeoutAtText: pickup?.timeoutAtText ?? asString(payload.timeoutAtText),
+    ticketMessage: pickup?.ticketMessage ?? asString(payload.ticketMessage),
+    providerMessage: asString(payload.providerMessage) ?? pickup?.providerMessage,
+    failureCode: asString(payload.failureCode) ?? pickup?.failureCode,
+    failureMessage: asString(payload.failureMessage) ?? pickup?.failureMessage,
+    occurredAt: row.createdAt,
+  });
+}
+
 async function renderUserRegistered(row: InternalEventRow): Promise<string> {
   const payload = asObject(row.payload);
   const userId = asString(payload.userId) ?? row.eventKey.replace(/^user\.registered:/, "");
@@ -214,6 +310,7 @@ function renderSystemError(row: InternalEventRow): string {
 async function renderEvent(row: InternalEventRow): Promise<string> {
   if (row.type === "payment.received") return renderPaymentReceived(row);
   if (row.type === "parcel.created") return renderParcelCreated(row);
+  if (row.type === "pickup.lifecycle") return renderPickupLifecycle(row);
   if (row.type === "user.registered") return renderUserRegistered(row);
   if (row.type === "system.error") return renderSystemError(row);
   return criticalErrorTemplate({

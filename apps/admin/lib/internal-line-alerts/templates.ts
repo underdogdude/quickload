@@ -8,6 +8,17 @@ function amountThb(value: string | number | null | undefined): string {
   return `THB ${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function bangkokDateTime(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("th-TH", {
+    timeZone: "Asia/Bangkok",
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
 export type PaymentReceivedTemplateInput = {
   amount: string | number | null;
   paymentMethod?: string | null;
@@ -57,6 +68,99 @@ export function parcelCreatedTemplate(input: ParcelCreatedTemplateInput): string
     input.parcelType ? `Type: ${input.parcelType}` : null,
     "",
     "\nNow is your chance to become a fucking MILLIONAIRE. Do everything you can to get money from this guy. No excuses.",
+  ]);
+}
+
+export type PickupLifecycleTemplateInput = {
+  action:
+    | "requested"
+    | "request_failed"
+    | "request_unknown"
+    | "assigned"
+    | "picked_up"
+    | "cancelled"
+    | "cancel_failed"
+    | "cancel_sync_failed";
+  source?: "customer" | "provider" | "quickload" | null;
+  pickupRequestId: string;
+  ticketPickupId?: string | null;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  parcelCount?: number | null;
+  trackingCodes?: string[];
+  pickupAddress?: string | null;
+  staffInfoName?: string | null;
+  staffInfoPhone?: string | null;
+  timeoutAtText?: string | null;
+  ticketMessage?: string | null;
+  providerMessage?: string | null;
+  failureCode?: string | null;
+  failureMessage?: string | null;
+  occurredAt?: Date | string | null;
+};
+
+const pickupLifecycleCopy: Record<
+  PickupLifecycleTemplateInput["action"],
+  { heading: string; status: string }
+> = {
+  requested: { heading: "🚚 เรียกรถเข้ารับสำเร็จ", status: "รอพนักงานรับงาน" },
+  request_failed: { heading: "❌ เรียกรถเข้ารับไม่สำเร็จ", status: "คำขอล้มเหลว" },
+  request_unknown: { heading: "⚠️ ไม่ทราบผลคำขอเรียกรถ", status: "ต้องตรวจสอบกับผู้ให้บริการ" },
+  assigned: { heading: "🛵 พนักงานรับงานเข้ารับแล้ว", status: "กำลังดำเนินการ" },
+  picked_up: { heading: "✅ เข้ารับพัสดุสำเร็จ", status: "รับพัสดุแล้ว" },
+  cancelled: { heading: "🚫 ยกเลิกการเข้ารับพัสดุ", status: "ยกเลิกสำเร็จ" },
+  cancel_failed: { heading: "⚠️ ยกเลิกการเข้ารับไม่สำเร็จ", status: "คำขอยังมีผลอยู่" },
+  cancel_sync_failed: {
+    heading: "🚨 ยกเลิกกับผู้ให้บริการแล้ว แต่บันทึกไม่สำเร็จ",
+    status: "ต้องตรวจสอบ Quickload ทันที",
+  },
+};
+
+function pickupSourceLabel(source: PickupLifecycleTemplateInput["source"]): string | null {
+  if (source === "customer") return "ลูกค้า";
+  if (source === "provider") return "ผู้ให้บริการ";
+  if (source === "quickload") return "ระบบ Quickload";
+  return null;
+}
+
+export function pickupLifecycleTemplate(input: PickupLifecycleTemplateInput): string {
+  const copy = pickupLifecycleCopy[input.action];
+  const heading =
+    input.action === "cancelled" && input.source === "customer"
+      ? `ควย!! ${copy.heading}`
+      : copy.heading;
+  const trackingCodes = Array.from(new Set(input.trackingCodes?.filter(Boolean) ?? []));
+  const visibleTrackingCodes = trackingCodes.slice(0, 8);
+  const trackingLine = visibleTrackingCodes.length
+    ? `${visibleTrackingCodes.join(", ")}${trackingCodes.length > visibleTrackingCodes.length ? ` +${trackingCodes.length - visibleTrackingCodes.length}` : ""}`
+    : null;
+  const sourceLabel = pickupSourceLabel(input.source);
+  const occurredAt = bangkokDateTime(input.occurredAt);
+  const isFailure = ["request_failed", "request_unknown", "cancel_failed", "cancel_sync_failed"].includes(
+    input.action,
+  );
+
+  return compact([
+    heading,
+    "",
+    input.ticketPickupId ? `Ticket: #${input.ticketPickupId}` : `Request: ${input.pickupRequestId}`,
+    input.contactName ? `ลูกค้า: ${input.contactName}` : null,
+    input.contactPhone ? `โทร: ${input.contactPhone}` : null,
+    input.parcelCount != null ? `จำนวน: ${input.parcelCount.toLocaleString("th-TH")} ชิ้น` : null,
+    trackingLine ? `พัสดุ: ${trackingLine}` : null,
+    input.pickupAddress ? `ที่อยู่เข้ารับ: ${input.pickupAddress.slice(0, 350)}` : null,
+    input.staffInfoName ? `พนักงานเข้ารับ: ${input.staffInfoName}` : null,
+    input.staffInfoPhone ? `เบอร์พนักงาน: ${input.staffInfoPhone}` : null,
+    input.timeoutAtText ? `เวลาประมาณการ: ${input.timeoutAtText}` : null,
+    input.ticketMessage ? `ข้อมูลการเข้ารับ: ${input.ticketMessage.slice(0, 500)}` : null,
+    input.action === "cancelled" && sourceLabel ? `ยกเลิกโดย: ${sourceLabel}` : null,
+    isFailure && sourceLabel ? `จุดที่เกิดปัญหา: ${sourceLabel}` : null,
+    input.failureCode ? `รหัสข้อผิดพลาด: ${input.failureCode}` : null,
+    input.failureMessage ? `สาเหตุ: ${input.failureMessage.slice(0, 600)}` : null,
+    !isFailure && input.providerMessage ? `ข้อความจากผู้ให้บริการ: ${input.providerMessage.slice(0, 500)}` : null,
+    occurredAt ? `เวลา: ${occurredAt}` : null,
+    "",
+    `สถานะ: ${copy.status}`,
   ]);
 }
 

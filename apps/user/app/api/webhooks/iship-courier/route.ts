@@ -1,4 +1,5 @@
 import { getDb, ishipPickupRequests, ishipPickupWebhookLogs } from "@quickload/shared/db";
+import { recordPickupLifecycleEvent } from "@quickload/shared/internal-events";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import {
@@ -140,6 +141,28 @@ export async function POST(request: Request) {
       rawPayload: payload,
     });
   });
+
+  if (nextStatus !== pickup.status) {
+    const action =
+      nextStatus === "assigned"
+        ? "assigned"
+        : nextStatus === "picked_up"
+          ? "picked_up"
+          : nextStatus === "cancelled"
+            ? "cancelled"
+            : nextStatus === "requested"
+              ? "requested"
+              : null;
+    if (action) {
+      await recordPickupLifecycleEvent({
+        pickupRequestId: pickup.id,
+        action,
+        source: "provider",
+        ticketPickupId,
+        providerMessage: ticketMessage,
+      });
+    }
+  }
 
   return NextResponse.json({ ok: true, matched: true, updated: true, status: nextStatus });
 }

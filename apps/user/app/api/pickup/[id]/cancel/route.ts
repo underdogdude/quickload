@@ -1,4 +1,8 @@
 import { getDb, ishipPickupRequests } from "@quickload/shared/db";
+import {
+  recordPickupLifecycleEvent,
+  recordSystemErrorEvent,
+} from "@quickload/shared/internal-events";
 import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { CacheHeaders } from "@/lib/api-cache";
@@ -9,6 +13,8 @@ import { requireLineSession } from "@/lib/require-user";
 const CANCELLABLE_STATUSES = ["requested", "assigned"];
 
 export async function POST(_: Request, context: { params: Promise<{ id: string }> }) {
+  let pickupForAlert: typeof ishipPickupRequests.$inferSelect | null = null;
+  let upstreamCancellationConfirmed = false;
   try {
     const session = await requireLineSession();
     const { id } = await context.params;
@@ -24,6 +30,7 @@ export async function POST(_: Request, context: { params: Promise<{ id: string }
         { status: 404, headers: CacheHeaders.noStore },
       );
     }
+    pickupForAlert = pickup;
     if (!CANCELLABLE_STATUSES.includes(pickup.status) || !pickup.ishipTicketPickupId) {
       return NextResponse.json(
         { ok: false, error: "สถานะปัจจุบันไม่สามารถยกเลิกการเข้ารับได้" },
@@ -32,6 +39,7 @@ export async function POST(_: Request, context: { params: Promise<{ id: string }
     }
 
     const cancelled = await cancelIshipCourier(pickup.ishipTicketPickupId);
+    upstreamCancellationConfirmed = true;
     const now = new Date();
     const [updated] = await db
       .update(ishipPickupRequests)
@@ -53,11 +61,51 @@ export async function POST(_: Request, context: { params: Promise<{ id: string }
       )
       .returning();
     if (!updated) {
+      const [current] = await db
+        .select()
+        .from(ishipPickupRequests)
+        .where(and(eq(ishipPickupRequests.id, pickup.id), eq(ishipPickupRequests.userId, session.userId)))
+        .limit(1);
+      if (current?.status === "cancelled") {
+        await recordPickupLifecycleEvent({
+          pickupRequestId: current.id,
+          action: "cancelled",
+          source: "customer",
+          ticketPickupId: current.ishipTicketPickupId,
+          providerMessage: cancelled.message,
+        });
+        return NextResponse.json(
+          { ok: true, data: toPickupRequestDto(current) },
+          { headers: CacheHeaders.noStore },
+        );
+      }
+      await recordPickupLifecycleEvent({
+        pickupRequestId: pickup.id,
+        action: "cancel_sync_failed",
+        source: "quickload",
+        dedupeKey: `cancel_sync_failed:${Date.now()}`,
+        ticketPickupId: pickup.ishipTicketPickupId,
+        failureMessage: "ผู้ให้บริการยืนยันการยกเลิกแล้ว แต่สถานะใน Quickload เปลี่ยนแปลงก่อนบันทึกผล",
+        providerMessage: cancelled.message,
+      });
+      await recordSystemErrorEvent({
+        source: "pickup.cancel.persistence",
+        error: new Error("Provider cancellation succeeded but local pickup status was not updated"),
+        severity: "critical",
+        context: { pickupRequestId: pickup.id, ticketPickupId: pickup.ishipTicketPickupId },
+      });
       return NextResponse.json(
         { ok: false, error: "สถานะคำขอเปลี่ยนแปลงแล้ว กรุณาโหลดรายการใหม่" },
         { status: 409, headers: CacheHeaders.noStore },
       );
     }
+    await recordPickupLifecycleEvent({
+      pickupRequestId: updated.id,
+      action: "cancelled",
+      source: "customer",
+      ticketPickupId: updated.ishipTicketPickupId,
+      providerMessage: cancelled.message,
+    });
     return NextResponse.json(
       { ok: true, data: toPickupRequestDto(updated) },
       { headers: CacheHeaders.noStore },
@@ -65,12 +113,42 @@ export async function POST(_: Request, context: { params: Promise<{ id: string }
   } catch (error) {
     if (error instanceof Response) return error;
     if (error instanceof IshipApiError) {
+      if (pickupForAlert) {
+        await recordPickupLifecycleEvent({
+          pickupRequestId: pickupForAlert.id,
+          action: "cancel_failed",
+          source: "provider",
+          dedupeKey: `cancel_failed:${Date.now()}`,
+          ticketPickupId: pickupForAlert.ishipTicketPickupId,
+          failureCode: error.code,
+          failureMessage: error.message,
+        });
+      }
       return NextResponse.json(
         { ok: false, error: error.message, code: error.code },
         { status: error.httpStatus, headers: CacheHeaders.noStore },
       );
     }
     const message = error instanceof Error ? error.message : "ยกเลิกการเข้ารับไม่สำเร็จ";
+    if (pickupForAlert) {
+      await recordPickupLifecycleEvent({
+        pickupRequestId: pickupForAlert.id,
+        action: upstreamCancellationConfirmed ? "cancel_sync_failed" : "cancel_failed",
+        source: "quickload",
+        dedupeKey: `${upstreamCancellationConfirmed ? "cancel_sync_failed" : "cancel_failed"}:${Date.now()}`,
+        ticketPickupId: pickupForAlert.ishipTicketPickupId,
+        failureMessage: message,
+      });
+      await recordSystemErrorEvent({
+        source: upstreamCancellationConfirmed ? "pickup.cancel.persistence" : "pickup.cancel",
+        error,
+        severity: "critical",
+        context: {
+          pickupRequestId: pickupForAlert.id,
+          ticketPickupId: pickupForAlert.ishipTicketPickupId,
+        },
+      });
+    }
     return NextResponse.json(
       { ok: false, error: message },
       { status: 500, headers: CacheHeaders.noStore },

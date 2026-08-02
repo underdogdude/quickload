@@ -6,7 +6,10 @@ import {
   parcels,
   senderAddresses,
 } from "@quickload/shared/db";
-import { recordSystemErrorEvent } from "@quickload/shared/internal-events";
+import {
+  recordPickupLifecycleEvent,
+  recordSystemErrorEvent,
+} from "@quickload/shared/internal-events";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { CacheHeaders } from "@/lib/api-cache";
@@ -339,6 +342,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   let reservedId: string | null = null;
+  let lifecycleFailureRecorded = false;
   try {
     const session = await requireLineSession();
     const body = (await request.json()) as PickupBody;
@@ -486,6 +490,14 @@ export async function POST(request: Request) {
           updatedAt: new Date(),
         })
         .where(eq(ishipPickupRequests.id, reserved.row.id));
+      await recordPickupLifecycleEvent({
+        pickupRequestId: reserved.row.id,
+        action: ishipError.ambiguous ? "request_unknown" : "request_failed",
+        source: "provider",
+        failureCode: ishipError.code,
+        failureMessage: ishipError.message,
+      });
+      lifecycleFailureRecorded = true;
       throw ishipError;
     }
 
@@ -552,6 +564,13 @@ export async function POST(request: Request) {
           idempotencyKey,
         },
       });
+      await recordPickupLifecycleEvent({
+        pickupRequestId: reserved.row.id,
+        action: "requested",
+        source: "quickload",
+        ticketPickupId: result.ticketPickupId,
+        providerMessage: result.message,
+      });
       return NextResponse.json(
         {
           ok: true,
@@ -566,6 +585,13 @@ export async function POST(request: Request) {
         { status: 202, headers: CacheHeaders.noStore },
       );
     }
+    await recordPickupLifecycleEvent({
+      pickupRequestId: updated.id,
+      action: "requested",
+      source: "quickload",
+      ticketPickupId: updated.ishipTicketPickupId,
+      providerMessage: updated.providerMessage,
+    });
     return NextResponse.json(
       {
         ok: true,
@@ -584,6 +610,28 @@ export async function POST(request: Request) {
         { ok: false, error: "คำขอนี้กำลังดำเนินการอยู่ กรุณาโหลดประวัติอีกครั้ง", requestId: reservedId },
         { status: 409, headers: CacheHeaders.noStore },
       );
+    }
+    if (reservedId && !lifecycleFailureRecorded) {
+      const message = error instanceof Error ? error.message : String(error);
+      await recordPickupLifecycleEvent({
+        pickupRequestId: reservedId,
+        action: "request_unknown",
+        source: "quickload",
+        failureCode: typeof code === "string" ? code : null,
+        failureMessage: message,
+      });
+      await recordSystemErrorEvent({
+        source: "pickup.request",
+        error,
+        severity: "critical",
+        context: { pickupRequestId: reservedId },
+      });
+    } else if (!reservedId && !(error instanceof PickupInputError)) {
+      await recordSystemErrorEvent({
+        source: "pickup.request.preflight",
+        error,
+        severity: "critical",
+      });
     }
     return jsonError(error);
   }
