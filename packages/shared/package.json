@@ -56,7 +56,8 @@
     "db:apply:parcels-note": "node ./scripts/apply-sql.mjs ./sql/20260617_parcels_note.sql",
     "db:apply:parcels-note-50": "node ./scripts/apply-sql.mjs ./sql/20260617_parcels_note_length_50.sql",
     "db:apply:internal-events": "node ./scripts/apply-sql.mjs ./sql/20260702_internal_events.sql",
-    "db:apply:iship-pickup": "node ./scripts/apply-sql.mjs ./sql/20260720_iship_pickup.sql"
+    "db:apply:iship-pickup": "node ./scripts/apply-sql.mjs ./sql/20260720_iship_pickup.sql",
+    "db:apply:parcel-registration-attempts": "node ./scripts/apply-sql.mjs ./sql/20260807_parcel_registration_attempts.sql"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",

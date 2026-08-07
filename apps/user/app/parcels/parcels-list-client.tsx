@@ -238,7 +238,7 @@ function StatusCircleIcon({ status }: { status: string }) {
   return;
 }
 
-/** Thailand Post item id for scanners: 13 chars, typically WB + 9 digits + TH (e.g. WB222126989TH). */
+/** Opaque carrier barcode for scanners; prefix and length are carrier-owned. */
 function parcelScanText(p: ParcelRow): string {
   return p.barcode?.trim() || p.trackingId.trim() || "";
 }

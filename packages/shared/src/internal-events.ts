@@ -84,7 +84,12 @@ export function systemErrorEventKey(input: {
   source: string;
   message: string;
   at?: Date;
+  dedupeKey?: string;
 }): string {
+  const explicitDedupeKey = input.dedupeKey?.trim();
+  if (explicitDedupeKey) {
+    return `system.error:${input.source}:${shortHash(explicitDedupeKey)}`;
+  }
   const at = input.at ?? new Date();
   const hour = at.toISOString().slice(0, 13);
   return `system.error:${input.source}:${shortHash(input.message)}:${hour}`;
@@ -95,10 +100,17 @@ export async function recordSystemErrorEvent(input: {
   error: unknown;
   severity?: "warning" | "critical";
   context?: JsonPayload;
+  /** Stable incident identity when different records can share the same message. */
+  dedupeKey?: string;
 }): Promise<void> {
   const message = input.error instanceof Error ? input.error.message : String(input.error);
   const stack = input.error instanceof Error ? input.error.stack : undefined;
-  await recordInternalEvent("system.error", systemErrorEventKey({ source: input.source, message }), {
+  const eventKey = systemErrorEventKey({
+    source: input.source,
+    message,
+    dedupeKey: input.dedupeKey,
+  });
+  await recordInternalEvent("system.error", eventKey, {
     source: input.source,
     severity: input.severity ?? "critical",
     message,

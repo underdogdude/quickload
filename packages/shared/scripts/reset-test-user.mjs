@@ -314,7 +314,7 @@ console.log(
   `Database target: ${target.hostname}:${target.port || "default"}/${target.pathname.replace(/^\//, "")}`,
 );
 
-const sql = postgres(databaseUrl, { max: 1 });
+const sql = postgres(databaseUrl, { max: 1, prepare: false });
 try {
   const users = await findUsers(sql, args);
   if (users.length === 0) {

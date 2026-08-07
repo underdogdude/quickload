@@ -184,17 +184,9 @@ async function renderParcelCreated(row: InternalEventRow): Promise<string> {
     .limit(1);
 
   return parcelCreatedTemplate({
-    trackingCode: parcel
-      ? resolveParcelDisplayCode({
-          barcode: parcel.barcode,
-          smartpostTrackingcode: parcel.smartpostTrackingcode,
-          trackingId: parcel.trackingId,
-        })
-      : resolveParcelDisplayCode({
-          barcode: asString(payload.barcode),
-          smartpostTrackingcode: asString(payload.smartpostTrackingcode),
-          trackingId: asString(payload.trackingId),
-        }),
+    // Never disguise a SmartPost NO... reference as a carrier barcode. Missing
+    // barcode data is an operational incident and must be visible in the alert.
+    barcode: parcel?.barcode ?? asString(payload.barcode),
     referenceCode: parcel?.smartpostTrackingcode ?? asString(payload.smartpostTrackingcode),
     senderName: parcel?.shipperName ?? asString(payload.senderName),
     recipientName: parcel?.cusName ?? asString(payload.recipientName),

@@ -1,7 +1,6 @@
 import { readApiJson } from "./api-json";
 
 const SMARTPOST_REFERENCE_STORAGE_PREFIX = "quickload:smartpost-reference:";
-const SMARTPOST_RESULT_STORAGE_SUFFIX = ":result";
 const SMARTPOST_COMPLETED_STORAGE_SUFFIX = ":completed";
 
 export type ParcelOrderInput = {
@@ -86,7 +85,6 @@ function getReferenceId(storageKey: string, attemptId?: string): string {
 function clearPendingRegistration(storageKey: string): void {
   try {
     sessionStorage.removeItem(storageKey);
-    sessionStorage.removeItem(`${storageKey}${SMARTPOST_RESULT_STORAGE_SUFFIX}`);
   } catch {
     // sessionStorage can be unavailable in hardened WebViews.
   }
@@ -129,43 +127,6 @@ function cacheCompletedParcel(
   }
 }
 
-function readRegisteredSmartpostData(
-  storageKey: string,
-  referenceId: string,
-): unknown | undefined {
-  try {
-    const resultKey = `${storageKey}${SMARTPOST_RESULT_STORAGE_SUFFIX}`;
-    const raw = sessionStorage.getItem(resultKey);
-    if (!raw) return undefined;
-    const cached = JSON.parse(raw) as {
-      referenceId?: unknown;
-      data?: unknown;
-    };
-    if (cached.referenceId !== referenceId || cached.data === undefined) {
-      sessionStorage.removeItem(resultKey);
-      return undefined;
-    }
-    return cached.data;
-  } catch {
-    return undefined;
-  }
-}
-
-function cacheRegisteredSmartpostData(
-  storageKey: string,
-  referenceId: string,
-  data: unknown,
-): void {
-  try {
-    sessionStorage.setItem(
-      `${storageKey}${SMARTPOST_RESULT_STORAGE_SUFFIX}`,
-      JSON.stringify({ referenceId, data }),
-    );
-  } catch {
-    // A storage failure must not turn a successful provider response into an error.
-  }
-}
-
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
@@ -185,66 +146,14 @@ export async function createParcelOrder(
   if (completed) return completed;
   const referenceId = getReferenceId(storageKey, attemptId);
 
-  let smartpostData = readRegisteredSmartpostData(storageKey, referenceId);
-  if (smartpostData === undefined) {
-    options.onProgress?.("registering");
-    const registerController = new AbortController();
-    const registerTimer = setTimeout(() => registerController.abort(), 30_000);
-    try {
-      const response = await fetcher("/api/smartpost/add-item", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          senderId: input.senderId,
-          recipientId: input.recipientId,
-          parcelType: input.parcelType,
-          weightGram: input.weightGram,
-          insuredValue: input.insuredValue,
-          extraInsurance: input.extraInsurance,
-          referenceId,
-        }),
-        signal: registerController.signal,
-      });
-      const json = await readApiJson<{
-        ok?: boolean;
-        error?: string;
-        message?: string;
-        data?: unknown;
-        retryable?: boolean;
-      }>(response, "ระบบลงทะเบียนพัสดุยังไม่พร้อมใช้งาน กรุณาลองใหม่อีกครั้ง");
-      if (!response.ok || !json.ok || json.data === undefined) {
-        throw new ParcelOrderClientError(
-          json.message ||
-            json.error ||
-            "ลงทะเบียนพัสดุไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
-          json.retryable !== false,
-        );
-      }
-      smartpostData = json.data;
-      cacheRegisteredSmartpostData(storageKey, referenceId, smartpostData);
-    } catch (error) {
-      if (error instanceof ParcelOrderClientError) throw error;
-      if (isAbortError(error)) {
-        throw new ParcelOrderClientError(
-          "ระบบลงทะเบียนพัสดุไม่ตอบสนอง กรุณาลองใหม่อีกครั้ง",
-        );
-      }
-      if (error instanceof Error && error.name === "Error") {
-        throw new ParcelOrderClientError(error.message);
-      }
-      throw new ParcelOrderClientError(
-        "เชื่อมต่อระบบลงทะเบียนพัสดุไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่",
-      );
-    } finally {
-      clearTimeout(registerTimer);
-    }
-  }
-
-  options.onProgress?.("saving");
-  const saveController = new AbortController();
-  const saveTimer = setTimeout(() => saveController.abort(), 20_000);
+  options.onProgress?.("registering");
+  const registerController = new AbortController();
+  // One server-owned operation now performs both the carrier call and the
+  // durable Quickload transaction. The server records the attempt before the
+  // provider call, so aborting this browser request cannot lose its only copy.
+  const registerTimer = setTimeout(() => registerController.abort(), 55_000);
   try {
-    const response = await fetcher("/api/parcels/draft", {
+    const response = await fetcher("/api/parcels/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -258,24 +167,28 @@ export async function createParcelOrder(
         heightCm: input.heightCm,
         parcelType: input.parcelType,
         note: input.note,
+        insuredValue: input.insuredValue,
+        extraInsurance: input.extraInsurance,
         referenceId,
-        smartpostAddItemResponse: smartpostData,
       }),
-      signal: saveController.signal,
+      signal: registerController.signal,
     });
     const json = await readApiJson<{
       ok?: boolean;
       error?: string;
       message?: string;
       data?: { id?: string; trackingId?: string };
-    }>(response, "ระบบบันทึกพัสดุยังไม่พร้อมใช้งาน กรุณาลองใหม่อีกครั้ง");
+      retryable?: boolean;
+    }>(response, "ระบบลงทะเบียนพัสดุยังไม่พร้อมใช้งาน กรุณาลองใหม่อีกครั้ง");
     if (!response.ok || !json.ok || !json.data?.id) {
       throw new ParcelOrderClientError(
         json.message ||
           json.error ||
-          "บันทึกพัสดุไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+          "ลงทะเบียนพัสดุไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+        json.retryable !== false,
       );
     }
+    options.onProgress?.("saving");
     const created = {
       id: json.data.id,
       trackingId: json.data.trackingId?.trim() || null,
@@ -287,16 +200,17 @@ export async function createParcelOrder(
     if (error instanceof ParcelOrderClientError) throw error;
     if (isAbortError(error)) {
       throw new ParcelOrderClientError(
-        "ระบบบันทึกพัสดุไม่ตอบสนอง กรุณาลองใหม่อีกครั้ง",
+        "ระบบกำลังตรวจสอบผลการลงทะเบียน กรุณาอย่าสร้างรายการใหม่ซ้ำ",
+        false,
       );
     }
     if (error instanceof Error && error.name === "Error") {
       throw new ParcelOrderClientError(error.message);
     }
     throw new ParcelOrderClientError(
-      "บันทึกพัสดุไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่",
+      "ลงทะเบียนพัสดุไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่",
     );
   } finally {
-    clearTimeout(saveTimer);
+    clearTimeout(registerTimer);
   }
 }

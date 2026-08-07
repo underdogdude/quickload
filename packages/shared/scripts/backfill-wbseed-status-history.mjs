@@ -175,7 +175,7 @@ async function main() {
     console.error("DATABASE_URL not found.");
     process.exit(1);
   }
-  const sql = postgres(url, { max: 1 });
+  const sql = postgres(url, { max: 1, prepare: false });
   try {
     const rows = await sql`
       select

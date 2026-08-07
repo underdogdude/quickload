@@ -6,6 +6,7 @@ import {
   isRetryableSmartpostFailure,
   normalizeSuccessResponse,
   normalizeSmartpostReferenceId,
+  resolveSmartpostCredentials,
 } from "./_add-item-logic";
 
 const VALID_BASE = {
@@ -13,6 +14,20 @@ const VALID_BASE = {
   recipientId: "recipient-1",
   weightGram: "500",
 };
+
+describe("resolveSmartpostCredentials", () => {
+  it("fails closed when either credential is missing or blank", () => {
+    expect(resolveSmartpostCredentials({})).toBeNull();
+    expect(resolveSmartpostCredentials({ username: "user" })).toBeNull();
+    expect(resolveSmartpostCredentials({ username: " ", password: "secret" })).toBeNull();
+  });
+
+  it("returns trimmed configured credentials", () => {
+    expect(
+      resolveSmartpostCredentials({ username: " configured-user ", password: " configured-secret " }),
+    ).toEqual({ username: "configured-user", password: "configured-secret" });
+  });
+});
 
 // ---------------------------------------------------------------------------
 // validateAddItemPayload
@@ -139,10 +154,9 @@ describe("isSmartpostSuccess", () => {
     expect(isSmartpostSuccess(200, "")).toBe(false);
   });
 
-  it("returns false for HTTP 400 with body statuscode '201'", () => {
-    // HTTP error takes precedence... but actually body "201" makes it success
-    // This documents the actual behavior: body "201" wins regardless of HTTP status
-    expect(isSmartpostSuccess(400, "201")).toBe(true);
+  it("never allows a body statuscode to override an HTTP error", () => {
+    expect(isSmartpostSuccess(400, "201")).toBe(false);
+    expect(isSmartpostSuccess(500, "201")).toBe(false);
   });
 });
 
@@ -218,10 +232,10 @@ describe("normalizeSuccessResponse", () => {
     expect(result.statuscode).toBe("201");
   });
 
-  it("returns fallback object for non-object body (e.g. array)", () => {
+  it("preserves the first record from an array-wrapped response", () => {
     const result = normalizeSuccessResponse([{ message: "OK" }]);
     expect(result.statuscode).toBe("201");
-    expect(result.message).toBe("Create successful");
+    expect(result.message).toBe("OK");
   });
 
   it("returns fallback object for null body", () => {
@@ -239,5 +253,25 @@ describe("normalizeSuccessResponse", () => {
     const result = normalizeSuccessResponse(body);
     expect(result.statuscode).toBe("201");
     expect((result.data as Record<string, unknown>).barcode).toBe("TH-001");
+  });
+
+  it("normalizes an array-wrapped SmartPost response", () => {
+    const result = normalizeSuccessResponse([
+      { statuscode: "201", message: "OK", data: { barcode: "WA123456789TH" } },
+    ]);
+    expect(result.message).toBe("OK");
+    expect((result.data as Record<string, unknown>).barcode).toBe("WA123456789TH");
+  });
+
+  it("unwraps a gateway envelope before normalizing success", () => {
+    const result = normalizeSuccessResponse({
+      data: {
+        statuscode: "201",
+        message: "OK",
+        data: { barcode: "JB123456789TH" },
+      },
+    });
+    expect(result.message).toBe("OK");
+    expect((result.data as Record<string, unknown>).barcode).toBe("JB123456789TH");
   });
 });

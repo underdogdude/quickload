@@ -1,4 +1,4 @@
--- Thailand Post item id on parcel: 13 chars (typically WB + 9 digits + TH). `tracking_id` holds Smartpost tracking when available.
+-- Opaque carrier barcode on parcel. `tracking_id` holds SmartPost tracking/reference when available.
 ALTER TABLE parcels
 ADD COLUMN IF NOT EXISTS barcode text;
 

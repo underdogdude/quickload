@@ -38,7 +38,7 @@ if (!url) {
 const sqlPath = path.join(__dirname, "../sql/reset_parcels_and_orders.sql");
 const sql = fs.readFileSync(sqlPath, "utf8");
 
-const sqlClient = postgres(url, { max: 1 });
+const sqlClient = postgres(url, { max: 1, prepare: false });
 try {
   await sqlClient.unsafe(sql);
   console.log("Deleted all rows from orders and parcels (packages/shared/sql/reset_parcels_and_orders.sql).");

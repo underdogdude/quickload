@@ -330,12 +330,16 @@ test("focused registration mode creates a pickup parcel and returns with it sele
   await page.route("**/api/pricing/estimate**", (route) =>
     json(route, { ok: true, data: { estimatedTotal: 35 } }),
   );
-  await page.route("**/api/smartpost/add-item", (route) =>
-    json(route, { ok: true, data: { trackingNo: "WB444444444TH" } }),
-  );
-  await page.route("**/api/parcels/draft", (route) => {
+  await page.route("**/api/parcels/register", (route) => {
     parcelCreated = true;
-    return json(route, { ok: true, data: { id: "parcel-4", trackingId: "TRACK-4" } });
+    return json(route, {
+      ok: true,
+      data: {
+        id: "parcel-4",
+        trackingId: "TRACK-4",
+        barcode: "WB444444444TH",
+      },
+    });
   });
   await page.route("**/api/pickup**", async (route) => {
     const url = new URL(route.request().url());

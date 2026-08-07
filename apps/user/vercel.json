@@ -3,6 +3,10 @@
     {
       "path": "/api/payment/remind-unpaid",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/parcel-registration-reconcile",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

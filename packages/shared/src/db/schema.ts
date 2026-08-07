@@ -36,77 +36,135 @@ export const adminUsers = pgTable("admin_users", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const parcels = pgTable("parcels", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  /** Primary public tracking: Smartpost `smartpost_trackingcode` when available, else barcode / draft id. */
-  trackingId: text("tracking_id").notNull().unique(),
-  /** Thailand Post item id: 13 chars, typically `WB` + 9 digits + `TH` (e.g. WB222126989TH). */
-  barcode: text("barcode"),
-  userId: uuid("user_id").references(() => users.id),
-  destination: text("destination"),
-  weightKg: numeric("weight_kg", { precision: 12, scale: 3 }),
-  size: text("size"),
-  parcelType: text("parcel_type"),
-  /** Optional user remark from /send; max 50 chars (see parcels_note_length_chk). */
-  note: text("note"),
-  status: text("status").notNull().default("registered"),
-  /** Customer billable total (Sell tier + remote + insurance); set by thai-post-webhook from actual weight. */
-  price: numeric("price", { precision: 14, scale: 2 }),
-  isPaid: boolean("is_paid").notNull().default(false),
-  source: text("source").notNull().default("self"),
-  /** Set once by the future Smartpost shipped-webhook. NULL = penalty clock not started. */
-  penaltyClockStartedAt: timestamp("penalty_clock_started_at", { withTimezone: true }),
-  /** Maintained by DB trigger as SUM(payments.amount WHERE status='succeeded'). */
-  amountPaid: numeric("amount_paid", { precision: 14, scale: 2 }).notNull().default("0"),
-  /** Set when billable price is computed from actual weight (Sell tier + surcharges). */
-  thaiPostPriceConfirmedAt: timestamp("thai_post_price_confirmed_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }),
-});
+export const parcels = pgTable(
+  "parcels",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** SmartPost reference used internally for replay and support diagnostics. */
+    trackingId: text("tracking_id").notNull().unique(),
+    /** Opaque carrier barcode. Never infer or whitelist a prefix such as WA/WB/JB. */
+    barcode: text("barcode"),
+    userId: uuid("user_id").references(() => users.id),
+    destination: text("destination"),
+    weightKg: numeric("weight_kg", { precision: 12, scale: 3 }),
+    size: text("size"),
+    parcelType: text("parcel_type"),
+    /** Optional user remark from /send; max 50 chars (see parcels_note_length_chk). */
+    note: text("note"),
+    status: text("status").notNull().default("registered"),
+    /** Customer billable total (Sell tier + remote + insurance); set by thai-post-webhook from actual weight. */
+    price: numeric("price", { precision: 14, scale: 2 }),
+    isPaid: boolean("is_paid").notNull().default(false),
+    source: text("source").notNull().default("self"),
+    /** Set once by the future Smartpost shipped-webhook. NULL = penalty clock not started. */
+    penaltyClockStartedAt: timestamp("penalty_clock_started_at", { withTimezone: true }),
+    /** Maintained by DB trigger as SUM(payments.amount WHERE status='succeeded'). */
+    amountPaid: numeric("amount_paid", { precision: 14, scale: 2 }).notNull().default("0"),
+    /** Set when billable price is computed from actual weight (Sell tier + surcharges). */
+    thaiPostPriceConfirmedAt: timestamp("thai_post_price_confirmed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => ({
+    barcodeUniqueIdx: uniqueIndex("parcels_barcode_unique_idx").on(table.barcode),
+  }),
+);
 
 /** Smartpost addItem success snapshot; one row per parcel after carrier accepts the order. */
-export const orders = pgTable("orders", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  parcelId: uuid("parcel_id")
-    .notNull()
-    .references(() => parcels.id, { onDelete: "cascade" }),
-  userId: uuid("user_id").references(() => users.id),
-  statuscode: text("statuscode"),
-  message: text("message"),
-  smartpostTrackingcode: text("smartpost_trackingcode"),
-  barcode: text("barcode"),
-  serviceType: text("service_type"),
-  productInbox: text("product_inbox"),
-  productWeight: text("product_weight"),
-  productPrice: text("product_price"),
-  /** SmartPost box classification, e.g. BF. Distinct from parcel dimensions. */
-  boxsize: text("boxsize"),
-  shipperName: text("shipper_name"),
-  shipperAddress: text("shipper_address"),
-  shipperSubdistrict: text("shipper_subdistrict"),
-  shipperDistrict: text("shipper_district"),
-  shipperProvince: text("shipper_province"),
-  shipperZipcode: text("shipper_zipcode"),
-  shipperEmail: text("shipper_email"),
-  shipperMobile: text("shipper_mobile"),
-  cusName: text("cus_name"),
-  cusAdd: text("cus_add"),
-  cusSub: text("cus_sub"),
-  cusAmp: text("cus_amp"),
-  cusProv: text("cus_prov"),
-  cusZipcode: text("cus_zipcode"),
-  cusTel: text("cus_tel"),
-  cusEmail: text("cus_email"),
-  customerCode: text("customer_code"),
-  cost: numeric("cost", { precision: 14, scale: 2 }),
-  finalcost: numeric("finalcost", { precision: 14, scale: 2 }),
-  orderStatus: text("order_status"),
-  items: text("items"),
-  insuranceRatePrice: text("insurance_rate_price"),
-  referenceId: text("reference_id"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }),
-});
+export const orders = pgTable(
+  "orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    parcelId: uuid("parcel_id")
+      .notNull()
+      .references(() => parcels.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id),
+    statuscode: text("statuscode"),
+    message: text("message"),
+    smartpostTrackingcode: text("smartpost_trackingcode"),
+    barcode: text("barcode"),
+    serviceType: text("service_type"),
+    productInbox: text("product_inbox"),
+    productWeight: text("product_weight"),
+    productPrice: text("product_price"),
+    /** SmartPost box classification, e.g. BF. Distinct from parcel dimensions. */
+    boxsize: text("boxsize"),
+    shipperName: text("shipper_name"),
+    shipperAddress: text("shipper_address"),
+    shipperSubdistrict: text("shipper_subdistrict"),
+    shipperDistrict: text("shipper_district"),
+    shipperProvince: text("shipper_province"),
+    shipperZipcode: text("shipper_zipcode"),
+    shipperEmail: text("shipper_email"),
+    shipperMobile: text("shipper_mobile"),
+    cusName: text("cus_name"),
+    cusAdd: text("cus_add"),
+    cusSub: text("cus_sub"),
+    cusAmp: text("cus_amp"),
+    cusProv: text("cus_prov"),
+    cusZipcode: text("cus_zipcode"),
+    cusTel: text("cus_tel"),
+    cusEmail: text("cus_email"),
+    customerCode: text("customer_code"),
+    cost: numeric("cost", { precision: 14, scale: 2 }),
+    finalcost: numeric("finalcost", { precision: 14, scale: 2 }),
+    orderStatus: text("order_status"),
+    items: text("items"),
+    insuranceRatePrice: text("insurance_rate_price"),
+    referenceId: text("reference_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => ({
+    parcelUniqueIdx: uniqueIndex("orders_parcel_id_unique_idx").on(table.parcelId),
+    barcodeUniqueIdx: uniqueIndex("orders_barcode_unique_idx").on(table.barcode),
+    userReferenceUniqueIdx: uniqueIndex("orders_user_reference_unique_idx").on(
+      table.userId,
+      table.referenceId,
+    ),
+  }),
+);
+
+/** Durable boundary between a Quickload request and SmartPost side effects. */
+export const parcelRegistrationAttempts = pgTable(
+  "parcel_registration_attempts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    referenceId: text("reference_id").notNull(),
+    requestHash: text("request_hash").notNull(),
+    requestPayload: jsonb("request_payload").notNull(),
+    providerRequestPayload: jsonb("provider_request_payload"),
+    providerResponsePayload: jsonb("provider_response_payload"),
+    providerHttpStatus: integer("provider_http_status"),
+    smartpostTrackingcode: text("smartpost_trackingcode"),
+    barcode: text("barcode"),
+    parcelId: uuid("parcel_id").references(() => parcels.id, { onDelete: "set null" }),
+    // submitting | provider_succeeded | persisted | unknown | failed
+    status: text("status").notNull().default("submitting"),
+    retryable: boolean("retryable").notNull().default(false),
+    attemptCount: integer("attempt_count").notNull().default(1),
+    lastError: text("last_error"),
+    providerAcceptedAt: timestamp("provider_accepted_at", { withTimezone: true }),
+    persistedAt: timestamp("persisted_at", { withTimezone: true }),
+    nextReconcileAt: timestamp("next_reconcile_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userReferenceIdx: uniqueIndex("parcel_registration_attempts_user_reference_idx").on(
+      table.userId,
+      table.referenceId,
+    ),
+    statusReconcileIdx: index("parcel_registration_attempts_status_reconcile_idx").on(
+      table.status,
+      table.nextReconcileAt,
+    ),
+    barcodeIdx: index("parcel_registration_attempts_barcode_idx").on(table.barcode),
+  }),
+);
 
 /** Latest Thailand Post webhook snapshot per parcel; `status_history` holds every received update (oldest → newest). */
 export const thaiPostWebhookEvents = pgTable("thai_post_webhook_events", {

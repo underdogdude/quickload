@@ -46,7 +46,7 @@ export function paymentReceivedTemplate(input: PaymentReceivedTemplateInput): st
 }
 
 export type ParcelCreatedTemplateInput = {
-  trackingCode?: string | null;
+  barcode?: string | null;
   referenceCode?: string | null;
   senderName?: string | null;
   recipientName?: string | null;
@@ -58,10 +58,13 @@ export type ParcelCreatedTemplateInput = {
 
 export function parcelCreatedTemplate(input: ParcelCreatedTemplateInput): string {
   const destination = [input.recipientName, input.recipientProvince].filter(Boolean).join(", ");
+  const barcode = input.barcode?.trim() || null;
+  const referenceCode = input.referenceCode?.trim() || null;
   return compact([
     "Parcel created",
     "",
-    input.trackingCode ? `Tracking: ${input.trackingCode}` : null,
+    barcode ? `Barcode: ${barcode}` : "Barcode: ⚠️ MISSING — investigate immediately",
+    referenceCode && referenceCode !== barcode ? `SmartPost reference: ${referenceCode}` : null,
     input.senderName ? `From: ${input.senderName}` : null,
     destination ? `To: ${destination}` : null,
     input.weightGram ? `Weight: ${Number(input.weightGram).toLocaleString("en-US")} g` : null,

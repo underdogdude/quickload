@@ -2,6 +2,8 @@
  * Parse Smartpost addItem success body (array-wrapped or object; inner `data` may be JSON string).
  */
 
+import { normalizeCarrierBarcode } from "@quickload/shared/parcel-display-code";
+
 function firstRecord(raw: unknown): Record<string, unknown> | null {
   if (Array.isArray(raw) && raw[0] && typeof raw[0] === "object") {
     return raw[0] as Record<string, unknown>;
@@ -77,12 +79,20 @@ function pick(inner: Record<string, string>, ...keys: string[]): string {
 export function mapSmartpostInnerToOrderFields(inner: Record<string, string>) {
   return {
     smartpostTrackingcode: pick(inner, "smartpost_trackingcode", "smartpostTrackingcode"),
-    barcode: pick(inner, "barcode", "Barcode", "bar_code", "th_barcode"),
+    // Carrier barcode is opaque: normalize case/whitespace but never restrict
+    // prefixes (WA/WB/JB are all valid and future prefixes must keep working).
+    barcode:
+      normalizeCarrierBarcode(
+        pick(inner, "barcode", "Barcode", "bar_code", "th_barcode", "item_barcode", "itemBarcode"),
+      ) ?? "",
     serviceType: pick(inner, "service_type", "serviceType"),
     productInbox: pick(inner, "productInbox", "product_inbox"),
     productWeight: pick(inner, "productWeight", "product_weight"),
     productPrice: pick(inner, "productPrice", "product_price"),
-    boxsize: pick(inner, "boxsize", "box_size"),
+    // SmartPost stores custom/customer packaging as BF but currently omits the
+    // field from successful addItem responses. Preserve an explicit future
+    // value when supplied and use the carrier's BF classification otherwise.
+    boxsize: pick(inner, "boxsize", "box_size") || "BF",
     shipperName: pick(inner, "shipperName", "shipper_name"),
     shipperAddress: pick(inner, "shipperAddress", "shipper_address"),
     shipperSubdistrict: pick(inner, "shipperSubdistrict", "shipper_subdistrict"),

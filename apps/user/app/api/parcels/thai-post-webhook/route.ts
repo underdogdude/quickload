@@ -15,7 +15,10 @@ import {
 import { getDb, notificationLog, orders, parcels, thaiPostWebhookEvents, users } from "@quickload/shared/db";
 import { recordSystemErrorEvent } from "@quickload/shared/internal-events";
 import { thaiPostStatusDateToMs, resolveCarrierWebhookConfirmedAt } from "@quickload/shared/thai-post-webhook-history";
-import { resolveParcelDisplayCode } from "@quickload/shared/parcel-display-code";
+import {
+  normalizeCarrierBarcode,
+  resolveParcelDisplayCode,
+} from "@quickload/shared/parcel-display-code";
 import {
   computeBillableTotalFromTier,
   formatBillablePriceThb,
@@ -28,7 +31,7 @@ import { createParcelStatusUpdateFlexMessage, createPaymentDueFlexMessage } from
 import { pushLineMessage } from "@/lib/line-messaging";
 
 type ThaiPostWebhookItem = {
-  /** Thailand Post item id: 13 characters (e.g. WB222126989TH). */
+  /** Opaque carrier barcode. Prefix and length are carrier-owned. */
   barcode?: string;
   status?: string;
   statusDescription?: string;
@@ -299,7 +302,7 @@ async function handlePost(request: Request) {
     const resolved = resolveSmartpostEvent(raw);
     const event = resolved as ThaiPostWebhookItem;
 
-    const barcode = event.barcode?.trim();
+    const barcode = normalizeCarrierBarcode(event.barcode);
     const statusCodeRaw = parseThaiPostStatusCodeRaw(event.status);
     const parsedWeightGrams = parseWebhookWeightGrams(resolved);
     console.info(
@@ -359,13 +362,15 @@ async function handlePost(request: Request) {
         })
         .from(parcels)
         .where(eq(parcels.barcode, barcode))
-        .limit(1)
         .for("update");
-      const parcel = parcelRows[0];
-      if (!parcel) {
-        ignored += ordered.length;
-        return;
+      if (parcelRows.length !== 1) {
+        throw new Error(
+          parcelRows.length === 0
+            ? `Unknown carrier barcode ${barcode}; webhook must be retried after registration reconciliation`
+            : `Carrier barcode ${barcode} matched ${parcelRows.length} parcels`,
+        );
       }
+      const parcel = parcelRows[0];
 
       const orderRows = await tx
         .select({

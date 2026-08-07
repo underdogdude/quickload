@@ -56,7 +56,9 @@ if (!url) {
 }
 
 const sql = fs.readFileSync(sqlPath, "utf8");
-const client = postgres(url, { max: 1 });
+// Safe for Supabase's transaction pooler (port 6543), which does not preserve
+// session-scoped prepared statements between backend connections.
+const client = postgres(url, { max: 1, prepare: false });
 try {
   await client.unsafe(sql);
   console.log(`Applied ${path.relative(process.cwd(), sqlPath)} successfully.`);

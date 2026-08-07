@@ -187,7 +187,7 @@ describe("mapSmartpostInnerToOrderFields", () => {
     expect(fields.barcode).toBe("TH001");
     expect(fields.serviceType).toBe("EMS");
     expect(fields.productInbox).toBe("box");
-    expect(fields.boxsize).toBe("");
+    expect(fields.boxsize).toBe("BF");
   });
 
   it("maps snake_case keys as fallback", () => {
@@ -221,6 +221,11 @@ describe("mapSmartpostInnerToOrderFields", () => {
     expect(fields.smartpostTrackingcode).toBe("");
     expect(fields.barcode).toBe("");
     expect(fields.cost).toBe("");
+    expect(fields.boxsize).toBe("BF");
+  });
+
+  it("preserves a non-BF box classification returned by SmartPost", () => {
+    expect(mapSmartpostInnerToOrderFields({ boxsize: "BA" }).boxsize).toBe("BA");
   });
 
   it("handles full inner from parsed response", () => {

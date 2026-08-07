@@ -521,7 +521,7 @@ export function createPaymentSuccessFlexMessage(input: {
 }
 
 export function createBulkPaymentSuccessFlexMessage(input: {
-  /** Thailand Post item barcode (13 chars, e.g. WB222126989TH) — not order/reference codes. */
+  /** Opaque carrier barcode — never an order/reference code and never prefix-restricted. */
   barcodes: string[];
   amountBaht: string | number;
 }): {
@@ -1032,4 +1032,3 @@ export function createPaymentReminderDay7FlexMessage(input: PaymentReminderFlexI
     },
   };
 }
-

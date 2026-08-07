@@ -20,6 +20,16 @@ export type AddItemValidationResult =
   | { ok: true; weightGram: number }
   | { ok: false; error: string; status: 400 };
 
+export function resolveSmartpostCredentials(input: {
+  username?: string;
+  password?: string;
+}): { username: string; password: string } | null {
+  const username = input.username?.trim();
+  const password = input.password?.trim();
+  if (!username || !password) return null;
+  return { username, password };
+}
+
 export function validateAddItemPayload(body: AddItemValidationInput): AddItemValidationResult {
   const weightGram = toPositiveNumber(body.weightGram);
 
@@ -63,7 +73,8 @@ export function normalizeSmartpostReferenceId(value?: string): string {
  * with statuscode "201" in the body.
  */
 export function isSmartpostSuccess(httpStatus: number, bodyStatuscode: string): boolean {
-  return httpStatus === 201 || bodyStatuscode === "201";
+  const httpSucceeded = httpStatus >= 200 && httpStatus < 300;
+  return httpSucceeded && (httpStatus === 201 || bodyStatuscode.trim() === "201");
 }
 
 const RETRYABLE_SMARTPOST_STATUS_CODES = new Set(["408", "425", "429", "500", "502", "503", "504"]);
@@ -119,8 +130,29 @@ export function classifySmartpostFailure(input: {
  * would override our injected "201" when statuscode was placed first).
  */
 export function normalizeSuccessResponse(body: unknown): Record<string, unknown> {
-  if (typeof body === "object" && body !== null && !Array.isArray(body)) {
-    return { ...(body as Record<string, unknown>), statuscode: "201" };
+  let record: Record<string, unknown> | null = null;
+  if (Array.isArray(body)) {
+    const first = body[0];
+    if (typeof first === "object" && first !== null && !Array.isArray(first)) {
+      record = first as Record<string, unknown>;
+    }
+  } else if (typeof body === "object" && body !== null) {
+    record = body as Record<string, unknown>;
+  }
+
+  if (record) {
+    // Some gateways wrap the complete SmartPost response in an outer `data`.
+    if (
+      record.statuscode == null &&
+      record.message == null &&
+      typeof record.data === "object" &&
+      record.data !== null &&
+      !Array.isArray(record.data)
+    ) {
+      const nested = record.data as Record<string, unknown>;
+      if (nested.statuscode != null || nested.message != null) record = nested;
+    }
+    return { ...record, statuscode: "201" };
   }
   return { statuscode: "201", message: "Create successful" };
 }

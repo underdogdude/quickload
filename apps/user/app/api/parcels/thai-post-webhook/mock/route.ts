@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { getDb, parcels, thaiPostWebhookEvents } from "@quickload/shared/db";
+import { normalizeCarrierBarcode } from "@quickload/shared/parcel-display-code";
 import { NextResponse } from "next/server";
 import { loadDevMockPayload } from "@/lib/dev-mock/load-payload";
 import { requireLineSession } from "@/lib/require-user";
@@ -14,7 +15,7 @@ type RelayDefaults = {
 
 type MockBody = {
   parcelId?: string;
-  /** Thailand Post item id: exactly 13 characters (e.g. WB222126989TH). */
+  /** Opaque carrier barcode. Prefix and length are carrier-owned. */
   barcode?: string;
   status?: string;
   statusDescription?: string;
@@ -41,10 +42,10 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as MockBody;
     const db = getDb();
 
-    const rawBarcode = body.barcode?.trim();
-    if (rawBarcode && rawBarcode.length !== 13) {
+    const rawBarcode = normalizeCarrierBarcode(body.barcode);
+    if (rawBarcode && rawBarcode.length > 128) {
       return NextResponse.json(
-        { error: "barcode must be 13 characters (Thailand Post item id, e.g. WB222126989TH)" },
+        { error: "barcode must not exceed 128 characters" },
         { status: 400 },
       );
     }
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
       if (!parcel || parcel.userId !== session.userId) {
         return NextResponse.json({ ok: false, error: "Parcel not found" }, { status: 404 });
       }
-      barcode = parcel.barcode?.trim() || "";
+      barcode = normalizeCarrierBarcode(parcel.barcode) || "";
     }
     if (!barcode) {
       return NextResponse.json(

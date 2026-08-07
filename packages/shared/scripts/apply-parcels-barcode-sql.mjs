@@ -38,7 +38,7 @@ if (!url) {
 const sqlPath = path.join(__dirname, "../sql/20260423_parcels_barcode.sql");
 const sql = fs.readFileSync(sqlPath, "utf8");
 
-const sqlClient = postgres(url, { max: 1 });
+const sqlClient = postgres(url, { max: 1, prepare: false });
 try {
   await sqlClient.unsafe(sql);
   console.log("Applied packages/shared/sql/20260423_parcels_barcode.sql successfully.");

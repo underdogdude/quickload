@@ -6,15 +6,18 @@
  *   2. Production env guards: dev flags must never be active in production
  *   3. Iron session: password must meet minimum requirements
  *   4. Beam webhook: HMAC signature is body-specific (replay attack prevention)
- *   5. Smartpost credential guard: default credentials must be detectable
+ *   5. Smartpost credentials: handled by fail-closed route validation
  */
 
 import { describe, it, expect } from "vitest";
 import { isOtpVerifiedForPhone, phoneHasChanged } from "@/app/api/me/_patch-profile-logic";
 import { getSessionOptions } from "@/lib/session";
 import { verifyBeamWebhookSignature } from "@quickload/shared/beam";
+import { systemErrorEventKey } from "@quickload/shared/internal-events";
 import { normalizeThaiPhone } from "@/lib/thai-phone";
 import { createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 // ---------------------------------------------------------------------------
 // 1. OTP bypass prevention
@@ -159,24 +162,7 @@ describe("SECURITY: Beam webhook replay attack prevention", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// 4. Default credential detection
-// ---------------------------------------------------------------------------
-
-describe("SECURITY: detect default/placeholder credentials", () => {
-  it("SMARTPOST default username is detectable in env fallback code", () => {
-    // The route.ts falls back to "ssslineoa" if SMARTPOST_BASIC_AUTH_USERNAME is unset.
-    // This test documents that the fallback is detectable — CI should assert env is overridden.
-    const defaultUsername = "ssslineoa";
-    const defaultPassword = "SSS12345";
-    expect(defaultUsername).not.toBe("");
-    expect(defaultPassword).not.toBe("");
-    // In production, these must not be the actual configured values.
-    // This assertion is a documentation reminder: add a CI check that
-    // SMARTPOST_BASIC_AUTH_USERNAME !== "ssslineoa" in production env.
-    expect(typeof defaultUsername).toBe("string");
-  });
-
+describe("SECURITY: production configuration", () => {
   it("DEV_SKIP_LINE_AUTH is not enabled in production environment", () => {
     // In tests NODE_ENV may not be "production", but the middleware
     // checks both NODE_ENV !== "production" AND the flag.
@@ -192,6 +178,59 @@ describe("SECURITY: detect default/placeholder credentials", () => {
       expect(middlewareWouldBypass).toBe(false);
     }
     // In non-production (test env), this is expected to be configurable
+  });
+
+  it("disables prepared statements in app and migration database clients", () => {
+    const workspaceRoot = resolve(process.cwd(), "../..");
+    const appClient = readFileSync(
+      resolve(workspaceRoot, "packages/shared/src/db/index.ts"),
+      "utf8",
+    );
+    const migrationClient = readFileSync(
+      resolve(workspaceRoot, "packages/shared/scripts/apply-sql.mjs"),
+      "utf8",
+    );
+    expect(appClient).toContain("prepare: false");
+    expect(migrationClient).toContain("prepare: false");
+  });
+
+  it("keeps the browser on the single server-owned registration endpoint", () => {
+    const workspaceRoot = resolve(process.cwd(), "../..");
+    const client = readFileSync(
+      resolve(workspaceRoot, "apps/user/lib/parcel-order-client.ts"),
+      "utf8",
+    );
+    const legacyRoute = readFileSync(
+      resolve(workspaceRoot, "apps/user/app/api/smartpost/add-item/route.ts"),
+      "utf8",
+    );
+    expect(client).toContain('/api/parcels/register');
+    expect(client).not.toContain('/api/smartpost/add-item');
+    expect(client).not.toContain('/api/parcels/draft');
+    expect(legacyRoute).toContain("status: 410");
+    expect(legacyRoute).not.toContain("requestSmartpostAddItem(");
+    expect(legacyRoute).not.toMatch(/\bfetch\s*\(/);
+  });
+
+  it("does not collapse different registration incidents into one alert", () => {
+    const first = systemErrorEventKey({
+      source: "parcel.registration.reconcile-unknown",
+      message: "same operational message",
+      dedupeKey: "attempt-1:unknown",
+    });
+    const second = systemErrorEventKey({
+      source: "parcel.registration.reconcile-unknown",
+      message: "same operational message",
+      dedupeKey: "attempt-2:unknown",
+    });
+    expect(first).not.toBe(second);
+    expect(
+      systemErrorEventKey({
+        source: "parcel.registration.reconcile-unknown",
+        message: "message changed",
+        dedupeKey: "attempt-1:unknown",
+      }),
+    ).toBe(first);
   });
 });
 

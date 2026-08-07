@@ -265,7 +265,7 @@ function mainStationForCode(n) {
 
 async function main() {
   const url = findUserId();
-  const sql = postgres(url, { max: 1 });
+  const sql = postgres(url, { max: 1, prepare: false });
 
   try {
     if (LIST_USERS) {
