@@ -77,11 +77,12 @@ describe("registration attempt idempotency", () => {
   });
 
   it("keeps the intent hash stable when a saved address changes after submission", () => {
+    const snapshotWithEditedAddress: ParcelRegistrationSnapshot = {
+      ...snapshot,
+      sender: { ...snapshot.sender, addressLine: "A later address-book edit" },
+    };
     expect(parcelRegistrationRequestHash(snapshot)).toBe(
-      parcelRegistrationRequestHash({
-        ...snapshot,
-        sender: { ...snapshot.sender, addressLine: "A later address-book edit" },
-      }),
+      parcelRegistrationRequestHash(snapshotWithEditedAddress),
     );
     expect(parcelRegistrationRequestHash(snapshot)).not.toBe(
       parcelRegistrationRequestHash({ ...snapshot, senderId: "sender-2" }),
