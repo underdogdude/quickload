@@ -23,6 +23,7 @@ type OrderApi = {
   smartpostTrackingcode: string | null;
   productWeight: string | null;
   productInbox: string | null;
+  boxsize: string | null;
   shipperName: string | null;
   shipperMobile: string | null;
   shipperAddress: string | null;
@@ -299,6 +300,7 @@ function SuccessInner() {
                   </SummaryRow>
                   <SummaryRow label="น้ำหนัก">{formatWeightGrams(parcel, order)}</SummaryRow>
                   <SummaryRow label="ขนาด">{sizeDisplay}</SummaryRow>
+                  <SummaryRow label="ขนาดกล่อง">{order?.boxsize?.trim() || "-"}</SummaryRow>
                   <SummaryRow label="ประเภท">{typeDisplay}</SummaryRow>
                   {referenceCode ? (
                     <div className="flex flex-col gap-0.5 border-t border-slate-50 py-3 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">

@@ -11,6 +11,7 @@ const FULL_INNER = {
   productInbox: "พัสดุทั่วไป",
   productWeight: "500",
   productPrice: "0",
+  boxsize: "BF",
   shipperName: "สมชาย ใจดี",
   shipperAddress: "123 ถนนพระราม 9",
   shipperSubdistrict: "ห้วยขวาง",
@@ -186,6 +187,7 @@ describe("mapSmartpostInnerToOrderFields", () => {
     expect(fields.barcode).toBe("TH001");
     expect(fields.serviceType).toBe("EMS");
     expect(fields.productInbox).toBe("box");
+    expect(fields.boxsize).toBe("");
   });
 
   it("maps snake_case keys as fallback", () => {
@@ -194,12 +196,14 @@ describe("mapSmartpostInnerToOrderFields", () => {
       bar_code: "TH002",
       service_type: "EMS",
       product_inbox: "envelope",
+      box_size: "BF",
       customer_code: "C001",
     };
     const fields = mapSmartpostInnerToOrderFields(inner);
     expect(fields.smartpostTrackingcode).toBe("SP002");
     expect(fields.serviceType).toBe("EMS");
     expect(fields.productInbox).toBe("envelope");
+    expect(fields.boxsize).toBe("BF");
     expect(fields.customerCode).toBe("C001");
   });
 
@@ -227,6 +231,7 @@ describe("mapSmartpostInnerToOrderFields", () => {
     expect(fields.barcode).toBe("TH001234567890");
     expect(fields.shipperName).toBe("สมชาย ใจดี");
     expect(fields.cusName).toBe("สมศรี รักดี");
+    expect(fields.boxsize).toBe("BF");
     expect(fields.cost).toBe("35");
     expect(fields.finalcost).toBe("35");
     expect(fields.customerCode).toBe("CUST001");

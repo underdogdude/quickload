@@ -190,7 +190,11 @@ async function renderParcelCreated(row: InternalEventRow): Promise<string> {
           smartpostTrackingcode: parcel.smartpostTrackingcode,
           trackingId: parcel.trackingId,
         })
-      : asString(payload.trackingId),
+      : resolveParcelDisplayCode({
+          barcode: asString(payload.barcode),
+          smartpostTrackingcode: asString(payload.smartpostTrackingcode),
+          trackingId: asString(payload.trackingId),
+        }),
     referenceCode: parcel?.smartpostTrackingcode ?? asString(payload.smartpostTrackingcode),
     senderName: parcel?.shipperName ?? asString(payload.senderName),
     recipientName: parcel?.cusName ?? asString(payload.recipientName),

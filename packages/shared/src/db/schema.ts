@@ -79,6 +79,8 @@ export const orders = pgTable("orders", {
   productInbox: text("product_inbox"),
   productWeight: text("product_weight"),
   productPrice: text("product_price"),
+  /** SmartPost box classification, e.g. BF. Distinct from parcel dimensions. */
+  boxsize: text("boxsize"),
   shipperName: text("shipper_name"),
   shipperAddress: text("shipper_address"),
   shipperSubdistrict: text("shipper_subdistrict"),

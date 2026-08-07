@@ -48,6 +48,7 @@ type OrderData = {
   cusZipcode: string | null;
   productWeight: string | null;
   productInbox: string | null;
+  boxsize: string | null;
   productPrice: string | null;
   insuranceRatePrice: string | null;
   items: string | null;
@@ -400,6 +401,7 @@ export default function ParcelDetailPage() {
                   <InfoRow label="น้ำหนัก" value={order?.productWeight ? `${order.productWeight} g` : parcel.weightKg ? `${parcel.weightKg} kg` : "-"} />
                   <InfoRow label="ประเภทพัสดุ" value={parcel.parcelType || order?.productInbox || order?.items || "-"} />
                   <InfoRow label="ขนาด" value={parcel.size || "-"} />
+                  <InfoRow label="ขนาดกล่อง" value={order?.boxsize || "-"} />
                   <InfoRow label="หมายเหตุ" value={parcel.note?.trim() || "—"} />
                   <InfoRow label="สร้างเมื่อ" value={formatDateTime(parcel.createdAt)} />
                   <InfoRow label="อัปเดตล่าสุด" value={formatDateTime(parcel.updatedAt)} />

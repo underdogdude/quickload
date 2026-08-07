@@ -199,6 +199,7 @@ export async function POST(request: Request) {
           productInbox: f.productInbox || null,
           productWeight: f.productWeight || null,
           productPrice: f.productPrice || null,
+          boxsize: f.boxsize || null,
           shipperName: f.shipperName || null,
           shipperAddress: f.shipperAddress || null,
           shipperSubdistrict: f.shipperSubdistrict || null,

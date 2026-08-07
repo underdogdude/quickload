@@ -58,6 +58,7 @@ function replayStoredSmartpostOrder(order: typeof orders.$inferSelect) {
       productInbox: order.productInbox || "",
       productWeight: order.productWeight || "",
       productPrice: order.productPrice || "",
+      boxsize: order.boxsize || "",
       shipperName: order.shipperName || "",
       shipperAddress: order.shipperAddress || "",
       shipperSubdistrict: order.shipperSubdistrict || "",

@@ -82,6 +82,7 @@ export function mapSmartpostInnerToOrderFields(inner: Record<string, string>) {
     productInbox: pick(inner, "productInbox", "product_inbox"),
     productWeight: pick(inner, "productWeight", "product_weight"),
     productPrice: pick(inner, "productPrice", "product_price"),
+    boxsize: pick(inner, "boxsize", "box_size"),
     shipperName: pick(inner, "shipperName", "shipper_name"),
     shipperAddress: pick(inner, "shipperAddress", "shipper_address"),
     shipperSubdistrict: pick(inner, "shipperSubdistrict", "shipper_subdistrict"),
